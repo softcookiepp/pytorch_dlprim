@@ -1,0 +1,12 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/me/development/pytorch_dlprim/build/cmake_install.cmake",
+		"/home/me/development/pytorch_dlprim/build/dlprimitives/cmake_install.cmake",
+		"/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/cmake_install.cmake",
+		"/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/cmake_install.cmake",
+		"/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/cmake_install.cmake",
+		"/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

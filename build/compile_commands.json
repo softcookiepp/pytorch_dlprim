@@ -1,0 +1,56 @@
+[
+{
+  "directory": "/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess",
+  "command": "/usr/bin/c++ -DVULKAN_API -Dsubprocess_EXPORTS -I/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/.  -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11 -O2 -Wall -Wno-comment -Wno-return-type -Wno-switch -Wno-missing-noreturn -Wno-unused-function -Wno-ignored-attributes -pedantic -ggdb -std=c++17 -fPIC -o CMakeFiles/subprocess.dir/subprocess/CowData.cpp.o -c /home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/CowData.cpp",
+  "file": "/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/CowData.cpp",
+  "output": "dlprimitives/CLBlast/tart/subprocess/subprocess/CMakeFiles/subprocess.dir/subprocess/CowData.cpp.o"
+},
+{
+  "directory": "/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess",
+  "command": "/usr/bin/c++ -DVULKAN_API -Dsubprocess_EXPORTS -I/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/.  -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11 -O2 -Wall -Wno-comment -Wno-return-type -Wno-switch -Wno-missing-noreturn -Wno-unused-function -Wno-ignored-attributes -pedantic -ggdb -std=c++17 -fPIC -o CMakeFiles/subprocess.dir/subprocess/PipeVar.cpp.o -c /home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/PipeVar.cpp",
+  "file": "/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/PipeVar.cpp",
+  "output": "dlprimitives/CLBlast/tart/subprocess/subprocess/CMakeFiles/subprocess.dir/subprocess/PipeVar.cpp.o"
+},
+{
+  "directory": "/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess",
+  "command": "/usr/bin/c++ -DVULKAN_API -Dsubprocess_EXPORTS -I/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/.  -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11 -O2 -Wall -Wno-comment -Wno-return-type -Wno-switch -Wno-missing-noreturn -Wno-unused-function -Wno-ignored-attributes -pedantic -ggdb -std=c++17 -fPIC -o CMakeFiles/subprocess.dir/subprocess/ProcessBuilder.cpp.o -c /home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/ProcessBuilder.cpp",
+  "file": "/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/ProcessBuilder.cpp",
+  "output": "dlprimitives/CLBlast/tart/subprocess/subprocess/CMakeFiles/subprocess.dir/subprocess/ProcessBuilder.cpp.o"
+},
+{
+  "directory": "/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess",
+  "command": "/usr/bin/c++ -DVULKAN_API -Dsubprocess_EXPORTS -I/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/.  -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11 -O2 -Wall -Wno-comment -Wno-return-type -Wno-switch -Wno-missing-noreturn -Wno-unused-function -Wno-ignored-attributes -pedantic -ggdb -std=c++17 -fPIC -o CMakeFiles/subprocess.dir/subprocess/ProcessBuilder_posix.cpp.o -c /home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/ProcessBuilder_posix.cpp",
+  "file": "/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/ProcessBuilder_posix.cpp",
+  "output": "dlprimitives/CLBlast/tart/subprocess/subprocess/CMakeFiles/subprocess.dir/subprocess/ProcessBuilder_posix.cpp.o"
+},
+{
+  "directory": "/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess",
+  "command": "/usr/bin/c++ -DVULKAN_API -Dsubprocess_EXPORTS -I/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/.  -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11 -O2 -Wall -Wno-comment -Wno-return-type -Wno-switch -Wno-missing-noreturn -Wno-unused-function -Wno-ignored-attributes -pedantic -ggdb -std=c++17 -fPIC -o CMakeFiles/subprocess.dir/subprocess/ProcessBuilder_windows.cpp.o -c /home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/ProcessBuilder_windows.cpp",
+  "file": "/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/ProcessBuilder_windows.cpp",
+  "output": "dlprimitives/CLBlast/tart/subprocess/subprocess/CMakeFiles/subprocess.dir/subprocess/ProcessBuilder_windows.cpp.o"
+},
+{
+  "directory": "/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess",
+  "command": "/usr/bin/c++ -DVULKAN_API -Dsubprocess_EXPORTS -I/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/.  -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11 -O2 -Wall -Wno-comment -Wno-return-type -Wno-switch -Wno-missing-noreturn -Wno-unused-function -Wno-ignored-attributes -pedantic -ggdb -std=c++17 -fPIC -o CMakeFiles/subprocess.dir/subprocess/environ.cpp.o -c /home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/environ.cpp",
+  "file": "/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/environ.cpp",
+  "output": "dlprimitives/CLBlast/tart/subprocess/subprocess/CMakeFiles/subprocess.dir/subprocess/environ.cpp.o"
+},
+{
+  "directory": "/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess",
+  "command": "/usr/bin/c++ -DVULKAN_API -Dsubprocess_EXPORTS -I/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/.  -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11 -O2 -Wall -Wno-comment -Wno-return-type -Wno-switch -Wno-missing-noreturn -Wno-unused-function -Wno-ignored-attributes -pedantic -ggdb -std=c++17 -fPIC -o CMakeFiles/subprocess.dir/subprocess/pipe.cpp.o -c /home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/pipe.cpp",
+  "file": "/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/pipe.cpp",
+  "output": "dlprimitives/CLBlast/tart/subprocess/subprocess/CMakeFiles/subprocess.dir/subprocess/pipe.cpp.o"
+},
+{
+  "directory": "/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess",
+  "command": "/usr/bin/c++ -DVULKAN_API -Dsubprocess_EXPORTS -I/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/.  -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11 -O2 -Wall -Wno-comment -Wno-return-type -Wno-switch -Wno-missing-noreturn -Wno-unused-function -Wno-ignored-attributes -pedantic -ggdb -std=c++17 -fPIC -o CMakeFiles/subprocess.dir/subprocess/shell_utils.cpp.o -c /home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/shell_utils.cpp",
+  "file": "/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/shell_utils.cpp",
+  "output": "dlprimitives/CLBlast/tart/subprocess/subprocess/CMakeFiles/subprocess.dir/subprocess/shell_utils.cpp.o"
+},
+{
+  "directory": "/home/me/development/pytorch_dlprim/build/dlprimitives/CLBlast/tart/subprocess/subprocess",
+  "command": "/usr/bin/c++ -DVULKAN_API -Dsubprocess_EXPORTS -I/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/.  -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++11 -O2 -Wall -Wno-comment -Wno-return-type -Wno-switch -Wno-missing-noreturn -Wno-unused-function -Wno-ignored-attributes -pedantic -ggdb -std=c++17 -fPIC -o CMakeFiles/subprocess.dir/subprocess/utf8_to_utf16.cpp.o -c /home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/utf8_to_utf16.cpp",
+  "file": "/home/me/development/pytorch_dlprim/dlprimitives/CLBlast/tart/subprocess/src/cpp/subprocess/utf8_to_utf16.cpp",
+  "output": "dlprimitives/CLBlast/tart/subprocess/subprocess/CMakeFiles/subprocess.dir/subprocess/utf8_to_utf16.cpp.o"
+}
+]
