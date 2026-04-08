@@ -18,7 +18,47 @@ namespace ptdlprim {
         v++;
         return v;
     }
+#if VULKAN_API
+	std::unique_ptr<CLMemAllocation> CLCache::allocate(int id, tart::device_ptr& ctx, int64_t orig_size)
+    {
+        if(allocated_size == 0 && debug_allocator)
+            setlocale(LC_ALL,"");
 
+        std::unique_lock<std::mutex> g(lock);
+
+        std::int64_t size = round(orig_size);
+        std::unique_ptr<CLMemAllocation> res;
+        
+        auto p=allocation.find(size);
+        if(reuse_oversized_chunks) {
+            int times=0;
+            while(p!=allocation.end()) {
+                if(!p->second.empty() || times==2) {
+                    break;
+                }
+                ++p;
+                times++;
+            }
+        }
+
+        if(p==allocation.end() || p->second.empty()) {
+            res.reset(new CLMemAllocation(id,ctx,size,orig_size));
+            allocated_size += res->size;
+        }
+        else {
+            res = std::move(p->second.back());
+            TORCH_CHECK(res->size >= orig_size,"Internal validation");
+            res->orig_size = orig_size;
+            cached_size -= res->size;
+            p->second.pop_back();
+        }
+        requested_size += res->orig_size;
+        peak_requested_size = std::max(requested_size,peak_requested_size);
+        if(debug_allocator)
+            printf("malloc: allocated: %'16ld  requested %'16ld peak-req %'16ld cached %'16ld\n",allocated_size,requested_size,peak_requested_size,cached_size);
+        return res;
+    }
+#else
     std::unique_ptr<CLMemAllocation> CLCache::allocate(int id,cl::Context &ctx,int64_t orig_size)
     {
         if(allocated_size == 0 && debug_allocator)
@@ -58,6 +98,8 @@ namespace ptdlprim {
             printf("malloc: allocated: %'16ld  requested %'16ld peak-req %'16ld cached %'16ld\n",allocated_size,requested_size,peak_requested_size,cached_size);
         return res;
     }
+#endif
+    
     void CLCache::release(std::unique_ptr<CLMemAllocation> &&mem)
     {
         std::unique_lock<std::mutex> g(lock);

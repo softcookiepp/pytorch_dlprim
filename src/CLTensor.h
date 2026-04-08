@@ -43,7 +43,16 @@ namespace ptdlprim {
         CLMemAllocation(CLMemAllocation &&) = default;
         CLMemAllocation &operator=(CLMemAllocation &&) = default;
         ~CLMemAllocation() {}
-
+#if VULKAN_API
+		CLMemAllocation(int id, tart::device_ptr& ctx, std::int64_t length, std::int64_t os) :
+            device_id(id),
+            size(length),
+            orig_size(os)
+        {
+			buffer = ctx->allocateBuffer(length);
+			#error "not implemented"
+        }
+#else
         CLMemAllocation(int id,cl::Context &ctx,std::int64_t length,std::int64_t os) :
             device_id(id),
             size(length),
@@ -51,11 +60,15 @@ namespace ptdlprim {
             buffer(ctx,CL_MEM_READ_WRITE,length)
         {
         }
-
+#endif
         int device_id;
         std::int64_t size;
         std::int64_t orig_size;
+#if VULKAN_API
+		tart::buffer_ptr buffer = nullptr;
+#else
         cl::Buffer buffer;
+#endif
     };
 
     class CLCache {
@@ -78,7 +91,11 @@ namespace ptdlprim {
 
         void clear();
         static std::uint64_t round(uint64_t v);
+#if VULKAN_API
+		std::unique_ptr<CLMemAllocation> allocate(int id, tart::device_ptr& ctx, int64_t orig_size);
+#else
         std::unique_ptr<CLMemAllocation> allocate(int id,cl::Context &ctx,int64_t orig_size);
+#endif
         void release(std::unique_ptr<CLMemAllocation> &&mem);
         void prepare(dlprim::Context &ctx);
     };
@@ -232,7 +249,10 @@ namespace ptdlprim {
             poison_fork();
             char *no_cache=getenv("OPENCL_NO_MEM_CACHE");
             no_cache_ = no_cache && atoi(no_cache);
-                
+            
+#if VULKAN_API
+			#error "not implemented!"
+#else
             std::vector<cl::Platform> platforms;
             try {
                 cl::Platform::get(&platforms);
@@ -240,7 +260,8 @@ namespace ptdlprim {
             catch(cl::Error &) {
                 return;
             }
-            for(size_t i=0;i<platforms.size();i++) {
+            for(size_t i=0;i<platforms.size();i++)
+            {
                 std::vector<cl::Device> devices;
                 try{
                     platforms[i].getDevices(CL_DEVICE_TYPE_ALL, &devices);
@@ -255,8 +276,11 @@ namespace ptdlprim {
                     data_.back()->name = std::to_string(i) + ":" + std::to_string(j);
                 }
             }
+#endif
         }
-
+#if VULKAN_API
+		std::vector<tart::device_ptr> data_;
+#else
         DevData &data(int i)
         {
             if(i < 0)
@@ -277,6 +301,7 @@ namespace ptdlprim {
 
         
         std::vector<std::unique_ptr<DevData> > data_;
+#endif
         bool no_cache_;
         static bool bad_fork_;
     };
