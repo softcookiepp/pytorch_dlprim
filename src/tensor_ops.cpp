@@ -168,16 +168,30 @@ using c10::DeviceType;
                 dlprim::Shape shape=dlprim::Shape::from_range(src_sizes.begin(),src_sizes.end());
                 dlprim::Shape src_std=dlprim::Shape::from_range(src_stride.begin(),src_stride.end());
                 dlprim::Shape tgt_std=dlprim::Shape::from_range(tgt_stride.begin(),tgt_stride.end());
+#if VULKAN_API
+				tart::buffer_ptr selfBuf = buffer_from_tensor(self);
+				tart::buffer_ptr dstBuf = buffer_from_tensor(dst);
+				dlprim::core::copy_strided(shape, selfBuf, src_offset, src_std,
+                                                 dstBuf, tgt_offset,tgt_std,
+                                                 todp(self.dtype()),
+                                                 todp(dst.dtype()),
+                                                 getExecutionContext(self.device()));
+#else
                 dlprim::core::copy_strided(shape,buffer_from_tensor(self),src_offset,src_std,
                                                  buffer_from_tensor(dst), tgt_offset,tgt_std,
                                                  todp(self.dtype()),
                                                  todp(dst.dtype()),
                                                  getExecutionContext(self.device()));
+#endif
             }
             if(non_blocking)
                 sync_if_needed(self.device());
             else
+#if VULKAN_API
+                getExecutionContext(self.device()).queue()->sync();
+#else
                 getExecutionContext(self.device()).queue().flush();
+#endif
         }
         else {
             throw std::runtime_error("OpenCL supports copy to CPU backend only");
@@ -408,10 +422,10 @@ using c10::DeviceType;
 #if VULKAN_API	
 			if(storage_size > 0)
 			{
-                tart::buffer_ptr dst = new_mem.get();
-                tart::buffer_ptr src = data.get();
+                tart::buffer_ptr dst = *( (tart::buffer_ptr*)(new_mem.get()) );
+                tart::buffer_ptr src = *( (tart::buffer_ptr*)(data.get()) );
                 auto q = getExecutionContext(self);
-                q.queue().enqueueCopyBuffer(src,dst,0,0,storage_size,q.events(),q.event("copy_buffer"));
+                src->copyTo(dst, 0, 0, storage_size);
             } 
 #else
             if(storage_size > 0) {

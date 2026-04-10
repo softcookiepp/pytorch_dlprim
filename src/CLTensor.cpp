@@ -122,6 +122,9 @@ namespace ptdlprim {
     }
     void CLCache::prepare(dlprim::Context &ctx)
     {
+#if VULKAN_API
+		#error "not implemented"
+#else
         int64_t mem_size = ctx.device().getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
         int64_t rounded_mem_size = round(mem_size);
         for(int64_t size=1;size<=rounded_mem_size;size*=2) {
@@ -131,6 +134,7 @@ namespace ptdlprim {
             setlocale(LC_ALL,"");
             printf("GPU max memory allocation size %'15ld creating tables up to %'ld\n",mem_size,rounded_mem_size);
         }
+#endif
     }
     bool CLContextManager::bad_fork_ = false;
 
@@ -175,7 +179,12 @@ namespace ptdlprim {
                      log << '[' << d->index << ']';
                 log << "," << (start_ms-point0)<<","<<(end_ms-point0) << ","  << time_ms << "\n";
             }
+#if VULKAN_API
+            catch (const std::exception& e)
+            {
+#else
             catch(cl::Error const &e) {
+#endif
                 log << "Failed for " << d->name << " " << e.what() << e.err() << std::endl;
             }
         }

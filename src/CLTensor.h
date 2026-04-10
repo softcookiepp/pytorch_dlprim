@@ -50,7 +50,7 @@ namespace ptdlprim {
             orig_size(os)
         {
 			buffer = ctx->allocateBuffer(length);
-			#error "not implemented"
+
         }
 #else
         CLMemAllocation(int id,cl::Context &ctx,std::int64_t length,std::int64_t os) :
@@ -148,7 +148,11 @@ namespace ptdlprim {
         static at::DataPtr allocate(c10::Device const &dev,size_t n)
         {
             std::unique_ptr<CLMemAllocation> ptr=alloc(dev.index(),n);
+#if VULKAN_API
+            tart::buffer_ptr* buffer = &(ptr->buffer);
+#else
             cl_mem buffer = ptr->buffer();
+#endif
             return at::DataPtr(buffer,ptr.release(),&CLContextManager::free_ptr,dev);
         }
 
@@ -251,7 +255,12 @@ namespace ptdlprim {
             no_cache_ = no_cache && atoi(no_cache);
             
 #if VULKAN_API
-			#error "not implemented!"
+			tart::Instance& tartInstance = dlprim::Context::getInstance();
+			for(size_t j=0; j < tartInstance.getNumDevices(); j++) {
+				std::unique_ptr<DevData> d(new DevData());
+				data_.push_back(std::move(d));
+				data_.back()->name = "0:" + std::to_string(j);
+			}
 #else
             std::vector<cl::Platform> platforms;
             try {
@@ -278,9 +287,7 @@ namespace ptdlprim {
             }
 #endif
         }
-#if VULKAN_API
-		std::vector<tart::device_ptr> data_;
-#else
+
         DevData &data(int i)
         {
             if(i < 0)
@@ -290,18 +297,20 @@ namespace ptdlprim {
             DevData &res = *data_[i];
             if(res.ready)
                 return res;
-            res.ctx=dlprim::Context(res.name);
+            res.ctx = dlprim::Context(res.name);
             res.fp64 = res.ctx.check_device_extension("cl_khr_fp64");
+#if VULKAN_API
+            res.queue = res.ctx.make_execution_context(0);
+#else
             res.queue = res.ctx.make_execution_context(res.enable_profiling ? CL_QUEUE_PROFILING_ENABLE : 0);
+#endif
             res.cache.prepare(res.ctx);
             res.ready = true;
             std::cout << "Accessing device #" << i << ":" << res.ctx.name() << std::endl;
             return res;
         }
-
         
         std::vector<std::unique_ptr<DevData> > data_;
-#endif
         bool no_cache_;
         static bool bad_fork_;
     };

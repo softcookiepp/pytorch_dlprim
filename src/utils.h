@@ -16,7 +16,7 @@ namespace ptdlprim {
 
     }
 #if VULKAN_API
-    tart::buffer_ptr buffer_from_tensor(torch::Tensor const &tt);
+	tart::buffer_ptr buffer_from_tensor(torch::Tensor const &tt);
 #else
     cl::Buffer buffer_from_tensor(torch::Tensor const &tt);
 #endif

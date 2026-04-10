@@ -30,7 +30,18 @@ namespace ptdlprim {
             throw std::runtime_error(std::string("Unsupported data type:") + c10::toString(tp));
         }
     }
-
+#if VULKAN_API
+	tart::buffer_ptr buffer_from_tensor(torch::Tensor const &tt)
+    {
+        TORCH_CHECK(tt.device().type() == OpenCLDeviceType,"OpenCL device is required for tensor");
+        //TORCH_CHECK(tt.numel() > 0,"Buffer is not valid for unallocated defvice");
+        TORCH_CHECK(tt.getIntrusivePtr()->storage().nbytes() > 0,"Buffer is not valid for unallocated defvice");
+        
+        // pretty sure this will work
+        tart::buffer_ptr* p = static_cast<tart::buffer_ptr*>(const_cast<void*>(tt.getIntrusivePtr()->storage().data()));
+        return *p;
+    }
+#else
     cl::Buffer buffer_from_tensor(torch::Tensor const &tt)
     {
         TORCH_CHECK(tt.device().type() == OpenCLDeviceType,"OpenCL device is required for tensor");
@@ -40,7 +51,7 @@ namespace ptdlprim {
         cl::Buffer buf(p,true);
         return buf;
     }
-    
+#endif
     dlprim::Tensor todp(torch::Tensor const &tt)
     {
         TORCH_CHECK(tt.device().type() == OpenCLDeviceType,"OpenCL device is required for tensor");
@@ -48,7 +59,11 @@ namespace ptdlprim {
         auto sizes = tt.sizes();
         auto offset = tt.storage_offset();
         auto dtype = tt.dtype();
+#if VULKAN_API
+        tart::buffer_ptr buf = buffer_from_tensor(tt);
+#else
         cl::Buffer buf = buffer_from_tensor(tt);
+#endif
         dlprim::Shape sp;
         if(sizes.empty())
             sp = dlprim::Shape(1); // scalar
@@ -97,7 +112,11 @@ namespace ptdlprim {
         dlprim::Tensor ws;
         if(ws_size) {
             ws_ptr = std::move(CLContextManager::allocate(dev,ws_size));
+#if VULKAN_API
+            ws = dlprim::Tensor( *((tart::buffer_ptr*)ws_ptr.get()), 0, dlprim::Shape(ws_size), dlprim::uint8_data);
+#else
             ws=dlprim::Tensor(cl::Buffer((cl_mem)ws_ptr.get(),true),0,dlprim::Shape(ws_size),dlprim::uint8_data);
+#endif
         }
         return ws;
     }

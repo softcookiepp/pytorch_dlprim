@@ -580,13 +580,21 @@ using c10::DeviceType;
 
         dlprim::ExecutionContext q(getExecutionContext(self));
         dlprim::Context ctx(q);
-        
+#if VULKAN_API
+		tart::buffer_ptr Abuf = buffer_from_tensor(A);
+        int64_t    Aoff = A.storage_offset();
+        tart::buffer_ptr Bbuf = buffer_from_tensor(B);
+        int64_t    Boff = B.storage_offset();
+        tart::buffer_ptr Cbuf = buffer_from_tensor(C);
+        int64_t    Coff = C.storage_offset();
+#else
         cl::Buffer Abuf = buffer_from_tensor(A);
         int64_t    Aoff = A.storage_offset();
         cl::Buffer Bbuf = buffer_from_tensor(B);
         int64_t    Boff = B.storage_offset();
         cl::Buffer Cbuf = buffer_from_tensor(C);
         int64_t    Coff = C.storage_offset();
+#endif
 
         if(bmm == 0) {
             auto gemm_op = dlprim::gpu::GEMM::get_optimal_gemm(ctx,todp(A.dtype()),At,Bt,M,N,K);

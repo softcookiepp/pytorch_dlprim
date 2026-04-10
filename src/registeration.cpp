@@ -100,9 +100,9 @@ public:
         at::Device device = current_device();
 #if VULKAN_API
 		// well this is less-than-ideal
-		tart::buffer_ptr buf_dst = *( (tart::buffer_ptr*)dest )
-		tart::buffer_ptr buf_src = *( (tart::buffer_ptr*)src  )
-        buf_src->copyTo(buf_dst);
+		tart::buffer_ptr buf_dst = *( (tart::buffer_ptr*)dest );
+		tart::buffer_ptr buf_src = *( (tart::buffer_ptr*)src  );
+        buf_src->copyTo(buf_dst, 0, 0, count);
 #else
         cl::Buffer buf_dst((cl_mem)dest,true);
         cl::Buffer buf_src((cl_mem)src, true);
