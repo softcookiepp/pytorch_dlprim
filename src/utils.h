@@ -15,8 +15,11 @@ namespace ptdlprim {
         return todp(meta.toScalarType());
 
     }
-
+#if VULKAN_API
+    tart::buffer_ptr buffer_from_tensor(torch::Tensor const &tt);
+#else
     cl::Buffer buffer_from_tensor(torch::Tensor const &tt);
+#endif
     dlprim::Tensor todp(torch::Tensor const &tt);
     torch::Tensor new_ocl_tensor(torch::IntArrayRef size,c10::Device dev,c10::ScalarType type=c10::kFloat);
 

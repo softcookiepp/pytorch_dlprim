@@ -405,12 +405,22 @@ using c10::DeviceType;
         
         if(new_size >= storage_size && new_size > 0) {
             at::DataPtr new_mem = CLContextManager::allocate(self.device(),new_size);
+#if VULKAN_API	
+			if(storage_size > 0)
+			{
+                tart::buffer_ptr dst = new_mem.get();
+                tart::buffer_ptr src = data.get();
+                auto q = getExecutionContext(self);
+                q.queue().enqueueCopyBuffer(src,dst,0,0,storage_size,q.events(),q.event("copy_buffer"));
+            } 
+#else
             if(storage_size > 0) {
                 cl::Buffer dst((cl_mem)new_mem.get(),true);
                 cl::Buffer src((cl_mem)data.get(),true);
                 auto q = getExecutionContext(self);
                 q.queue().enqueueCopyBuffer(src,dst,0,0,storage_size,q.events(),q.event("copy_buffer"));
             } 
+#endif
             data = std::move(new_mem);
             storage.set_nbytes(new_size);
             sync_if_needed(self.device());
