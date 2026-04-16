@@ -1,0 +1,758 @@
+#version 450
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_shader_8bit_storage : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+
+
+
+
+// constant thingies
+#define FLT_MAX 3.402823466e+38
+#define FLT_MIN 1.175494351e-38
+#define DBL_MAX 1.7976931348623158e+308
+#define DBL_MIN 2.2250738585072014e-308
+
+// whether or not to use float32 atomics.
+#ifndef ATOMIC_FLOAT32
+	#define ATOMIC_FLOAT32 0
+#endif
+#if ATOMIC_FLOAT32
+	#extension GL_EXT_shader_atomic_float : require
+#endif
+
+// this is not implemented yet, if it ever will be
+#ifndef USE_BDA
+	#define USE_BDA 0
+#endif
+
+// OpenCL semantics, because why not
+#define get_global_id(dim) gl_GlobalInvocationID[dim]
+#define get_local_id(dim) gl_LocalInvocationID[dim]
+#define get_group_id(dim) gl_WorkGroupID[dim]
+#define get_global_size(idx) gl_NumWorkGroups[idx] * gl_WorkGroupSize[idx]
+#define get_local_size(idx) gl_WorkGroupSize[idx]
+#define get_num_groups(dim) gl_NumWorkGroups[dim]
+
+#define ACTIVATION_IDENTITY 0
+#define ACTIVATION_RELU     1
+#define ACTIVATION_TANH     2
+#define ACTIVATION_SIGMOID  3
+#define ACTIVATION_RELU6    4
+
+#ifndef dtype
+	#define sizeof_dtype 4
+	#define dtype float
+	#define dtype2 vec2
+	#define dtype4 vec4
+	#define DTYPE_MAX FLT_MAX
+	#define DTYPE_MIN FLT_MIN
+	#if ATOMIC_FLOAT32
+		#define atomic_dtype dtype
+		#define dtype_to_atomic(v) v
+		#define atomic_to_dtype(v) v
+	#else
+		#define atomic_dtype uint
+		#define dtype_to_atomic(v) floatBitsToUint(v)
+		#define atomic_to_dtype(v) uintBitsToFloat(v)
+	#endif
+#endif
+
+#ifndef itype
+	// just default to 32 bit for now just so we can test to ensure it compiles
+	#define itype int
+#endif
+
+
+#ifndef ACTIVATION
+#define ACTIVATION ACTIVATION_IDENTITY
+#endif
+
+#if ACTIVATION == ACTIVATION_IDENTITY
+#   define ACTIVATION_F(x) (x)
+#   define ACTIVATION_FINV(y,dy) (dy)
+#   define ACTIVATION_NAME identity
+#elif ACTIVATION == ACTIVATION_RELU
+#   define ACTIVATION_F(x) (max((x),dtype(0)))
+#   define ACTIVATION_FINV(y,dy)  ((y>0)?dy:0)
+#   define ACTIVATION_NAME relu
+#elif ACTIVATION == ACTIVATION_TANH
+#   define ACTIVATION_F(x) (tanh((x)))
+#   define ACTIVATION_FINV(y,dy) ((1-(y)*(y))*(dy))
+#   define ACTIVATION_NAME tanh 
+#elif ACTIVATION == ACTIVATION_SIGMOID
+#   define ACTIVATION_F(x) (dtype(1) / (dtype(1) + exp(-(x))))
+#   define ACTIVATION_FINV(y,dy) ((y)*(1-(y))*(dy))
+#   define ACTIVATION_NAME sigmoid
+#elif ACTIVATION == ACTIVATION_RELU6
+#   define ACTIVATION_F(x) (min(max((x),dtype(0)), dtype(6)))
+#   define ACTIVATION_FINV(y,dy)  ((0<y && y<6)?dy:0)
+#   define ACTIVATION_NAME relu6
+#else
+#   error "Unknown activation"
+#endif 
+
+#ifndef USE_UNROLL
+	#define USE_UNROLL 0
+#endif
+
+#if USE_UNROLL
+	#define UNROLL(d)
+#else
+	#define UNROLL(d)
+#endif
+
+#ifndef TILE_SIZE_M
+#define TILE_SIZE_M 128
+#endif
+#ifndef TILE_SIZE_N
+#define TILE_SIZE_N 128
+#endif
+#ifndef BLOCK_SIZE_N
+#define BLOCK_SIZE_N 8
+#endif
+#ifndef BLOCK_SIZE_M
+#define BLOCK_SIZE_M 8
+#endif
+
+#ifndef TILE_SIZE_K
+#define TILE_SIZE_K 16
+#endif 
+
+#ifndef TILE_OFFSET
+#define TILE_OFFSET 1
+#endif
+
+#ifndef ZORDER
+#define ZORDER 0
+#endif
+
+
+#ifndef ATRANS
+#define ATRANS 0
+#endif
+
+#ifndef BTRANS
+#define BTRANS 0
+#endif
+
+#ifndef BIAS
+#define BIAS 0
+#endif
+
+#ifndef GROUPS
+#define GROUPS 1
+#endif
+
+#define BLOCK_SIZE_NY (BLOCK_SIZE_N*BLOCK_SIZE_M)
+#define BLOCKS_IN_TILE_N (TILE_SIZE_N / BLOCK_SIZE_N)
+#define BLOCKS_IN_TILE_M (TILE_SIZE_M / BLOCK_SIZE_M)
+#define WG_SIZE (BLOCKS_IN_TILE_M * BLOCKS_IN_TILE_N)
+
+
+#define ALIGN_FLOAT4 __attribute__ ((aligned (16)))
+
+#ifndef CONVGEMM
+#define CONVGEMM 0
+#endif
+
+#if CONVGEMM == 3 || REDUCE_K > 1
+
+#if ATOMIC_FLOAT32
+#define atomic_addf(idx, ptr, v) atomicAdd(ptr[idx], v)
+#else
+// Ok, this is going to be tricky. We will need to make the default type of the float in question into an integer.
+// I will likely just come back to this later hehe
+#define atomic_addf(idx, ptr, v_init) \
+{ \
+	float v = v_init; \
+	float oldv = atomic_to_dtype(ptr[idx]); \
+    while(true) \
+    { \
+        float newv = oldv + v; \
+		uint prev = atomicCompSwap(ptr[idx], dtype_to_atomic(oldv), dtype_to_atomic(newv)); \
+        if(prev == dtype_to_atomic(oldv)) \
+            break; \
+        oldv = atomic_to_dtype(prev); \
+    } \
+}
+
+#endif
+#if ACTIVATION != ACTIVATION_IDENTITY
+# error "Can't use activation with atomic ops"
+#endif
+#endif
+
+#if CONVGEMM != 0
+	#error "convgemm not implemented"
+#endif
+
+#if CONVGEMM != 0
+    #if CONVGEMM == 3
+    void add_img_value(__global float *ptr,uint matrix_row,uint matrix_col,float dV)
+    #else
+    float get_img_value(__global float const *ptr,uint matrix_row,uint matrix_col)
+    #endif
+    {
+#if KERN_W == 1 && KERN_H == 1 && STRIDE_H == 1 && STRIDE_W == 1 && DILATE_H == 1 && DILATE_W == 1 \
+        && PAD_H == 0 && PAD_W == 0 && GROUPS == 1 && IMG_COLS == SRC_COLS && IMG_ROWS == SRC_ROWS 
+        uint channel = matrix_col;
+        uint b  = matrix_row / (IMG_COLS * IMG_ROWS);
+        uint rc = matrix_row % (IMG_COLS * IMG_ROWS);
+
+        uint address = (b * CHANNELS_IN + channel) * (SRC_ROWS * SRC_COLS) + rc;
+        #if CONVGEMM != 3
+            return ptr[address];
+        #else
+            #if REDUCE_K > 1
+                atomic_addf(ptr+address,dV);
+            #else
+                ptr[address] += dV;
+            #endif
+        #endif
+#else
+        uint channel = matrix_col / (KERN_H * KERN_W);
+        uint k_index = matrix_col % (KERN_H * KERN_W);
+        
+        uint dy = k_index / KERN_W;
+        uint dx = k_index % KERN_W;
+        
+        uint b  = matrix_row / (IMG_COLS * IMG_ROWS);
+        uint rc = matrix_row % (IMG_COLS * IMG_ROWS);
+
+        uint r  = rc / IMG_COLS;
+        uint c  = rc % IMG_COLS;
+
+        uint y_pos = -PAD_H + r * STRIDE_H;
+        uint x_pos = -PAD_W + c * STRIDE_W;
+
+        uint y = y_pos + dy * DILATE_H;
+        uint x = x_pos + dx * DILATE_W;
+
+        uint address = ((b *  (CHANNELS_IN*GROUPS) + channel) * SRC_ROWS + y) * SRC_COLS + x;
+
+        #if CONVGEMM != 3
+            #if PAD_W > 0 || PAD_H > 0
+                if(x >= 0 && y >= 0 && x < SRC_COLS && y < SRC_ROWS) {
+                    return ptr[address];
+                }
+                return 0;
+            #else
+                return ptr[address];
+            #endif  
+        #else
+            #if PAD_W > 0 || PAD_H > 0
+                if(x >= 0 && y >= 0 && x < SRC_COLS && y < SRC_ROWS) 
+                    atomic_addf(ptr+address,dV);
+            #else
+                atomic_addf(ptr+address,dV);
+            #endif
+        #endif
+#endif  
+    }
+#endif
+
+
+
+#if CONVGEMM == 0 || CONVGEMM == 3
+#  if BTRANS == 0
+#    define get_B(r,c) (B[(r)*ldb + (c) + B_])
+#  else
+#    define get_B(r,c) (B[(c + B_])*ldb + (r))
+#  endif
+#else
+#  if BTRANS == 0
+#    define get_B(r,c) get_img_value(B,r,c)
+#  else
+#    define get_B(r,c) get_img_value(B,c,r)
+#  endif
+#endif
+
+#if CONVGEMM  == 0 || CONVGEMM == 1
+    #if  ATRANS == 0
+        #define get_A(r,c) (A[(r)*lda + (c) + A_])
+    #else
+        #define get_A(r,c) (A[(c + A_)*lda + (r)])
+    #endif
+#else
+    uint get_y_value_index(uint row, uint matrix_col, uint ldc, uint M)
+    {
+		uint batch = matrix_col / IM2COL_OCHAN;
+        uint incol = matrix_col % IM2COL_OCHAN;
+        uint offset = batch * (IM2COL_OCHAN * GROUPS) * M + incol;
+        return row*IM2COL_OCHAN + offset;
+	}
+	
+	#define get_y_value(row, matrix_col, BUF, ldc, M) BUF[get_y_value_index(row, matrix_col, ldc, M) + BUF##_]
+	
+
+    #if CONVGEMM == 3
+        #define GET_Y_STEP K_src
+    #else
+        #define GET_Y_STEP M
+    #endif
+    #if  ATRANS == 0
+        #define get_A(r,c) (get_y_value(r,c,A,lda,GET_Y_STEP))
+    #else
+        #define get_A(r,c) (get_y_value(c,r,A,lda,GET_Y_STEP))
+    #endif
+
+#endif
+
+#define lA(x,y) a_tile[(x)][(y) / BLOCK_SIZE_M][(y) % BLOCK_SIZE_M]
+#define lB(x,y) b_tile[(x)][(y) / BLOCK_SIZE_N][(y) % BLOCK_SIZE_N]
+
+
+#if TILE_SIZE_M != TILE_SIZE_N
+#error "Unsupported condif"
+#endif
+
+#define vload1(off,addr) ((addr)[off])
+#define vstore1(val,off,addr) ((addr)[off]=(val))
+
+#if BLOCK_SIZE_M == 1
+#define vloadM vload1
+#define vstoreM vstore1
+#define floatM float
+#elif BLOCK_SIZE_M == 4
+#define vloadM vload4
+#define vstoreM vstore4
+#define floatM float4
+#elif BLOCK_SIZE_M == 8
+#define vloadM vload8
+#define vstoreM vstore8
+#define floatM float8
+#elif BLOCK_SIZE_M == 16 
+#define vloadM vload16
+#define vstoreM vstore16
+#define floatM float16
+#endif
+
+#if BLOCK_SIZE_N == 1
+#define vloadN vload1
+#define vstoreN vstore1
+#define floatN float
+#elif BLOCK_SIZE_N == 4
+#define vloadN vload4
+#define vstoreN vstore4
+#define floatN float4
+#elif BLOCK_SIZE_N == 8
+#define vloadN vload8
+#define vstoreN vstore8
+#define floatN float8
+#elif BLOCK_SIZE_N == 16 
+#define vloadN vload16
+#define vstoreN vstore16
+#define floatN float16
+#endif
+
+#if TILE_SIZE_K == 1
+#define vloadK vload1
+#define vstoreK vstore1
+#define floatK float
+#elif TILE_SIZE_K == 4
+#define vloadK vload4
+#define vstoreK vstore4
+#define floatK float4
+#elif TILE_SIZE_K == 8
+#define floatK float8
+#define vloadK vload8
+#define vstoreK vstore8
+#elif TILE_SIZE_K == 16 
+#define vloadK vload16
+#define vstoreK vstore16
+#define floatK float16
+#endif
+
+
+#ifndef BATCH_GEMM
+#define BATCH_GEMM 0
+#endif
+
+#ifndef REDUCE_K
+#define REDUCE_K 1
+#endif
+
+#if GROUPS == 1 && REDUCE_K == 1 && BATCH_GEMM == 0
+#define DIM_M 0
+#define DIM_N 1
+#define DIM_G 2
+#define EXTRA_DIM 0
+#else
+#define DIM_M 1
+#define DIM_N 2
+#define DIM_G 0
+#define EXTRA_DIM 1
+#endif
+
+uint zorder_a(uint x)
+{
+    return
+          ((x & (1<<0)) >> 0 )
+        | ((x & (1<<2)) >> 1 )
+        | ((x & (1<<4)) >> 2 )
+        | ((x & (1<<6)) >> 3 )
+        | ((x & (1<<8)) >> 4 )
+        | ((x & (1<<10)) >> 5 )
+        | ((x & (1<<12)) >> 6 )
+        | ((x & (1<<14)) >> 7 )
+        | ((x & (1<<16)) >> 8 )
+        | ((x & (1<<18)) >> 9 )
+        | ((x & (1<<20)) >> 10 )
+        | ((x & (1<<22)) >> 11 )
+        | ((x & (1<<24)) >> 12 );
+}
+uint zorder_b(uint x)
+{
+    return zorder_a(x>>1);
+}
+
+#if EXTRA_DIM == 0
+	layout(local_size_x = BLOCKS_IN_TILE_M, local_size_y = BLOCKS_IN_TILE_N, local_size_z = 1) in;
+#else
+	#error "gey"
+	layout(local_size_x = 1, local_size_y = BLOCKS_IN_TILE_M, local_size_z = BLOCKS_IN_TILE_N) in;
+#endif
+
+#if USE_BDA == 0
+	layout(binding = 0, std430) readonly buffer A_buf { float A[]; };
+	layout(binding = 1, std430) readonly buffer B_buf { float B[]; };
+	layout(binding = 2, std430) buffer C_buf { float C[]; };
+	#if BIAS != 0
+		layout(binding = 3, std430) readonly buffer bias_buf { float bias[]; };
+	#endif
+#endif
+
+layout(push_constant, std430) uniform sgemm
+{
+#if BATCH_GEMM == 1
+        uint batches;
+#endif        
+        uint M;uint N;uint K;
+        #if USE_BDA
+        __global const float * restrict A;
+        #endif
+        uint offset_A;
+#if BATCH_GEMM == 1
+        uint batch_stride_a;
+#endif                
+        uint lda;
+        #if USE_BDA
+        __global const float * restrict B;
+        #endif
+        uint offset_B;
+#if BATCH_GEMM == 1
+        uint batch_stride_b;
+#endif                
+        uint ldb;
+        #if USE_BDA
+        __global float * restrict C;
+        #endif
+        uint offset_C;
+#if BATCH_GEMM == 1
+        uint batch_stride_c;
+#endif                
+        uint ldc;
+        float beta_factor;
+#if BIAS != 0
+        #if USE_BDA
+        __global const float * restrict bias;
+        #endif
+        uint offset_bias;
+#endif
+};
+
+// ALIGN_FLOAT4 __local 
+shared precise float a_tile[TILE_SIZE_K][BLOCKS_IN_TILE_M][BLOCK_SIZE_M+TILE_OFFSET];
+// ALIGN_FLOAT4 __local 
+shared precise float b_tile[TILE_SIZE_K][BLOCKS_IN_TILE_N][BLOCK_SIZE_N+TILE_OFFSET];
+
+#if LOAD_VARIANT == 1
+	// ahh...these are supposed to be pointers of A and B.
+	// so we will have to convert them to indices.
+    shared uvec2 aP[load_step];
+    shared uvec2 bP[load_step];
+#endif
+
+void main()
+{
+    uint A_ = offset_A;
+    uint B_ = offset_B;
+    uint C_ = offset_C;
+    #if BIAS != 0
+		uint bias_ = offset_bias;
+    #endif
+#if BATCH_GEMM == 1 	
+	#error "gae"
+#endif     
+
+#if ZORDER == 1
+    uint gr_m = get_group_id(DIM_M);
+    uint gr_n = get_group_id(DIM_N);
+    uint gr_size_m = get_num_groups(DIM_M);
+    uint gr_size_n = get_num_groups(DIM_N);
+    if(gr_size_m == gr_size_n && popcount(gr_size_m) == 1) {
+        uint grs  = gr_n * gr_size_m + gr_m;
+        gr_n = zorder_a(grs);
+        gr_m = zorder_b(grs);
+    }
+#else
+    uint gr_m = get_group_id(DIM_M);
+    uint gr_n = get_group_id(DIM_N);
+#endif
+    uint tile_row0 = gr_m*TILE_SIZE_M;
+    uint tile_col0 = gr_n*TILE_SIZE_N;
+
+#if ZORDER == 1
+    if(tile_row0 >= M || tile_col0 >= N)
+        return;
+#endif        
+
+    uint row = tile_row0 + get_local_id(DIM_M) * BLOCK_SIZE_M;
+    uint col = tile_col0 + get_local_id(DIM_N) * BLOCK_SIZE_N;
+
+
+    uint lid0 = get_local_id(DIM_M);
+    uint lid1 = get_local_id(DIM_N);
+    
+    uint local_tile_id = lid0 * get_local_size(DIM_N) + lid1;
+
+    #define local_wg_size (BLOCKS_IN_TILE_M * BLOCKS_IN_TILE_N)
+    #define load_step (TILE_SIZE_M * TILE_SIZE_K / local_wg_size)
+
+    //float c[BLOCK_SIZE_M][BLOCK_SIZE_N] = {{0.0f}};
+    precise float c[BLOCK_SIZE_M][BLOCK_SIZE_N];
+    
+    uint K_src = K;
+
+    precise float ap[BLOCK_SIZE_M];
+    precise float bp[BLOCK_SIZE_N];
+
+#if REDUCE_K > 1
+    uint KS = (K + REDUCE_K - 1) / REDUCE_K;
+    uint sec = get_global_id(DIM_G) % REDUCE_K;
+    uint k_start=KS * sec;
+    K = min(K_src,KS * (sec + 1));
+    uint k = k_start;
+#else
+    uint k=0;
+#endif
+
+#if TILE_SIZE_N == TILE_SIZE_M && TILE_SIZE_K % load_step  == 0 && load_step <= TILE_SIZE_K
+#define LOAD_VARIANT 0
+#else
+#define LOAD_VARIANT 1
+#endif
+
+    #if LOAD_VARIANT == 1
+    uint dM[load_step];
+    uint dN[load_step];
+    uint dK [load_step];
+
+    for(uint i=0,read_pos = local_tile_id;i<load_step;i++,read_pos+=WG_SIZE) {
+        uint tile_kdir = read_pos / TILE_SIZE_M;
+        uint tile_tdir = read_pos % TILE_SIZE_M;
+        dM[i] = tile_tdir + tile_row0;
+        dN[i] = tile_tdir + tile_col0;
+        dK[i]  = tile_kdir;
+        //aP[i] = &lA(tile_kdir,tile_tdir);
+        aP[i] = uvec2(tile_kdir, tile_tdir);
+        //bP[i] = &lB(tile_kdir,tile_tdir);
+        bP[i] = uvec2(tile_kdir,tile_tdir);
+    }
+    #endif
+
+
+ 
+    for(;k<K;k+=TILE_SIZE_K) {
+
+
+        #if LOAD_VARIANT == 0
+        {
+            uint tile_kdir0 = local_tile_id / TILE_SIZE_M;
+            uint tile_tdir  = local_tile_id % TILE_SIZE_M;
+            uint a_row = tile_tdir + tile_row0;
+            uint b_col = tile_tdir + tile_col0;
+
+            if(a_row >= M) {
+                UNROLL(load_step)
+                for(uint i=0,tile_kdir=tile_kdir0;i<load_step;i++,tile_kdir+=WG_SIZE / TILE_SIZE_M) {
+                    lA(tile_kdir,tile_tdir) = 0.0f;
+                }
+            }
+            else {
+                if(tile_kdir0 + k <= K - load_step * (WG_SIZE / TILE_SIZE_M)) {
+                    UNROLL(load_step)
+                    for(uint i=0,tile_kdir=tile_kdir0;i<load_step;i++,tile_kdir+=WG_SIZE / TILE_SIZE_M) {
+                        uint k_rc  = tile_kdir + k;
+                        lA(tile_kdir,tile_tdir) = get_A(a_row,k_rc);
+                    }
+                }
+                else {
+                    UNROLL(load_step)
+                    for(uint i=0,tile_kdir=tile_kdir0;i<load_step;i++,tile_kdir+=WG_SIZE / TILE_SIZE_M) {
+                        uint k_rc  = tile_kdir + k;
+                        lA(tile_kdir,tile_tdir) = k_rc < K ? get_A(a_row,k_rc) : 0.0f;
+                    }
+                }
+            }
+            if(b_col >= N) {
+                UNROLL(load_step)
+                for(uint i=0,tile_kdir=tile_kdir0;i<load_step;i++,tile_kdir+=WG_SIZE / TILE_SIZE_M) {
+                    lB(tile_kdir,tile_tdir) = 0.0f;
+                }
+            }
+            else {
+                if(tile_kdir0 + k <= K - load_step * (WG_SIZE / TILE_SIZE_N)) {
+                    UNROLL(load_step)
+                    for(uint i=0,tile_kdir=tile_kdir0;i<load_step;i++,tile_kdir+=WG_SIZE / TILE_SIZE_N) {
+                        uint k_rc  = tile_kdir + k;
+                        lB(tile_kdir,tile_tdir) = get_B(k_rc,b_col);
+                    }
+                }
+                else {
+                    UNROLL(load_step)
+                    for(uint i=0,tile_kdir=tile_kdir0;i<load_step;i++,tile_kdir+=WG_SIZE / TILE_SIZE_N) {
+                        uint k_rc  = tile_kdir + k;
+                        lB(tile_kdir,tile_tdir) = k_rc < K ? get_B(k_rc,b_col) : 0.0f;
+                    }
+                }
+            }
+
+            barrier();
+        }
+        #else
+        {
+            if(tile_row0 + TILE_SIZE_M <= M && k + TILE_SIZE_K <= K) {
+                UNROLL(load_step)
+                for(uint i=0;i<load_step;i++) {
+                    uint a_row = dM[i];
+                    uint k_rc  = dK[i] + k;
+                    //*aP[i] =  get_A(a_row,k_rc);
+                    lA(aP[i].x, aP[i].y) =  get_A(a_row,k_rc);
+                }
+            }
+            else {
+                UNROLL(load_step)
+                for(uint i=0;i<load_step;i++) {
+                    uint a_row = dM[i];
+                    uint k_rc  = dK[i] + k;
+                    //*aP[i] = (a_row < M && k_rc < K) ?  get_A(a_row,k_rc) : 0.0f;
+                    lA(aP[i].x, aP[i].y) = (a_row < M && k_rc < K) ?  get_A(a_row,k_rc) : 0.0f;
+                }
+            }
+            if(tile_col0 + TILE_SIZE_N <= N && k + TILE_SIZE_K <= K) {
+                UNROLL(load_step)
+                for(uint i=0;i<load_step;i++) {
+                    uint k_rc  = dK[i]  + k;
+                    uint b_col = dN[i];
+                    lB(bP[i].x, bP[i].y) = get_B(k_rc,b_col);
+                }
+            }
+            else {
+                UNROLL(load_step)
+                for(uint i=0;i<load_step;i++) {
+                    uint k_rc  = dK[i]  + k;
+                    uint b_col = dN[i];
+                    lB(bP[i].x, bP[i].y) = (b_col < N && k_rc < K) ? get_B(k_rc,b_col) : 0.0f;
+
+                }
+            }
+            barrier();
+        }
+        #endif
+
+        // Mutliplication loop
+        //UNROLL(TILE_SIZE_K)
+        for(uint dk=0;dk<TILE_SIZE_K;dk++) {
+            UNROLL(BLOCK_SIZE_M)
+            for(uint dr=0;dr<BLOCK_SIZE_M;dr++) {
+                ap[dr] = a_tile[dk][lid0][dr];
+            }
+            barrier();
+            UNROLL(BLOCK_SIZE_N)
+            for(uint dc=0;dc<BLOCK_SIZE_N;dc++) {
+                bp[dc] = b_tile[dk][lid1][dc];
+            }
+            barrier();
+            UNROLL(BLOCK_SIZE_M)
+            for(uint dr=0;dr<BLOCK_SIZE_M;dr++) {
+                UNROLL(BLOCK_SIZE_N)
+                for(uint dc=0;dc<BLOCK_SIZE_N;dc++) {
+                    //c[dr][dc] = fma(ap[dr],bp[dc],c[dr][dc]);
+                    c[dr][dc] = ap[dr]*bp[dc]+c[dr][dc];
+                }
+            }
+            barrier();
+        }
+
+        barrier();
+    }
+
+#if BIAS == 1
+	#error "gae"
+#elif BIAS == 2
+	#error "gae"
+#endif    
+
+#if CONVGEMM == 1
+    {
+        UNROLL(BLOCK_SIZE_N)
+        for(uint dc=0;dc<BLOCK_SIZE_N;dc++) {
+            if(col + dc >= N)
+                continue;
+            uint matrix_col = col + dc;
+            uint batch = matrix_col / IM2COL_OCHAN;
+            uint incol = matrix_col % IM2COL_OCHAN;
+            uint offset = batch * (IM2COL_OCHAN * GROUPS) * M + incol;
+            UNROLL(BLOCK_SIZE_M)
+            for(uint dr=0;dr<BLOCK_SIZE_M;dr++) {
+                if(row+dr < M) {
+                    uint index =(row + dr)*ldc + offset;
+                    #if REDUCE_K > 1
+                    atomic_addf(C+index,c[dr][dc]);
+                    #else
+                    if(beta_factor != 0)
+                        //C[index + C_] = fma(C[index + C_], beta_factor,ACTIVATION_F(c[dr][dc]));
+                        C[index + C_] = C[index + C_]*beta_factor + ACTIVATION_F(c[dr][dc]));
+                    else
+                        C[index + C_] = ACTIVATION_F(c[dr][dc]);
+                    #endif
+                }
+            }
+        }
+    }
+#else
+    {
+        UNROLL(BLOCK_SIZE_M)
+        for(uint dr=0;dr<BLOCK_SIZE_M;dr++) {
+            UNROLL(BLOCK_SIZE_N)
+            for(uint dc=0;dc<BLOCK_SIZE_N;dc++) {
+                if(row + dr < M && col+dc < N) {
+                    #if CONVGEMM == 3
+                        add_img_value(C,row+dr,col+dc,c[dr][dc]);
+                    #else
+                        uint index = (row+dr)*ldc+col+dc;
+                        #if REDUCE_K > 1
+                        atomic_addf(C+index,ACTIVATION_F(c[dr][dc]));
+                        #else
+                        if(beta_factor != 0)
+                            //C[index + C_] = fma(C[index + C_], beta_factor,ACTIVATION_F(c[dr][dc]));
+                            C[index + C_] = C[index + C_]*beta_factor + ACTIVATION_F(c[dr][dc]);
+                        else
+                            C[index + C_] = ACTIVATION_F(c[dr][dc]);
+                        #endif
+                    #endif
+                }
+            }
+        }
+    }
+#endif
+}
+
+
+
+				

@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 3.6 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 project(dlprim_backend)
+set(Python_FIND_VIRTUALENV FIRST)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 find_package(Torch 1.13 REQUIRED)
 find_package(pybind11 REQUIRED)

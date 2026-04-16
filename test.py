@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-torch.ops.load_library("build/libpt_ocl.so")
+torch.ops.load_library("build/pytorch_ocl/pt_ocl.so")
 if False:
     x=torch.randn(10,requires_grad=True)
     y=torch.ops.my_ops.artik_op(x)
@@ -12,7 +12,12 @@ if False:
     print('dy=',dy)
     print('dx=',x.grad)
 
-dev='privateuseone:0'
+if torch.version.__version__[0:3] == "2.4":
+	dev = "ocl:0"
+elif torch.version.__version__[0:4] == "1.13":
+	dev='privateuseone:0'
+else:
+	raise NotImplementedError
 
 if False:
     t1=torch.ones((20,10),requires_grad=True,device=dev)
