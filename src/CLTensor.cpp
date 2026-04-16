@@ -123,10 +123,11 @@ namespace ptdlprim {
     void CLCache::prepare(dlprim::Context &ctx)
     {
 #if VULKAN_API
-		#error "not implemented"
+		int64_t mem_size = ctx.device()->getMetadata().maxMemoryAllocationSize;
 #else
         int64_t mem_size = ctx.device().getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>();
-        int64_t rounded_mem_size = round(mem_size);
+#endif
+		int64_t rounded_mem_size = round(mem_size);
         for(int64_t size=1;size<=rounded_mem_size;size*=2) {
             allocation[size]; // create empty list
         }
@@ -134,12 +135,14 @@ namespace ptdlprim {
             setlocale(LC_ALL,"");
             printf("GPU max memory allocation size %'15ld creating tables up to %'ld\n",mem_size,rounded_mem_size);
         }
-#endif
     }
     bool CLContextManager::bad_fork_ = false;
 
     void CLContextManager::stop_profiling(int device,std::string const &output)
     {
+#if VULKAN_API
+		throw std::runtime_error("profiling is not implemented on Vulkan yet :c");
+#else
         auto &data = instance().data(device);
         if(!data.enable_profiling || !data.timing) {
             throw std::runtime_error("You must enable profiling: torch.ocl.enable_profiling(device) and call stop after finishing ");
@@ -155,7 +158,8 @@ namespace ptdlprim {
         log << "section,kernel,start (ms),end (ms),duraion(ms)\n";
         double point0 = -1.0;
         for(auto &d : timing->events()) {
-            try {
+            try
+            {
                 auto end_ms   = d->event.getProfilingInfo<CL_PROFILING_COMMAND_END>() * 1e-6;
                 auto start_ms = d->event.getProfilingInfo<CL_PROFILING_COMMAND_START>() * 1e-6;
                 if(point0 == -1)
@@ -188,6 +192,7 @@ namespace ptdlprim {
                 log << "Failed for " << d->name << " " << e.what() << e.err() << std::endl;
             }
         }
+#endif
     }
     void CLContextManager::start_profiling(int device)
     {
