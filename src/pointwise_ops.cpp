@@ -242,7 +242,11 @@ using c10::DeviceType;
         dlprim::Tensor y0=todp(out_c);
         float w0 = other.toDouble();
         dlprim::core::pointwise_operation_broadcast({x0},{y0},{w0},{dlprim::float_data},
+#if VULKAN_API
+										"y0 = typeof_y0((typeof_x0(x0) " + op + " typeof_x0(w0)) ? 1 : 0);" ,
+#else
                                       "y0 = (x0 " + op + " w0) ? 1 : 0;" ,
+#endif
                                       getExecutionContext(self));
         
         if (!out.is_contiguous())
@@ -369,7 +373,11 @@ using c10::DeviceType;
                other_c = other.contiguous();
         
         if(op_builder.empty()) {
+#if VULKAN_API
+            op_builder = "y0 = typeof_y0(left) " + op + " typeof_y0(right);";
+#else
             op_builder = "y0 = left " + op + " right;";
+#endif
         }
 
         dlprim::Tensor y(todp(out_c));
@@ -445,8 +453,11 @@ using c10::DeviceType;
         dlprim::Tensor dx=todp(grad_input_c);
         dlprim::Tensor Y=todp(self_c);
         float th = threshold.toDouble();
-        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;",getExecutionContext(self));
-        
+#if VULKAN_API
+        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = typeof_y0(cmp_gt(x0, w0) ? x1 : 0);",getExecutionContext(self));
+#else
+        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0; //peepeepoopoo",getExecutionContext(self));
+#endif   
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
         
@@ -1246,7 +1257,7 @@ using c10::DeviceType;
     {
         GUARD;
         TORCH_CHECK(is_integer(self,true) && is_integer(other,true),"& is not valid for floating point");
-        return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "&&" : "&"));
+        return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "&&" : "&"), (self.dtype() == c10::kBool ? "y0 = typeof_y0(bool(left) && bool(right));" : ""));
     }
     // {"schema": "aten::bitwise_or.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bitwise_or_out(const Tensor & self, const Tensor & other, Tensor & out)
