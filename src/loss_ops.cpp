@@ -89,7 +89,11 @@ using c10::DeviceType;
         dlprim::Context ctx(q);
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
                     {x.specs(),y.specs()},{loss.specs()},0,dlprim::float_data,
+#if VULKAN_API
+					"y0 = typeof_y0(-1.0)*(x1 * max(typeof_x0(-100), log(x0)) + (1-x1) * max(typeof_x0(-100),log(1-x0)));",
+#else
                     "y0 = - (x1 * max((typeof_x0)(-100),log(x0)) + (1-x1) * max((typeof_x0)(-100),log(1-x0)));",
+#endif
                     "reduce_y0 = 0;",
                     "reduce_y0 += y0;");
         WSGuard wsg(op->workspace(),self.device());

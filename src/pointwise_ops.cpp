@@ -649,7 +649,11 @@ using c10::DeviceType;
     Tensor & atan_out(const Tensor & self, Tensor & out)
     {
         GUARD;
+#if VULKAN_API
+        return unitary_op(self,out,"precise dtype y0_precise; y0_precise = atan(x0); y0 = y0_precise;");
+#else
         return unitary_op(self,out,"y0=atan(x0);");
+#endif
     }
 
 

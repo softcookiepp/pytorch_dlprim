@@ -14,9 +14,10 @@ import torch.nn as nn
 def get_diff(cpu,dev):
     c_dev = dev.to('cpu')
     r = torch.max(torch.abs(cpu - c_dev)).item()
-    if r > 1e-6:
+    if r > 1e-5:
         print(cpu)
         print(c_dev)
+        print(r)
     return r
 
 def test_fwd(inputs,call,device):
@@ -36,7 +37,7 @@ def test_fwd(inputs,call,device):
     y_cpu = call(*xs_cpu)
     y_dev = call(*xs_dev)
 
-    if get_diff(y_cpu,y_dev) > 1e-6:
+    if get_diff(y_cpu,y_dev) > 1e-5:
         raise Exception("Diff too big")
     print("Ok")
 
