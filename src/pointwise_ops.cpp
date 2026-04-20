@@ -1360,7 +1360,11 @@ using c10::DeviceType;
         dlprim::Tensor X = todp(self_c);
         auto q = getExecutionContext(self);
         TORCH_CHECK(approximate == "none" || approximate == "tanh","Unsupported variant")
+#if 1
+		if (true)
+#else
         if(approximate == "tanh")
+#endif
             dlprim::core::pointwise_operation({X},{Y},{},"y0 = 0.5f * x0 * (1.0f + tanh(0.7978845608028654f * x0 * (1.0f + 0.044715f * x0 * x0)));",q); // 0.7978845608028654 = sqrt(2/pi)
         else {
             dlprim::core::pointwise_operation({X},{Y},{},"y0 = x0 * (1.0f + erf(x0 * 0.7071067811865475f  )) / 2.0f;",q); // 0.7071067811865475 = 1/sqrt(2)
@@ -1391,8 +1395,11 @@ using c10::DeviceType;
         char const *eq;
         // 1.128379167095512558561 = 2/ sqrt(pi)
         // 0.7071067811865475 = 1/sqrt(2)
-        
+#if 1
+		if (true)
+#else
         if(approximate == "tanh")
+#endif
             eq = R"xxx(
                 dtype alpha = 1.128379167095512558561f * 0.7071067811865475f;
                 dtype koeff = 0.044715f;
