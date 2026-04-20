@@ -466,9 +466,9 @@ using c10::DeviceType;
         dlprim::Tensor Y=todp(self_c);
         float th = threshold.toDouble();
 #if VULKAN_API
-        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = typeof_y0(cmp_gt(x0, w0) ? x1 : 0);",getExecutionContext(self));
+        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;",getExecutionContext(self));
 #else
-        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0; //peepeepoopoo",getExecutionContext(self));
+        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;",getExecutionContext(self));
 #endif   
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
