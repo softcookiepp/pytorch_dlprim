@@ -350,11 +350,153 @@ using c10::DeviceType;
         return std::tuple<torch::Tensor,torch::Tensor,torch::Tensor>(x_diff,gamma_diff,beta_diff);
     }
 
+    // {"schema": "aten::native_group_norm(Tensor input, Tensor? weight, Tensor? bias, int N, int C, int HxW, int group, float eps) -> (Tensor, Tensor, Tensor)", "dispatch": "True", "default": "False"}
+    std::tuple<Tensor,Tensor,Tensor> native_group_norm(const Tensor& input, const c10::optional<Tensor>& weight, const c10::optional<Tensor>& bias, int64_t N, int64_t C, int64_t HxW, int64_t group, double eps)
+    {
+        GUARD;
+        bool weight_present = weight && weight->numel() > 0;
+        bool bias_present = bias && bias->numel() > 0;
+
+        dlprim::ExecutionContext q = getExecutionContext(input);
+        dlprim::Context ctx(q);
+
+        Tensor input_c = input.contiguous();
+        dlprim::Tensor X = todp(input_c);
+        
+        int64_t B = N * group;
+        int64_t L = (C / group) * HxW;
+        auto bn_shape = dlprim::Shape(1, B, L);
+        auto src_shape = X.shape();
+        
+        Tensor result = new_tensor_as(src_shape, input);
+        dlprim::Tensor Y = todp(result);
+        
+        X.reshape(bn_shape);
+        Y.reshape(bn_shape);
+
+        Tensor mean_pt = new_tensor_as(dlprim::Shape(B), input);
+        Tensor rstd_pt = new_tensor_as(dlprim::Shape(B), input);
+        dlprim::Tensor mean = todp(mean_pt);
+        dlprim::Tensor rstd = todp(rstd_pt);
+
+        auto bn = dlprim::core::BatchNormFwdBwd::create(ctx, bn_shape, X.dtype());
+        size_t ws_size = bn->workspace();
+        DataPtr tmp;
+        dlprim::Tensor ws = make_workspace(tmp, ws_size, input.device());
+
+        Tensor calc_var_pt = new_tensor_as(dlprim::Shape(B), input);
+        dlprim::Tensor calc_var = todp(calc_var_pt);
+
+        bn->enqueue_calculate_batch_stats(X, mean, calc_var, ws, q);
+        bn->enqueue_forward_get_rstd(X, Y, mean, calc_var, eps, rstd, ws, q);
+
+        Y.reshape(src_shape);
+        if (weight_present || bias_present) {
+            dlprim::Tensor w, b;
+            
+            std::vector<size_t> wb_dims(src_shape.size(), 1);
+            wb_dims[1] = C;
+            dlprim::Shape wb_shape = dlprim::Shape::from_range(wb_dims.begin(), wb_dims.end());
+
+            if (weight_present) {
+                w = todp(*weight);
+                w.reshape(wb_shape);
+            }
+            if (bias_present) {
+                b = todp(*bias);
+                b.reshape(wb_shape);
+            }
+
+            if (weight_present && bias_present) {
+                dlprim::core::pointwise_operation_broadcast({Y, w, b}, {Y}, {}, "y0 = x0 * x1 + x2;", q);
+            } else if (weight_present) {
+                dlprim::core::pointwise_operation_broadcast({Y, w}, {Y}, {}, "y0 = x0 * x1;", q);
+            } else {
+                dlprim::core::pointwise_operation_broadcast({Y, b}, {Y}, {}, "y0 = x0 + x1;", q);
+            }
+        }
+
+        sync_if_needed(input.device());
+        return std::make_tuple(result, mean_pt, rstd_pt);
+    }
+
+    // {"schema": "aten::native_group_norm_backward(Tensor grad_out, Tensor input, Tensor mean, Tensor rstd, Tensor? weight, int N, int C, int HxW, int group, bool[3] output_mask) -> (Tensor, Tensor, Tensor)", "dispatch": "True", "default": "False"}
+    std::tuple<Tensor,Tensor,Tensor> native_group_norm_backward(const Tensor & grad_out, const Tensor & input, const Tensor & mean, const Tensor & rstd, const c10::optional<Tensor> & weight, int64_t N, int64_t C, int64_t HxW, int64_t group, ::std::array<bool,3> output_mask)
+    {
+        GUARD;
+        bool weight_present = weight && weight->numel() > 0;
+        int64_t B = N * group;
+        int64_t L = (C / group) * HxW;
+
+        dlprim::ExecutionContext q = getExecutionContext(grad_out);
+        dlprim::Context ctx(q);
+
+        Tensor grad_out_c = grad_out.contiguous();
+        Tensor input_c = input.contiguous();
+        dlprim::Tensor dY = todp(grad_out_c);
+        dlprim::Tensor X = todp(input_c);
+        auto src_shape = X.shape();
+
+        auto bn_shape = dlprim::Shape(1, B, L);
+        X.reshape(bn_shape);
+        dY.reshape(bn_shape);
+
+        Tensor x_diff, gamma_diff, beta_diff;
+        bool bwd_data = output_mask[0];
+        bool bwd_gamma = output_mask[1] && weight_present;
+        bool bwd_beta = output_mask[2]; 
+        
+        if (bwd_gamma || bwd_beta) {
+             if (bwd_gamma) gamma_diff = at::zeros({C}, input.options());
+             if (bwd_beta) beta_diff = at::zeros({C}, input.options());
+        }
+
+        if (bwd_data) {
+            x_diff = new_tensor_as(src_shape, input);
+            dlprim::Tensor dX = todp(x_diff);
+            dX.reshape(bn_shape);
+
+            auto bn = dlprim::core::BatchNormFwdBwd::create(ctx, bn_shape, X.dtype());
+            size_t ws_size = bn->workspace();
+            DataPtr tmp;
+            dlprim::Tensor ws = make_workspace(tmp, ws_size, input.device());
+
+            dlprim::Tensor m_b = todp(mean);
+            dlprim::Tensor r_b = todp(rstd);
+            
+            dlprim::Tensor dYW_diff = dY;
+            if (weight_present) {
+                auto pt_dYW_diff = new_tensor_as(dY.shape(), input);
+                dYW_diff = todp(pt_dYW_diff);
+                dlprim::Tensor W = todp(*weight);
+                
+                // Reshape everything for broadcast
+                // dY is (N, group, C / group, HxW)
+                // W is (group, C / group) -> reshape to (1, group, C / group, 1)
+                dY.reshape(dlprim::Shape(N, group, C / group, HxW));
+                dYW_diff.reshape(dlprim::Shape(N, group, C / group, HxW));
+                W.reshape(dlprim::Shape(1, group, C / group, 1));
+                
+                dlprim::core::pointwise_operation_broadcast({dY, W}, {dYW_diff}, {}, "y0 = x0 * x1;", q);
+                
+                dY.reshape(bn_shape);
+                dYW_diff.reshape(bn_shape);
+            }
+
+            bn->enqueue_backward_rstd(X, dYW_diff, m_b, r_b, dX, 0.0, ws, q);
+        }
+
+        sync_if_needed(input.device());
+        return std::make_tuple(x_diff, gamma_diff, beta_diff);
+    }
+
 } // namespace
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
       m.impl("aten::native_batch_norm",&ptdlprim::native_batch_norm);
       m.impl("aten::native_batch_norm_backward",&ptdlprim::native_batch_norm_backward);
       m.impl("aten::native_layer_norm",&ptdlprim::native_layer_norm);
       m.impl("aten::native_layer_norm_backward",&ptdlprim::native_layer_norm_backward);
+      m.impl("aten::native_group_norm",&ptdlprim::native_group_norm);
+      m.impl("aten::native_group_norm_backward",&ptdlprim::native_group_norm_backward);
 }
 

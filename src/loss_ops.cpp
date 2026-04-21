@@ -89,7 +89,9 @@ using c10::DeviceType;
         dlprim::Context ctx(q);
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
                     {x.specs(),y.specs()},{loss.specs()},0,dlprim::float_data,
-                    "y0 = - (x1 * max((typeof_x0)(-100),log(x0)) + (1-x1) * max((typeof_x0)(-100),log(1-x0)));",
+                    // Clamping input to [1e-7, 1-1e-7] for numerical stability (single precision epsilon is ~1.2e-7)
+                    "typeof_x0 val = clamp(x0, (typeof_x0)1e-7f, (typeof_x0)(1.0f - 1.192092896e-7f));"
+                    "y0 = - (x1 * log(val) + (1-x1) * log(1-val));",
                     "reduce_y0 = 0;",
                     "reduce_y0 += y0;");
         WSGuard wsg(op->workspace(),self.device());
@@ -114,9 +116,11 @@ using c10::DeviceType;
             scale = 1.0/x.shape().total_size(); 
         dlprim::Tensor dx = todp(grad_input);
 
-        // -w (y - x) / (x - x^2)
+        // Clamping input to [1e-12, 1-1e-12] for numerical stability
+        // Gradient: -(target - input) / (input * (1 - input))
         dlprim::core::pointwise_operation_broadcast({x,y,dloss},{dx},{scale},
-                "y0 = -(x1 - x0) / max(1e-12f,x0 - x0*x0) * x2 * w0;",
+                "typeof_x0 val = clamp(x0, (typeof_x0)1e-7f, (typeof_x0)(1.0f - 1.192092896e-7f));"
+                "y0 = -(x1 - val) / (val * (1 - val)) * x2 * w0;",
                 getExecutionContext(self));
         sync_if_needed(self.device());
         return grad_input;
