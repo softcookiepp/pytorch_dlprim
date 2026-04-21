@@ -351,11 +351,15 @@ using c10::DeviceType;
     }
 
     // {"schema": "aten::native_group_norm(Tensor input, Tensor? weight, Tensor? bias, int N, int C, int HxW, int group, float eps) -> (Tensor, Tensor, Tensor)", "dispatch": "True", "default": "False"}
-    std::tuple<Tensor,Tensor,Tensor> native_group_norm(const Tensor& input, const c10::optional<Tensor>& weight, const c10::optional<Tensor>& bias, int64_t N, int64_t C, int64_t HxW, int64_t group, double eps)
+    std::tuple<Tensor,Tensor,Tensor> native_group_norm(const Tensor& input, const c10::optional<Tensor>& weight, const c10::optional<Tensor>& bias, c10::SymInt N_sym, c10::SymInt C_sym, c10::SymInt HxW_sym, int64_t group, double eps)
+
     {
         GUARD;
         bool weight_present = weight && weight->numel() > 0;
         bool bias_present = bias && bias->numel() > 0;
+        int64_t N = N_sym.expect_int();
+        int64_t C = C_sym.expect_int();
+        int64_t HxW = HxW_sym.expect_int();
 
         dlprim::ExecutionContext q = getExecutionContext(input);
         dlprim::Context ctx(q);
@@ -420,11 +424,14 @@ using c10::DeviceType;
         return std::make_tuple(result, mean_pt, rstd_pt);
     }
 
-    // {"schema": "aten::native_group_norm_backward(Tensor grad_out, Tensor input, Tensor mean, Tensor rstd, Tensor? weight, int N, int C, int HxW, int group, bool[3] output_mask) -> (Tensor, Tensor, Tensor)", "dispatch": "True", "default": "False"}
-    std::tuple<Tensor,Tensor,Tensor> native_group_norm_backward(const Tensor & grad_out, const Tensor & input, const Tensor & mean, const Tensor & rstd, const c10::optional<Tensor> & weight, int64_t N, int64_t C, int64_t HxW, int64_t group, ::std::array<bool,3> output_mask)
+    // {"schema": "aten::native_group_norm_backward(Tensor grad_out, Tensor input, Tensor mean, Tensor rstd, Tensor? weight, SymInt N, SymInt C, SymInt HxW, int group, bool[3] output_mask) -> (Tensor, Tensor, Tensor)", "dispatch": "True", "default": "False"}
+    std::tuple<Tensor,Tensor,Tensor> native_group_norm_backward(const Tensor & grad_out, const Tensor & input, const Tensor & mean, const Tensor & rstd, const c10::optional<Tensor> & weight, c10::SymInt N_sym, c10::SymInt C_sym, c10::SymInt HxW_sym, int64_t group, ::std::array<bool,3> output_mask)
     {
         GUARD;
         bool weight_present = weight && weight->numel() > 0;
+        int64_t N = N_sym.expect_int();
+        int64_t C = C_sym.expect_int();
+        int64_t HxW = HxW_sym.expect_int();
         int64_t B = N * group;
         int64_t L = (C / group) * HxW;
 
@@ -447,8 +454,42 @@ using c10::DeviceType;
         bool bwd_beta = output_mask[2]; 
         
         if (bwd_gamma || bwd_beta) {
-             if (bwd_gamma) gamma_diff = at::zeros({C}, input.options());
-             if (bwd_beta) beta_diff = at::zeros({C}, input.options());
+            dlprim::Tensor dY_4d = dY.alias(dlprim::Shape(N, group, C/group, HxW));
+            dlprim::Tensor X_4d = X.alias(dlprim::Shape(N, group, C/group, HxW));
+            
+            dlprim::Tensor m_b = todp(mean).alias(dlprim::Shape(N, group, 1, 1));
+            dlprim::Tensor r_b = todp(rstd).alias(dlprim::Shape(N, group, 1, 1));
+
+            if (bwd_gamma) {
+                gamma_diff = new_tensor_as(dlprim::Shape(C), input);
+                dlprim::Tensor dG = todp(gamma_diff);
+                dG.reshape(dlprim::Shape(1, group, C/group, 1));
+                auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
+                            ctx,
+                            {X_4d.specs(), m_b.specs(), r_b.specs(), dY_4d.specs()}, {dG.specs()},
+                            0, dlprim::float_data,
+                            "y0=(x0 - x1)*x2*x3;",
+                            "reduce_y0 = 0;",
+                            "reduce_y0 += y0;");
+                DataPtr wsg_ptr;
+                dlprim::Tensor wsg = make_workspace(wsg_ptr, op->workspace(), input.device());
+                op->enqueue({X_4d, m_b, r_b, dY_4d}, {dG}, wsg, {}, {1}, {0}, q);
+            }
+            if (bwd_beta) {
+                beta_diff = new_tensor_as(dlprim::Shape(C), input);
+                dlprim::Tensor dB = todp(beta_diff);
+                dB.reshape(dlprim::Shape(1, group, C/group, 1));
+                auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
+                            ctx,
+                            {dY_4d.specs()}, {dB.specs()},
+                            0, dlprim::float_data,
+                            "y0=x0;",
+                            "reduce_y0 = 0;",
+                            "reduce_y0 += y0;");
+                DataPtr wsg_ptr;
+                dlprim::Tensor wsg = make_workspace(wsg_ptr, op->workspace(), input.device());
+                op->enqueue({dY_4d}, {dB}, wsg, {}, {1}, {0}, q);
+            }
         }
 
         if (bwd_data) {
