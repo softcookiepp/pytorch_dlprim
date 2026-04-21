@@ -11,7 +11,7 @@ option(DLPRIM_STATIC_BUILD "Build static version only" ON)
 option(BUILD_CPLUS_EXAMPLE "Build C++ examples" OFF)
 
 add_subdirectory(dlprimitives)
-#include_directories("${OCL_PATH}")
+include_directories("${OCL_PATH}")
 include_directories(${PYTHON_INCLUDE_DIR})
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/dlprimitives)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/dlprimitives/include)
