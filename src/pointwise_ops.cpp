@@ -1606,6 +1606,31 @@ using c10::DeviceType;
 
     
 
+    // {"schema": "aten::where.self(Tensor condition, Tensor self, Tensor other) -> Tensor", "dispatch": "True", "default": "False"}
+    Tensor where(const Tensor & condition, const Tensor & self, const Tensor & other)
+    {
+        GUARD;
+        auto result_shape = at::infer_size(self.sizes(), other.sizes());
+        result_shape = at::infer_size(condition.sizes(), result_shape);
+        
+        Tensor result = at::empty(result_shape, self.options());
+        
+        Tensor cond_c = condition.contiguous();
+        Tensor self_c = self.contiguous();
+        Tensor other_c = other.contiguous();
+        
+        dlprim::Tensor c = todp(cond_c);
+        dlprim::Tensor s = todp(self_c);
+        dlprim::Tensor o = todp(other_c);
+        dlprim::Tensor y = todp(result);
+        
+        dlprim::core::pointwise_operation_broadcast({c, s, o}, {y}, {}, 
+            "y0 = x0 ? x1 : x2;", getExecutionContext(condition));
+            
+        sync_if_needed(condition.device());
+        return result;
+    }
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -1696,6 +1721,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
       m.impl("aten::log_sigmoid_forward.output",&ptdlprim::log_sigmoid_forward_out);
       m.impl("aten::log_sigmoid_backward.grad_input", &ptdlprim::log_sigmoid_backward_out);
       m.impl("aten::log_sigmoid_backward", &ptdlprim::log_sigmoid_backward);
+      m.impl("aten::where.self",&ptdlprim::where);
 }
 
 TORCH_LIBRARY_IMPL(aten, AutogradPrivateUse1, m) {

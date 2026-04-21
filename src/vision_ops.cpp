@@ -445,7 +445,7 @@ using c10::DeviceType;
     }
 
     // {"schema": "aten::avg_pool2d.out(Tensor self, int[2] kernel_size, int[2] stride=[], int[2] padding=0, bool ceil_mode=False, bool count_include_pad=True, int? divisor_override=None, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
-    Tensor & avg_pool2d_out(const Tensor & self, IntArrayRef kernel_size, IntArrayRef stride, IntArrayRef padding, bool /*ceil_mode*/, bool count_include_pad, c10::optional<int64_t> divisor_override, Tensor & out)
+    Tensor & avg_pool2d_out(const Tensor & self, IntArrayRef kernel_size, IntArrayRef stride, IntArrayRef padding, bool ceil_mode, bool count_include_pad, c10::optional<int64_t> divisor_override, Tensor & out)
     {
         GUARD;
         TORCH_CHECK(!divisor_override,"Divisor override is not implemented");
@@ -481,7 +481,7 @@ using c10::DeviceType;
     Tensor & avg_pool2d_backward_out(const Tensor & grad_output, const Tensor & self, IntArrayRef kernel_size, IntArrayRef stride, IntArrayRef padding, bool ceil_mode, bool count_include_pad, c10::optional<int64_t> divisor_override, Tensor & grad_input)
     {
         GUARD;
-        TORCH_CHECK(ceil_mode==false,"Ceil mode=true not implemented");
+        // ceil_mode is handled by the output shape and kernel mapping
         TORCH_CHECK(!divisor_override,"Divisor override is not implemented");
         int ker[2] = {int(kernel_size[0]),int(kernel_size[1])};
         int pad[2] = {int(padding[0]),    int(padding[1])};

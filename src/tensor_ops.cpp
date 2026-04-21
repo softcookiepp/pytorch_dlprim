@@ -317,11 +317,11 @@ using c10::DeviceType;
     Tensor masked_select(const Tensor & self, const Tensor & mask)
     {
         GUARD;
+        Tensor expanded_mask = mask.expand_as(self);
         Tensor self_c = self.contiguous();
-        Tensor mask_c = mask.contiguous();
+        Tensor mask_c = expanded_mask.contiguous();
         dlprim::Tensor x = todp(self_c);
         dlprim::Tensor m = todp(mask_c);
-        TORCH_CHECK(x.shape() == m.shape(),"Broadasting is not implemented in masked_select yet");
         auto ec = getExecutionContext(self);
         x.to_host(ec);
         m.to_host(ec);
@@ -443,6 +443,20 @@ using c10::DeviceType;
         return self;
     }
 
+    Tensor channel_shuffle(const Tensor & self, int64_t groups)
+    {
+        GUARD;
+        auto sizes = self.sizes();
+        TORCH_CHECK(sizes.size() == 4, "channel_shuffle expects 4D input");
+        int64_t channels = sizes[1];
+        TORCH_CHECK(channels % groups == 0, "groups must divide channels");
+        
+        return self.view({sizes[0], groups, channels / groups, sizes[2], sizes[3]})
+                   .transpose(1, 2)
+                   .reshape(sizes)
+                   .contiguous();
+    }
+
 
     void fallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
     {
@@ -469,6 +483,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
       m.impl("aten::_local_scalar_dense",&ptdlprim::_local_scalar_dense);
       m.impl("aten::masked_select",&ptdlprim::masked_select);
       m.impl("aten::resize_",&ptdlprim::resize_);
+      m.impl("aten::channel_shuffle",&ptdlprim::channel_shuffle);
 }
 
 TORCH_LIBRARY_IMPL(aten, AutogradPrivateUse1, m) {
