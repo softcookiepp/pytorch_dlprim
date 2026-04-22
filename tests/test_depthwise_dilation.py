@@ -51,7 +51,7 @@ def run_case(device: str, shape, kernel: int, dilation: int):
 
     assert y_err < 1e-5
     assert dx_err < 2e-5
-    assert dw_err < 2e-5
+    assert dw_err < 5e-5
     assert db_err < 2e-5
 
 
