@@ -1277,28 +1277,28 @@ using c10::DeviceType;
     {
         GUARD;
         TORCH_CHECK(is_integer(self,true) && is_integer(other,true),"& is not valid for floating point");
-        return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "&&" : "&"), (self.dtype() == c10::kBool ? "y0 = typeof_y0(bool(left) && bool(right));" : ""));
+        return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "&&" : "&"), (self.dtype() == c10::kBool ? "y0 = (typeof_y0)(((bool)(left)) && ((bool)(right))); " : ""));
     }
     // {"schema": "aten::bitwise_or.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bitwise_or_out(const Tensor & self, const Tensor & other, Tensor & out)
     {
         GUARD;
         TORCH_CHECK(is_integer(self,true) && is_integer(other,true),"| is not valid for floating point");
-        return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "||" : "|"), (self.dtype() == c10::kBool ? "y0 = typeof_y0(bool(left) || bool(right));" : ""));
+        return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "||" : "|"), (self.dtype() == c10::kBool ? "y0 = (typeof_y0)(((bool)(left)) || ((bool)(right))); " : ""));
     }
     // {"schema": "aten::bitwise_xor.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bitwise_xor_out(const Tensor & self, const Tensor & other, Tensor & out)
     {
         GUARD;
         TORCH_CHECK(is_integer(self,true) && is_integer(other,true),"^ is not valid for floating point");
-        return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "!=" : "^"), (self.dtype() == c10::kBool ? "y0 = typeof_y0(bool(left) != bool(right));" : ""));
+        return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "!=" : "^"), (self.dtype() == c10::kBool ? "y0 = (typeof_y0)(((bool)(left)) != ((bool)(right))); " : ""));
     }
     // {"schema": "aten::bitwise_not.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bitwise_not_out(const Tensor & self, Tensor & out)
     {
         GUARD;
         TORCH_CHECK(is_integer(self,true),"~ is valid for integer types");
-        return unitary_op(self,out,(self.dtype() == c10::kBool ? "y0 = uint8_t(!bool(x0));" : "y0 = ~x0;"));
+        return unitary_op(self,out,(self.dtype() == c10::kBool ? "y0 = !x0;" : "y0 = ~x0;"));
     }
 
 
