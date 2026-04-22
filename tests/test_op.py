@@ -329,6 +329,8 @@ def test_all(device):
     test_fwd_bwd([([4,3,5],-1),([4,3,5],-1)],torch.nn.BCELoss(),device,torch.rand)
     print("BCE Loss no reduction")
     test_fwd_bwd([([4,3,5],-1),([4,3,5],-1)],torch.nn.BCELoss(reduction='none'),device,torch.rand)
+    print("GroupNorm")
+    test_fwd_bwd([([2,8,4,4],-1)],torch.nn.GroupNorm(2,8),device)
     print("MSE Loss")
     test_fwd_bwd([([4,3,5],-1),([4,3,5],-1)],torch.nn.MSELoss(),device,torch.rand)
     print("MSE Loss no reduction")
