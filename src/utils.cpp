@@ -33,6 +33,7 @@ namespace ptdlprim {
 #if VULKAN_API
 	tart::buffer_ptr buffer_from_tensor(torch::Tensor const &tt)
     {
+		std::cout << "buffer_from_tensor device type: " << tt.device().type() << std::endl;
         TORCH_CHECK(tt.device().type() == OpenCLDeviceType,"OpenCL device is required for tensor");
         //TORCH_CHECK(tt.numel() > 0,"Buffer is not valid for unallocated defvice");
         TORCH_CHECK(tt.getIntrusivePtr()->storage().nbytes() > 0,"Buffer is not valid for unallocated defvice");
@@ -44,6 +45,7 @@ namespace ptdlprim {
 #else
     cl::Buffer buffer_from_tensor(torch::Tensor const &tt)
     {
+		std::cout << "device type: " << tt.device().type() << std::endl;
         TORCH_CHECK(tt.device().type() == OpenCLDeviceType,"OpenCL device is required for tensor");
         //TORCH_CHECK(tt.numel() > 0,"Buffer is not valid for unallocated defvice");
         TORCH_CHECK(tt.getIntrusivePtr()->storage().nbytes() > 0,"Buffer is not valid for unallocated defvice");
@@ -54,6 +56,7 @@ namespace ptdlprim {
 #endif
     dlprim::Tensor todp(torch::Tensor const &tt)
     {
+		std::cout << "todp device type: " << tt.device().type() << std::endl;
         TORCH_CHECK(tt.device().type() == OpenCLDeviceType,"OpenCL device is required for tensor");
         TORCH_CHECK(tt.is_contiguous(),"dlprim::Tensor must be contiguous");
         auto sizes = tt.sizes();
