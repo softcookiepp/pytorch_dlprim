@@ -9,6 +9,7 @@ import numpy as np
 import sys
 import torch.nn.functional as F
 import torch.nn as nn
+import copy
 
 
 def get_diff(cpu,dev):
@@ -119,12 +120,14 @@ def test_fwd_bwd(inputs,call,device,randgen=torch.randn):
 				x_cpu = torch.randint(limit,s)
 				x_dev = x_cpu.to(device)
 			assert x_cpu.device != x_dev.device
-			print(x_dev.device)
 			xs_cpu.append(x_cpu)
 			xs_dev.append(x_dev)
-
-	y_cpu = call(*xs_cpu)
-	y_dev = call(*xs_dev)
+	call_cpu = call
+	call_dev = call
+	if isinstance(call, torch.nn.Module):
+		call_dev = copy.deepcopy(call_cpu).to(device)
+	y_cpu = call_cpu(*xs_cpu)
+	y_dev = call_dev(*xs_dev)
 
 	if y_cpu.shape:
 		with torch.no_grad():

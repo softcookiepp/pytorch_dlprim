@@ -390,8 +390,9 @@ using c10::DeviceType;
 
         Tensor calc_var_pt = new_tensor_as(dlprim::Shape(B), input);
         dlprim::Tensor calc_var = todp(calc_var_pt);
-
+		
         bn->enqueue_calculate_batch_stats(X, mean, calc_var, ws, q);
+        
         bn->enqueue_forward_get_rstd(X, Y, mean, calc_var, eps, rstd, ws, q);
 
         Y.reshape(src_shape);
@@ -401,8 +402,8 @@ using c10::DeviceType;
             std::vector<size_t> wb_dims(src_shape.size(), 1);
             wb_dims[1] = C;
             dlprim::Shape wb_shape = dlprim::Shape::from_range(wb_dims.begin(), wb_dims.end());
-
             if (weight_present) {
+				// aha. this is where everything goes wrong, for some reason
                 w = todp(*weight);
                 w.reshape(wb_shape);
             }
@@ -410,7 +411,6 @@ using c10::DeviceType;
                 b = todp(*bias);
                 b.reshape(wb_shape);
             }
-
             if (weight_present && bias_present) {
                 dlprim::core::pointwise_operation_broadcast({Y, w, b}, {Y}, {}, "y0 = x0 * x1 + x2;", q);
             } else if (weight_present) {
