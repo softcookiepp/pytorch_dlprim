@@ -452,7 +452,7 @@ using c10::DeviceType;
         bool bwd_data = output_mask[0];
         bool bwd_gamma = output_mask[1] && weight_present;
         bool bwd_beta = output_mask[2]; 
-        
+        std::cout << "	doing (bwd_gamma || bwd_beta)\n";
         if (bwd_gamma || bwd_beta) {
             dlprim::Tensor dY_4d = dY.alias(dlprim::Shape(N, group, C/group, HxW));
             dlprim::Tensor X_4d = X.alias(dlprim::Shape(N, group, C/group, HxW));
@@ -491,7 +491,7 @@ using c10::DeviceType;
                 op->enqueue({dY_4d}, {dB}, wsg, {}, {1}, {0}, q);
             }
         }
-
+		std::cout << "	doing (bwd_data)\n";
         if (bwd_data) {
             x_diff = new_tensor_as(src_shape, input);
             dlprim::Tensor dX = todp(x_diff);
@@ -523,11 +523,13 @@ using c10::DeviceType;
                 dY.reshape(bn_shape);
                 dYW_diff.reshape(bn_shape);
             }
-
+			std::cout << "	doing bn->enqueue_backward_rstd(X, dYW_diff, m_b, r_b, dX, 0.0, ws, q);\n";
             bn->enqueue_backward_rstd(X, dYW_diff, m_b, r_b, dX, 0.0, ws, q);
+            std::cout << "	finished bn->enqueue_backward_rstd(X, dYW_diff, m_b, r_b, dX, 0.0, ws, q);\n";
         }
 
         sync_if_needed(input.device());
+        std::cout << "done!\n";
         return std::make_tuple(x_diff, gamma_diff, beta_diff);
     }
 
