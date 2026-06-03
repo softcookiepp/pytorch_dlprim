@@ -57,7 +57,8 @@ using c10::DeviceType;
             return dlprim::core::Conv2DSettings(cfg_base,dlprim::core::Conv2DBase::get_output_shape_transposed(cfg_base,X.shape(),op),X.dtype());
         }
     }
-
+#if VULKAN_API
+#else
     Tensor convolution_overrideable(const Tensor & input,
                                     const Tensor & weight,
                                     const c10::optional<Tensor> & bias,
@@ -111,6 +112,7 @@ using c10::DeviceType;
 
         return result;
     }
+
 
     // {"schema": "aten::convolution_backward_overrideable(Tensor grad_output, Tensor input, Tensor weight, int[] stride, int[] padding, int[] dilation, bool transposed, int[] output_padding, int groups, bool[3] output_mask) -> (Tensor grad_input, Tensor grad_weight, Tensor grad_bias)", "dispatch": "True", "default": "True"}
     ::std::tuple<Tensor,Tensor,Tensor> convolution_backward_overrideable(const Tensor & grad_output, const Tensor & input, const Tensor & weight, IntArrayRef stride, IntArrayRef padding, IntArrayRef dilation, bool transposed, IntArrayRef output_padding, int64_t groups, ::std::array<bool,3> output_mask)
@@ -184,7 +186,7 @@ using c10::DeviceType;
 
         return std::tuple<torch::Tensor,torch::Tensor,torch::Tensor>(data_diff,filter_diff,bias_diff);
     }
-
+#endif
     Tensor _adaptive_avg_pool2d(const Tensor & self, IntArrayRef output_size) // {"schema": "aten::_adaptive_avg_pool2d
     {
         GUARD;
@@ -841,8 +843,11 @@ using c10::DeviceType;
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
+#if VULKAN_API
+#else
       m.impl("aten::convolution_overrideable",&ptdlprim::convolution_overrideable);
       m.impl("aten::convolution_backward_overrideable",&ptdlprim::convolution_backward_overrideable);
+#endif
       m.impl("aten::_adaptive_avg_pool2d",&ptdlprim::_adaptive_avg_pool2d);
       m.impl("aten::_adaptive_avg_pool2d_backward",&ptdlprim::_adaptive_avg_pool2d_backward);
       m.impl("aten::avg_pool2d.out",&ptdlprim::avg_pool2d_out);

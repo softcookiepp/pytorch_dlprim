@@ -31,6 +31,7 @@ add_library(pt_ocl SHARED
         src/pointwise_ops.cpp
         src/tensor_ops.cpp
         src/vision_ops.cpp
+        src/conv.cpp
         src/loss_ops.cpp
         src/random_ops.cpp
         src/norm_ops.cpp
