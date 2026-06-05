@@ -1,4 +1,4 @@
-#if 0
+#if VULKAN_API
 
 #include "CLTensor.h"
 #include "utils.h"
@@ -32,7 +32,7 @@ using torch::autograd::AutogradContext;
 using c10::Device;
 using c10::DeviceType;
 
-#include "conv_template.hpp"
+//#include "conv_template.hpp"
 
 inline void slow_conv2d_shape_check(
 		const Tensor& input,
@@ -337,7 +337,7 @@ Tensor slow_conv_dilated2d_vk(
 	const Tensor bias_ = (bias.defined() ? bias.contiguous() : undefined);
 	Tensor output = at::empty(output_size, options.memory_format(memory_format));
 	Tensor output_ = (is_batch ? output : output.unsqueeze(0));
-
+#if 0
 	slow_conv_dilated_all_cpu_template_vk<2>(
 			output_,
 			input_,
@@ -352,6 +352,7 @@ Tensor slow_conv_dilated2d_vk(
 			pad_size,
 			dilation_size,
 			use_channels_last);
+#endif
 	return output;
 }
 
@@ -366,6 +367,9 @@ static torch::Tensor _convolution_nogroup_backend(
 		//const ConvBackend backend)
 	//	const ConvParams<int64_t>& params)
 {
+#if 1
+	throw std::runtime_error("not implemented!");
+#else
 	auto kernel_size = weight.sizes().slice(2);
 	size_t dims = input.shape().size() - 2;
 	bool dilated = std::any_of(dilation.cbegin(), dilation.cend(), [](const T& d) { return d != 1; });
@@ -425,6 +429,7 @@ static torch::Tensor _convolution_nogroup_backend(
 		default:
 			TORCH_CHECK(false, "Unsupported conv nogroup backend encountered");
 	}
+#endif
 #endif
 }
 

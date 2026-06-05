@@ -34,9 +34,13 @@ def test_fwd(inputs,call,device):
 				x_dev = x_cpu.to(device)
 			xs_cpu.append(x_cpu)
 			xs_dev.append(x_dev)
+	call_cpu = call
+	call_dev = copy.deepcopy(call)
+	if isinstance(call, torch.nn.Module):
+		call_dev.to(device)
 
-	y_cpu = call(*xs_cpu)
-	y_dev = call(*xs_dev)
+	y_cpu = call_cpu(*xs_cpu)
+	y_dev = call_dev(*xs_dev)
 
 	if get_diff(y_cpu,y_dev) > 1e-5:
 		raise Exception("Diff too big")
@@ -359,9 +363,13 @@ def test_all(device):
 	test_fwd_bwd_op([([8,10],-1)],torch.nn.Linear(10,5),device)
 	print("Linear 3d")
 	test_fwd_bwd_op([([2,6,10],-1)],torch.nn.Linear(10,5),device)
-
+	
+	#print("torch.ops.aten.im2col")
+	#test_fwd([([2,6,10,20],-1), ([3, 5], -1), ([1, 2], -1), [1, 2], [1, 1]], torch.ops.aten.im2col,device)
+	
 	print("Conv")
 	test_fwd_bwd_op([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)
+	#test_fwd([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2, bias = False),device)
 	print("ConvTr")
 	test_fwd_bwd_op([([2,6,10,20],-1)],torch.nn.ConvTranspose2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)
 	print("ConvTr pad")

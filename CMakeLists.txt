@@ -32,6 +32,7 @@ add_library(pt_ocl SHARED
         src/tensor_ops.cpp
         src/vision_ops.cpp
         src/conv.cpp
+        src/im2col.cpp
         src/loss_ops.cpp
         src/random_ops.cpp
         src/norm_ops.cpp
