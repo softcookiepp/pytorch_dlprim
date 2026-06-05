@@ -126,9 +126,13 @@ static void im2col_out_vk_template(
 		{
 			input_n = input.select(0, elt);
 			output_n = output.select(0, elt);
+			
+			dlprim::Tensor input_n_dp = todp(input_n);
+			dlprim::Tensor output_n_dp = todp(output_n);
 #if 1
 			throw std::runtime_error("almost implemented, but not quite!");
 #else
+			
 			im2col<scalar_t>(
 					at::cuda::getCurrentCUDAStream(),
 					input_n.const_data_ptr<scalar_t>(),
