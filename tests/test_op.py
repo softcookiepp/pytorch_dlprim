@@ -21,7 +21,7 @@ def get_diff(cpu,dev):
 		print(r)
 	return r
 
-def test_fwd(inputs,call,device):
+def test_fwd(inputs,call,device, *extra_args):
 	xs_cpu = []
 	xs_dev = []
 	with torch.no_grad():
@@ -34,9 +34,15 @@ def test_fwd(inputs,call,device):
 				x_dev = x_cpu.to(device)
 			xs_cpu.append(x_cpu)
 			xs_dev.append(x_dev)
+	
+	for arg in extra_args:
+		xs_cpu.append(arg)
+		xs_dev.append(arg)
+	
 	call_cpu = call
-	call_dev = copy.deepcopy(call)
+	call_dev = call
 	if isinstance(call, torch.nn.Module):
+		call_dev = copy.deepcopy(call)
 		call_dev.to(device)
 
 	y_cpu = call_cpu(*xs_cpu)
@@ -364,8 +370,8 @@ def test_all(device):
 	print("Linear 3d")
 	test_fwd_bwd_op([([2,6,10],-1)],torch.nn.Linear(10,5),device)
 	
-	#print("torch.ops.aten.im2col")
-	#test_fwd([([2,6,10,20],-1), ([3, 5], -1), ([1, 2], -1), [1, 2], [1, 1]], torch.ops.aten.im2col,device)
+	print("torch.ops.aten.im2col")
+	test_fwd([([2,6,10,20],-1)], torch.ops.aten.im2col,device, [3, 5], [1, 2], [1, 2], [1, 1])
 	
 	print("Conv")
 	test_fwd_bwd_op([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)

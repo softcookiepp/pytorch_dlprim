@@ -41,14 +41,25 @@ Tensor& im2col_out_vk(const Tensor& input,
 	return output;
 }
 
+Tensor im2col_vk(const Tensor& input,
+    IntArrayRef kernel_size,
+    IntArrayRef dilation,
+    IntArrayRef padding,
+    IntArrayRef stride)
+{
+	Tensor output;
+	throw std::runtime_error("not implemented!");
+	return output;
+}
+
 } // namespace ptdlprim
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m)
 {
 	//m.impl("aten::_slow_conv2d_forward", &ptdlprim::slow_conv2d_forward_vk);
 	//m.impl("aten::_slow_conv2d_forward.output", &ptdlprim::slow_conv2d_forward_out_vk);
-	//m.impl("aten::im2col",&ptdlprim::convolution_overrideable);
-	m.impl("aten::im2col.out",&ptdlprim::im2col_out_vk);
+	m.impl("aten::im2col", &ptdlprim::im2col_vk);
+	m.impl("aten::im2col.out", &ptdlprim::im2col_out_vk);
 }
 
 #endif
