@@ -1,4 +1,4 @@
-#if VULKAN_API
+#if 0
 
 #include "CLTensor.h"
 #include "utils.h"

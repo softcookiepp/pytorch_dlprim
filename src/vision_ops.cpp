@@ -57,7 +57,7 @@ using c10::DeviceType;
             return dlprim::core::Conv2DSettings(cfg_base,dlprim::core::Conv2DBase::get_output_shape_transposed(cfg_base,X.shape(),op),X.dtype());
         }
     }
-#if VULKAN_API
+#if 0
 #else
     Tensor convolution_overrideable(const Tensor & input,
                                     const Tensor & weight,
@@ -843,7 +843,7 @@ using c10::DeviceType;
 } // namespace
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-#if VULKAN_API
+#if 0
 #else
       m.impl("aten::convolution_overrideable",&ptdlprim::convolution_overrideable);
       m.impl("aten::convolution_backward_overrideable",&ptdlprim::convolution_backward_overrideable);
