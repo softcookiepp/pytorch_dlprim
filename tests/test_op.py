@@ -373,8 +373,10 @@ def test_all(device):
 	print("torch.ops.aten.im2col")
 	test_fwd([([2,6,8,8],-1)], torch.ops.aten.im2col,device, [3, 5], [1, 2], [1, 2], [1, 1])
 	
-	print("Conv (forward only)")
-	test_fwd([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)
+	print("Conv (forward only, no bias)")
+	test_fwd([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2, bias = False),device)
+	print("Conv (forward only, with bias)")
+	test_fwd([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2, bias = True),device)
 	
 	print("Conv")
 	test_fwd_bwd_op([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)
