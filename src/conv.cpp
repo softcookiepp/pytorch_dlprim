@@ -43,6 +43,7 @@ using c10::DeviceType;
 //#include "conv_template.hpp"
 
 #include "hvol2col.hpp"
+#include "conv_template.hpp"
 
 inline void slow_conv2d_shape_check(
 		const Tensor& input,
@@ -347,8 +348,8 @@ Tensor slow_conv_dilated2d_vk(
 	const Tensor bias_ = (bias.defined() ? bias.contiguous() : undefined);
 	Tensor output = at::empty(output_size, options.memory_format(memory_format));
 	Tensor output_ = (is_batch ? output : output.unsqueeze(0));
-#if 0
-	slow_conv_dilated_all_cpu_template_vk<2>(
+
+	slow_conv_dilated_all_vk_template(
 			output_,
 			input_,
 			weight_,
@@ -361,8 +362,8 @@ Tensor slow_conv_dilated2d_vk(
 			stride_size,
 			pad_size,
 			dilation_size,
-			use_channels_last);
-#endif
+			2);
+
 	return output;
 }
 
