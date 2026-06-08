@@ -131,8 +131,7 @@ static void im2col_out_vk_template(
 			
 			dlprim::Tensor input_n_dp = todp(input_n);
 			dlprim::Tensor output_n_dp = todp(output_n);
-#if 1
-			//throw std::runtime_error("almost implemented, but not quite!");
+
 			dlprim::gpu::im2col(q,
 				input_n_dp.device_buffer(),
 				input_n_dp.device_offset(),
@@ -154,26 +153,6 @@ static void im2col_out_vk_template(
 				input_n_dp.dtype());
 			
 			sync_if_needed(input.device());
-#else
-			
-			im2col<scalar_t>(
-					at::cuda::getCurrentCUDAStream(),
-					input_n.const_data_ptr<scalar_t>(),
-					n_input_plane,
-					input_height,
-					input_width,
-					output_height,
-					output_width,
-					kernel_height,
-					kernel_width,
-					pad_height,
-					pad_width,
-					stride_height,
-					stride_width,
-					dilation_height,
-					dilation_width,
-					output_n.mutable_data_ptr<scalar_t>());
-#endif
 		}
 	}
 	
