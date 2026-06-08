@@ -371,7 +371,7 @@ def test_all(device):
 	test_fwd_bwd_op([([2,6,10],-1)],torch.nn.Linear(10,5),device)
 	
 	print("torch.ops.aten.im2col")
-	test_fwd([([2,6,10,20],-1)], torch.ops.aten.im2col,device, [3, 5], [1, 2], [1, 2], [1, 1])
+	test_fwd([([2,6,8,8],-1)], torch.ops.aten.im2col,device, [3, 5], [1, 2], [1, 2], [1, 1])
 	
 	print("Conv")
 	test_fwd_bwd_op([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)

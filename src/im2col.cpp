@@ -11,7 +11,7 @@
 #include <dlprim/core/interpolate.hpp>
 #include <dlprim/core/bias.hpp>
 #include <dlprim/core/pool.hpp>
-#include <dlprim/gpu/gemm.hpp>
+#include <dlprim/gpu/im2col.hpp>
 
 #include <ATen/ops/_native_multi_head_attention_cpu_dispatch.h>
 #include <ATen/native/ConvUtils.h>
@@ -121,6 +121,8 @@ static void im2col_out_vk_template(
 		
 		Tensor input_n;
 		Tensor output_n;
+		
+		dlprim::ExecutionContext q = getExecutionContext(input);
 
 		for (int64_t elt = 0; elt < batch_size; elt++)
 		{
@@ -130,7 +132,28 @@ static void im2col_out_vk_template(
 			dlprim::Tensor input_n_dp = todp(input_n);
 			dlprim::Tensor output_n_dp = todp(output_n);
 #if 1
-			throw std::runtime_error("almost implemented, but not quite!");
+			//throw std::runtime_error("almost implemented, but not quite!");
+			dlprim::gpu::im2col(q,
+				input_n_dp.device_buffer(),
+				input_n_dp.device_offset(),
+				n_input_plane,
+				input_height,
+				input_width,
+				output_height,
+				output_width,
+				kernel_height,
+				kernel_width,
+				pad_height,
+				pad_width,
+				stride_height,
+				stride_width,
+				dilation_height,
+				dilation_width,
+				output_n_dp.device_buffer(),
+				output_n_dp.device_offset(),
+				input_n_dp.dtype());
+			
+			sync_if_needed(input.device());
 #else
 			
 			im2col<scalar_t>(
