@@ -3,6 +3,13 @@
 #include "CLTensor.h"
 #include "utils.h"
 
+#include <dlprim/ops/elementwise.hpp>
+#include <dlprim/gpu/program_cache.hpp>
+#include <dlprim/json.hpp>
+#include <dlprim/utils/json_helpers.hpp>
+#include <dlprim/cpu/cpu_ops.hpp>
+#include <dlprim/core/pointwise.hpp>
+
 #include <dlprim/core/util.hpp>
 #include <dlprim/core/pointwise.hpp>
 #include <dlprim/core/ip.hpp>
@@ -12,6 +19,7 @@
 #include <dlprim/core/bias.hpp>
 #include <dlprim/core/pool.hpp>
 #include <dlprim/gpu/gemm.hpp>
+#include <dlprim/gpu/im2col.hpp>
 
 #include <ATen/ops/_native_multi_head_attention_cpu_dispatch.h>
 #include <ATen/native/ConvUtils.h>
@@ -33,6 +41,8 @@ using c10::Device;
 using c10::DeviceType;
 
 //#include "conv_template.hpp"
+
+#include "hvol2col.hpp"
 
 inline void slow_conv2d_shape_check(
 		const Tensor& input,
@@ -356,10 +366,10 @@ Tensor slow_conv_dilated2d_vk(
 	return output;
 }
 
-static torch::Tensor _convolution_nogroup_backend(
-	const torch::Tensor& input,
-	const torch::Tensor& weight,
-	const torch::Tensor& bias,
+static Tensor _convolution_nogroup_backend(
+	const Tensor& input,
+	const Tensor& weight,
+	const Tensor& bias,
 	torch::IntArrayRef stride,
 	torch::IntArrayRef padding,
 	torch::IntArrayRef dilation,
@@ -367,12 +377,12 @@ static torch::Tensor _convolution_nogroup_backend(
 		//const ConvBackend backend)
 	//	const ConvParams<int64_t>& params)
 {
-#if 1
+#if 0
 	throw std::runtime_error("not implemented!");
 #else
 	auto kernel_size = weight.sizes().slice(2);
-	size_t dims = input.shape().size() - 2;
-	bool dilated = std::any_of(dilation.cbegin(), dilation.cend(), [](const T& d) { return d != 1; });
+	size_t dims = input.sizes().size() - 2;
+	bool dilated = std::any_of(dilation.cbegin(), dilation.cend(), [](const auto& d) { return d != 1; });
 	
 	if (dims == 3)
 	{
@@ -390,7 +400,7 @@ static torch::Tensor _convolution_nogroup_backend(
 			}
 		#endif
 	}
-	else
+	else if (dims == 2)
 	{
 		// 2d
 		if (transposed)
@@ -399,7 +409,7 @@ static torch::Tensor _convolution_nogroup_backend(
 		}
 		else if (dilated)
 		{
-			return slow_conv_dilated2d_vk(input, weight, kernel_size, bias, params.stride, params.padding, params.dilation);
+			return slow_conv_dilated2d_vk(input, weight, kernel_size, bias, stride, padding, dilation);
 		}
 		else
 		{
@@ -409,6 +419,10 @@ static torch::Tensor _convolution_nogroup_backend(
 				return thnn_conv2d_vk(input, weight, kernel_size, bias, params.stride, params.padding);
 			#endif
 		}
+	}
+	else
+	{
+		throw std::runtime_error("invalid dimensions");
 	}
 #if 0
 	switch(backend) {
