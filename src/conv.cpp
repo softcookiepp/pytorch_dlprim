@@ -377,9 +377,6 @@ static Tensor _convolution_nogroup_backend(
 		//const ConvBackend backend)
 	//	const ConvParams<int64_t>& params)
 {
-#if 0
-	throw std::runtime_error("not implemented!");
-#else
 	auto kernel_size = weight.sizes().slice(2);
 	size_t dims = input.sizes().size() - 2;
 	bool dilated = std::any_of(dilation.cbegin(), dilation.cend(), [](const auto& d) { return d != 1; });
@@ -424,7 +421,7 @@ static Tensor _convolution_nogroup_backend(
 	{
 		throw std::runtime_error("invalid dimensions");
 	}
-#if 0
+#if 0 // just a reference to the original torch code, so we have a guide regarding what to do next!
 	switch(backend) {
 		case ConvBackend::Slow2d:
 			return at::thnn_conv2d(input, weight, kernel_size, bias, params.stride, params.padding);
@@ -443,7 +440,6 @@ static Tensor _convolution_nogroup_backend(
 		default:
 			TORCH_CHECK(false, "Unsupported conv nogroup backend encountered");
 	}
-#endif
 #endif
 }
 
