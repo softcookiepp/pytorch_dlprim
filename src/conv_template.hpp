@@ -144,7 +144,6 @@ void slow_conv_dilated_all_vk_template(
 					input_n_dp.dtype(),
 					dim);
 #if 1
-				//throw std::runtime_error("not implemented!");
 				const float alpha = 1.0;
 				const float beta = 1.0;
 				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kNo, clblast::Transpose::kNo,
@@ -183,12 +182,30 @@ void slow_conv_dilated_all_vk_template(
 				// All gradients
 				grad_output_n = grad_output.select(0, elt);
 			}
+			
+			dlprim::Tensor grad_output_n_dp;
+			
+			if (grad_output_n.defined())
+			{
+				grad_output_n_dp = todp(grad_output_n);
+			}
 
 			// Gradient of input:
 			if (grad_input.defined())
 			{
 #if 1
-				throw std::runtime_error("not implemented!");
+				const float alpha = 1.0;
+				const float beta = 1.0;
+				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kNo, clblast::Transpose::kYes,
+					columns.size(1),
+					columns.size(0),
+					nOutputPlane,
+					alpha,
+					grad_output_n_dp.device_buffer(), grad_output_n_dp.device_offset(), columns.size(1), // a
+					weight_dp.device_buffer(), weight_dp.device_offset(), columns.size(0), // b
+					beta,
+					columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // c
+					stream.queue());
 #else
 				/* For gemm argument derivation, see
 					 slow_conv_dilated_all_cuda_template in
@@ -211,7 +228,7 @@ void slow_conv_dilated_all_vk_template(
 				// Unpack columns back into input:
 				Tensor grad_input_n = grad_input.select(0, elt);
 #if 1
-				throw std::runtime_error("not implemented!");
+				throw std::runtime_error("col2hvol not implemented!");
 #else
 				col2hvol<scalar_t, dim>(
 						stream,
