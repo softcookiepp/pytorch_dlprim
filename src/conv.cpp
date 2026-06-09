@@ -444,6 +444,46 @@ static Tensor _convolution_nogroup_backend(
 #endif
 }
 
+static std::tuple<at::Tensor, at::Tensor, at::Tensor> _convolution_backward_nogroup_backend(
+		const Tensor& grad_output,
+		const Tensor& input,
+		const Tensor& weight,
+		torch::IntArrayRef stride,
+		torch::IntArrayRef padding,
+		torch::IntArrayRef dilation,
+		bool transposed,
+		const std::array<bool, 3> output_mask)
+{
+	auto kernel_size = weight.sizes().slice(2);
+#if 1
+	size_t dims = input.sizes().size() - 2;
+	bool dilated = std::any_of(dilation.cbegin(), dilation.cend(), [](const auto& d) { return d != 1; });
+	throw std::runtime_error("still not implemented :c");
+	return std::make_tuple(grad_output, input, weight);
+#else
+	switch(backend) {
+		case ConvBackend::SlowDilated2d:
+			return slow_conv_dilated2d_backward_stub(
+				input.device().type(),
+				grad_output, input, weight, kernel_size, params.stride, params.padding, params.dilation, output_mask);
+		case ConvBackend::SlowDilated3d:
+			return slow_conv_dilated3d_backward_stub(
+				input.device().type(),
+				grad_output, input, weight, kernel_size, params.stride, params.padding, params.dilation, output_mask);
+		case ConvBackend::SlowTranspose2d:
+			return slow_conv_transpose2d_backward_stub(
+				input.device().type(), grad_output, input, weight, kernel_size, params.stride, params.padding,
+				params.output_padding, params.dilation, output_mask);
+		case ConvBackend::SlowTranspose3d:
+			return slow_conv_transpose3d_backward_stub(
+				input.device().type(), grad_output, input, weight, kernel_size, params.stride, params.padding,
+				params.output_padding, params.dilation, output_mask);
+		default:
+			TORCH_CHECK(false, "Unsupported conv nogroup backend encountered");
+	}
+#endif
+}
+
 static torch::Tensor subtensor(const torch::Tensor& tensor, int64_t dim, int64_t groups, int64_t g)
 {
 	if (!tensor.defined())
@@ -506,9 +546,44 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> convolution_backward_overr
 		int64_t groups, std::array<bool,3> output_mask)
 {
 	GUARD;
-	throw std::runtime_error("not implemented!");
-	std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> res;
-	return res;
+	Tensor backend_grad_input, backend_grad_weight, backend_grad_bias;
+	auto kernel_size = weight.sizes().slice(2);
+	
+	{
+		auto input_contiguous = input.contiguous();
+		auto weight_contiguous = weight.contiguous();
+		if (groups == 1)
+		{
+			std::tie(backend_grad_input, backend_grad_weight, backend_grad_bias) =
+				_convolution_backward_nogroup_backend(
+					grad_output, input_contiguous, weight_contiguous, stride, padding, dilation, transposed, output_mask);
+		}
+		else
+		{
+			std::vector<Tensor> backend_grad_inputs(groups);
+			std::vector<Tensor> backend_grad_weights(groups);
+			std::vector<Tensor> backend_grad_biases(groups);
+			for (int g = 0; g < groups; ++g) {
+				auto grad_output_g = subtensor(grad_output, 1, groups, g);
+				auto input_g = subtensor(input_contiguous, 1, groups, g);
+				auto weight_g = subtensor(weight_contiguous, 0, groups, g);
+				std::tie(backend_grad_inputs[g], backend_grad_weights[g], backend_grad_biases[g]) =
+					_convolution_backward_nogroup_backend(
+						grad_output_g, input_g, weight_g, stride, padding, dilation, transposed, output_mask);
+			}
+			if (output_mask[0]) {
+				backend_grad_input = at::cat(backend_grad_inputs, 1);
+			}
+			if (output_mask[1]) {
+				backend_grad_weight = at::cat(backend_grad_weights, 0);
+			}
+			if (output_mask[2]) {
+				backend_grad_bias = at::cat(backend_grad_biases, 0);
+			}
+		}
+	}
+	
+	return std::make_tuple(std::move(backend_grad_input), std::move(backend_grad_weight), std::move(backend_grad_bias));
 }
 
 Tensor slow_conv2d_forward_vk(
