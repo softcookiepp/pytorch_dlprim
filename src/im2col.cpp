@@ -254,7 +254,35 @@ void col2im_out_vk_template(
 						stride_width +
 				1;
 #if 1
-		throw std::runtime_error("col2im_batched not implemented!");
+		//throw std::runtime_error("col2im_batched not implemented!");
+		
+		dlprim::ExecutionContext q = getExecutionContext(output);
+		dlprim::Tensor input_dp = todp(input);
+		dlprim::Tensor output_dp = todp(output);
+		
+		dlprim::gpu::col2im_batched(q,
+			input_dp.device_buffer(),
+			input_dp.device_offset(),
+			input_batch_stride,
+			batch_size,
+			n_output_plane,
+			output_height,
+			output_width,
+			height_col,
+			width_col,
+			kernel_height,
+			kernel_width,
+			pad_height,
+			pad_width,
+			stride_height,
+			stride_width,
+			dilation_height,
+			dilation_width,
+			output_dp.device_buffer(),
+			output_dp.device_offset(),
+			output_batch_stride,
+			output_dp.dtype());
+		
 #else
 		col2im_batched(
 				at::cuda::getCurrentCUDAStream(),

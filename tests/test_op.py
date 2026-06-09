@@ -21,7 +21,7 @@ def get_diff(cpu,dev):
 		print(r)
 	return r
 
-def test_fwd(inputs,call,device, *extra_args):
+def test_fwd(inputs,call,device, *extra_args, print_results = False):
 	xs_cpu = []
 	xs_dev = []
 	with torch.no_grad():
@@ -51,6 +51,9 @@ def test_fwd(inputs,call,device, *extra_args):
 	if get_diff(y_cpu,y_dev) > 1e-5:
 		raise Exception("Diff too big")
 	print("Ok")
+	if print_results:
+		print(y_dev)
+		print(y_dev.shape)
 
 def test_fwd_bwd_op(inputs,call,device,randgen=torch.randn,paramgen = None):
 	xs_cpu = []
@@ -372,6 +375,8 @@ def test_all(device):
 	
 	print("torch.ops.aten.im2col")
 	test_fwd([([2,6,8,8],-1)], torch.ops.aten.im2col,device, [3, 5], [1, 2], [1, 2], [1, 1])
+	print("torch.ops.aten.col2im")
+	test_fwd([([2, 90, 20],-1)], torch.ops.aten.col2im,device, [3, 5], [2, 3], [1, 2], [1, 2], [1, 1])
 	
 	print("Conv (forward only, no bias)")
 	test_fwd([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2, bias = False),device)
