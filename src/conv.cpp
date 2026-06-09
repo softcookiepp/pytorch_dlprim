@@ -29,6 +29,8 @@
 
 #include <clblast_vk.h>
 
+#include "hvol2col.hpp"
+
 namespace ptdlprim
 {
 
@@ -42,7 +44,8 @@ using c10::DeviceType;
 
 //#include "conv_template.hpp"
 
-#include "hvol2col.hpp"
+
+
 #include "conv_template.hpp"
 
 inline void slow_conv2d_shape_check(

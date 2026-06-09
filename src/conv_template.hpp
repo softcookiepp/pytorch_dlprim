@@ -278,7 +278,21 @@ void slow_conv_dilated_all_vk_template(
 					columns_dp.dtype(),
 					dim);
 #if 1
-				throw std::runtime_error("not implemented!");
+				const float alpha = 1.0;
+				const float beta = 1.0;
+				
+				dlprim::Tensor grad_weight_dp = todp(grad_weight);
+				
+				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kYes, clblast::Transpose::kNo,
+					columns.size(0),
+					nOutputPlane,
+					columns.size(1),
+					alpha,
+					columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // a
+					grad_output_n_dp.device_buffer(), grad_output_n_dp.device_offset(), columns.size(1), // b
+					beta,
+					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(), columns.size(0), // c
+					stream.queue());
 #else
 				scalar_t scale = static_cast<scalar_t>(
 						1); // TODO: expose as argument?
