@@ -227,8 +227,23 @@ void slow_conv_dilated_all_vk_template(
 #endif
 				// Unpack columns back into input:
 				Tensor grad_input_n = grad_input.select(0, elt);
+				dlprim::Tensor grad_input_n_dp = todp(grad_input_n);
 #if 1
-				throw std::runtime_error("col2hvol not implemented!");
+				col2hvol(
+						stream,
+						columns_dp.device_buffer(),
+						columns_dp.device_offset(),
+						nInputPlane,
+						input_size,
+						output_size,
+						kernel_size,
+						stride_size,
+						pad_size,
+						dilation_size,
+						grad_input_n_dp.device_buffer(),
+						grad_input_n_dp.device_offset(),
+						grad_input_n_dp.dtype(),
+						dim);
 #else
 				col2hvol<scalar_t, dim>(
 						stream,
