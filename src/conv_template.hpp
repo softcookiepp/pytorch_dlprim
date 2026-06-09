@@ -145,13 +145,18 @@ void slow_conv_dilated_all_vk_template(
 					dim);
 #if 1
 				//throw std::runtime_error("not implemented!");
-				// now to see if dlprim gemm can be used here.
-				auto gemm_op = dlprim::gpu::GEMM::get_optimal_gemm(ctx, input_n_dp.dtype(), false, false, columns.size(1), nOutputPlane, columns.size(0));
-				gemm_op->gemm(columns.size(1), nOutputPlane, columns.size(0),
-						columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1),
-						weight_dp.device_buffer(), weight_dp.device_offset(), columns.size(0),
-						output_n_dp.device_buffer(), output_n_dp.device_offset(), columns.size(1),
-						nullptr, 0, 1.0, columns.size(1)*nOutputPlane, stream);
+				const float alpha = 1.0;
+				const float beta = 1.0;
+				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kNo, clblast::Transpose::kNo,
+					columns.size(1),
+					nOutputPlane,
+					columns.size(0),
+					alpha,
+					columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1),
+					weight_dp.device_buffer(), weight_dp.device_offset(), columns.size(0),
+					beta,
+					output_n_dp.device_buffer(), output_n_dp.device_offset(), columns.size(1),
+					stream.queue());
 #else
 				/* For gemm argument derivation, see
 					 slow_conv_dilated_all_cuda_template in
