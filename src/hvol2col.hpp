@@ -119,10 +119,12 @@ void col2hvol(
 	}
 	if (dim == 2)
 	{
-		dlprim::gpu::col2im(
+		dlprim::gpu::col2im_batched(
 			stream,
 			data_col,
 			data_col_offset,
+			0,
+			1,
 			channels,
 			input_size[0],
 			input_size[1],
@@ -138,7 +140,7 @@ void col2hvol(
 			dilation_size[1],
 			data_hvol,
 			data_hvol_offset,
-			Dtype,
+			0,
 			Dtype);
 	}
 }

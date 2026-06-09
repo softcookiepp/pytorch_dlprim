@@ -195,7 +195,7 @@ void slow_conv_dilated_all_vk_template(
 			{
 #if 1
 				const float alpha = 1.0;
-				const float beta = 1.0;
+				const float beta = 0.0;
 				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kNo, clblast::Transpose::kYes,
 					columns.size(1),
 					columns.size(0),
