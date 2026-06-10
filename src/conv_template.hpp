@@ -143,7 +143,6 @@ void slow_conv_dilated_all_vk_template(
 					columns_dp.device_offset(),
 					input_n_dp.dtype(),
 					dim);
-#if 1
 				const float alpha = 1.0;
 				const float beta = 1.0;
 				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kNo, clblast::Transpose::kNo,
@@ -156,26 +155,6 @@ void slow_conv_dilated_all_vk_template(
 					beta,
 					output_n_dp.device_buffer(), output_n_dp.device_offset(), columns.size(1),
 					stream.queue());
-#else
-				/* For gemm argument derivation, see
-					 slow_conv_dilated_all_cuda_template in
-					 ATen/native/DilatedConvolution.cpp */
-				at::cuda::blas::gemm<scalar_t>(
-						/*transa=*/'n',
-						/*transb=*/'n',
-						/*		 m=*/columns.size(1),
-						/*		 n=*/nOutputPlane,
-						/*		 k=*/columns.size(0),
-						/* alpha=*/static_cast<scalar_t>(1),
-						/*		 A=*/columns.const_data_ptr<scalar_t>(),
-						/*	 lda=*/columns.size(1),
-						/*		 B=*/weight.const_data_ptr<scalar_t>(),
-						/*	 ldb=*/columns.size(0),
-						/*	beta=*/static_cast<scalar_t>(1),
-						/*		 C=*/output_n.mutable_data_ptr<scalar_t>(),
-						/*	 ldc=*/columns.size(1));
-#endif
-
 			}
 			else
 			{
@@ -193,7 +172,6 @@ void slow_conv_dilated_all_vk_template(
 			// Gradient of input:
 			if (grad_input.defined())
 			{
-#if 1
 				const float alpha = 1.0;
 				const float beta = 0.0;
 				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kNo, clblast::Transpose::kYes,
@@ -206,29 +184,10 @@ void slow_conv_dilated_all_vk_template(
 					beta,
 					columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // c
 					stream.queue());
-#else
-				/* For gemm argument derivation, see
-					 slow_conv_dilated_all_cuda_template in
-					 ATen/native/DilatedConvolution.cpp */
-				at::cuda::blas::gemm<scalar_t>(
-						/*transa=*/'n',
-						/*transb=*/'t',
-						/*		 m=*/columns.size(1),
-						/*		 n=*/columns.size(0),
-						/*		 k=*/nOutputPlane,
-						/* alpha=*/static_cast<scalar_t>(1),
-						/*		 A=*/grad_output_n.const_data_ptr<scalar_t>(),
-						/*	 lda=*/columns.size(1),
-						/*		 B=*/weight.const_data_ptr<scalar_t>(),
-						/*	 ldb=*/columns.size(0),
-						/*	beta=*/static_cast<scalar_t>(0),
-						/*		 C=*/columns.mutable_data_ptr<scalar_t>(),
-						/*	 ldc=*/columns.size(1));
-#endif
+					
 				// Unpack columns back into input:
 				Tensor grad_input_n = grad_input.select(0, elt);
 				dlprim::Tensor grad_input_n_dp = todp(grad_input_n);
-#if 1
 				col2hvol(
 						stream,
 						columns_dp.device_buffer(),
@@ -244,19 +203,6 @@ void slow_conv_dilated_all_vk_template(
 						grad_input_n_dp.device_offset(),
 						grad_input_n_dp.dtype(),
 						dim);
-#else
-				col2hvol<scalar_t, dim>(
-						stream,
-						columns.const_data_ptr<scalar_t>(),
-						nInputPlane,
-						input_size,
-						output_size,
-						kernel_size,
-						stride_size,
-						pad_size,
-						dilation_size,
-						grad_input_n.mutable_data_ptr<scalar_t>());
-#endif
 			}
 
 			// Gradient of weight:
@@ -277,7 +223,7 @@ void slow_conv_dilated_all_vk_template(
 					columns_dp.device_offset(),
 					columns_dp.dtype(),
 					dim);
-#if 1
+					
 				const float alpha = 1.0;
 				const float beta = 1.0;
 				
@@ -293,28 +239,6 @@ void slow_conv_dilated_all_vk_template(
 					beta,
 					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(), columns.size(0), // c
 					stream.queue());
-#else
-				scalar_t scale = static_cast<scalar_t>(
-						1); // TODO: expose as argument?
-				/* For gemm argument derivation, see
-					 slow_conv_dilated_all_cuda_template in
-					 ATen/native/DilatedConvolution.cpp */
-
-				at::cuda::blas::gemm<scalar_t>(
-						/*transa=*/'t',
-						/*transb=*/'n',
-						/*		 m=*/columns.size(0),
-						/*		 n=*/nOutputPlane,
-						/*		 k=*/columns.size(1),
-						/* alpha=*/scale,
-						/*		 A=*/columns.const_data_ptr<scalar_t>(),
-						/*	 lda=*/columns.size(1),
-						/*		 B=*/grad_output_n.const_data_ptr<scalar_t>(),
-						/*	 ldb=*/columns.size(1),
-						/*	beta=*/static_cast<scalar_t>(1),
-						/*		 C=*/grad_weight.mutable_data_ptr<scalar_t>(),
-						/*	 ldc=*/columns.size(0));
-#endif
 			}
 
 			// Gradient of bias:
