@@ -273,13 +273,6 @@ void slow_conv_transpose2d_out_vk_template(
 		IntArrayRef output_padding,
 		IntArrayRef dilation)
 {
-	TensorArg input_arg{input, "input", 1}, output_arg{output, "output", 2},
-			weight_arg{weight, "weight", 3}, bias_arg{bias, "bias", 4};
-#if 0
-	checkAllSameGPU(
-			__func__,
-			{input_arg, output_arg, weight_arg, bias_arg});
-#endif
 	int n_input_plane = weight.size(0);
 	int n_output_plane = weight.size(1);
 
@@ -452,7 +445,7 @@ void slow_conv_transpose2d_out_vk_template(
 
 			// Do GEMM (note: this is a bit confusing because gemm assumes
 			// column-major matrices)
-			if (bias.defined())
+			if (bias.defined() && bias_.defined())
 			{
 #if 1
 				dlprim::Tensor bias_dp = todp(bias_);
@@ -754,7 +747,6 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 
 			if (need_columns)
 			{
-#if 1
 				dlprim::gpu::im2col(
 					stream,
 					grad_output_n_dp.device_buffer(),
@@ -775,25 +767,6 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 					grad_columns_dp.device_buffer(),
 					grad_columns_dp.device_offset(),
 					grad_columns_dp.dtype());
-#else
-				im2col<scalar_t>(
-						at::cuda::getCurrentCUDAStream(),
-						grad_output_n.const_data_ptr<scalar_t>(),
-						n_output_plane,
-						output_height,
-						output_width,
-						input_height,
-						input_width,
-						kernel_height,
-						kernel_width,
-						pad_height,
-						pad_width,
-						stride_height,
-						stride_width,
-						dilation_height,
-						dilation_width,
-						grad_columns.mutable_data_ptr<scalar_t>());
-#endif
 			}
 
 			// M,N,K are dims of matrix A and B
@@ -857,4 +830,251 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 #if 0
 	); // end of dispatch
 #endif
+}
+
+void slow_conv_transpose2d_acc_grad_parameters_vk_template(
+		const Tensor& input_,
+		const Tensor& grad_output_,
+		Tensor& grad_weight,
+		Tensor& grad_bias,
+		IntArrayRef kernel_size,
+		IntArrayRef stride,
+		IntArrayRef padding,
+		IntArrayRef output_padding,
+		IntArrayRef dilation,
+		int scale_)
+{
+	TORCH_CHECK(
+			kernel_size.size() == 2,
+			"It is expected kernel_size equals to 2, but got size ",
+			kernel_size.size());
+
+	TORCH_CHECK(
+			dilation.size() == 2,
+			"It is expected dilation equals to 2, but got size ",
+			dilation.size());
+
+	TORCH_CHECK(
+			padding.size() == 2,
+			"It is expected padding equals to 2, but got size ",
+			padding.size());
+
+	TORCH_CHECK(
+			stride.size() == 2,
+			"It is expected stride equals to 2, but got size ",
+			stride.size());
+
+	TORCH_CHECK(
+			output_padding.size() == 2,
+			"It is expected stride equals to 2, but got size ",
+			output_padding.size());
+
+	dlprim::ExecutionContext stream = getExecutionContext(input_);
+	dlprim::Context ctx(stream);
+
+	int64_t kernel_height = kernel_size[0];
+	int64_t kernel_width = kernel_size[1];
+	int64_t dilation_height = dilation[0];
+	int64_t dilation_width = dilation[1];
+	int64_t pad_height = padding[0];
+	int64_t pad_width = padding[1];
+	int64_t stride_height = stride[0];
+	int64_t stride_width = stride[1];
+	int64_t output_padding_height = output_padding[0];
+	int64_t output_padding_width = output_padding[1];
+
+	slow_conv_transpose2d_shape_check(
+			input_,
+			grad_output_,
+			grad_weight,
+			grad_bias,
+			kernel_height,
+			kernel_width,
+			stride_height,
+			stride_width,
+			pad_height,
+			pad_width,
+			output_padding_height,
+			output_padding_width,
+			dilation_height,
+			dilation_width,
+			true);
+
+	Tensor input = input_.contiguous();
+	Tensor grad_output = grad_output_.contiguous();
+
+	int64_t n_output_plane;
+	if (grad_weight.defined()) {
+		n_output_plane = grad_weight.size(1);
+	} else if (grad_bias.defined()) {
+		n_output_plane = grad_bias.size(0);
+	} else {
+		return;
+	}
+
+	if (grad_weight.defined()) {
+		TORCH_CHECK(
+				grad_weight.is_contiguous(), "grad_weight needs to be contiguous");
+	}
+
+	if (grad_bias.defined()) {
+		TORCH_CHECK(grad_bias.is_contiguous(), "grad_bias needs to be contiguous");
+	}
+
+	bool is_batch = false;
+	if (input.dim() == 3) {
+		// Force batch
+		is_batch = true;
+		input.resize_({1, input.size(0), input.size(1), input.size(2)});
+		grad_output.resize_(
+				{1, grad_output.size(0), grad_output.size(1), grad_output.size(2)});
+	}
+
+	int64_t input_width = input.size(3);
+	int64_t input_height = input.size(2);
+	int64_t output_height = (input_height - 1) * stride_height - 2 * pad_height +
+			(dilation_height * (kernel_height - 1) + 1) + output_padding_height;
+	int64_t output_width = (input_width - 1) * stride_width - 2 * pad_width +
+			(dilation_width * (kernel_width - 1) + 1) + output_padding_width;
+
+	// Batch size + input planes
+	int64_t batch_size = input.size(0);
+
+	// Create temporary columns
+	bool need_columns = (kernel_height != 1 || kernel_width != 1 || stride_height != 1 ||
+			stride_width != 1 || pad_height != 0 || pad_width != 0 ||
+			dilation_height != 1 || dilation_width != 1);
+	Tensor columns = need_columns ? at::empty({n_output_plane * kernel_width * kernel_height,
+			input_height * input_width}, input.options()) : Tensor();
+
+	{
+		// Helpers
+		Tensor input_n = Tensor();
+		
+		Tensor grad_output_n = Tensor();
+		float scale = scale_;
+
+		// For each elt in batch, do:
+		for (int elt = 0; elt < batch_size; elt++)
+		{
+			// Matrix multiply per output:
+			grad_output_n = grad_output.select(0, elt);
+			dlprim::Tensor grad_output_n_dp = todp(grad_output_n);
+
+			// Do Weight:
+			if (grad_weight.defined())
+			{
+				// Matrix multiply per output:
+				input_n = input.select(0, elt);
+				dlprim::Tensor input_n_dp = todp(input_n);
+				dlprim::Tensor grad_weight_dp = todp(grad_weight);
+				dlprim::Tensor columns_dp = todp(columns);
+				if (need_columns)
+				{
+#if 1
+					dlprim::gpu::im2col(
+						stream,
+						grad_output_n_dp.device_buffer(),
+						grad_output_n_dp.device_offset(),
+						n_output_plane,
+						output_height,
+						output_width,
+						input_height,
+						input_width,
+						kernel_height,
+						kernel_width,
+						pad_height,
+						pad_width,
+						stride_height,
+						stride_width,
+						dilation_height,
+						dilation_width,
+						columns_dp.device_buffer(),
+						columns_dp.device_offset(),
+						columns_dp.dtype());
+#else
+					// Extract columns:
+					im2col<scalar_t>(
+							at::cuda::getCurrentCUDAStream(),
+							grad_output_n.const_data_ptr<scalar_t>(),
+							n_output_plane,
+							output_height,
+							output_width,
+							input_height,
+							input_width,
+							kernel_height,
+							kernel_width,
+							pad_height,
+							pad_width,
+							stride_height,
+							stride_width,
+							dilation_height,
+							dilation_width,
+							columns.mutable_data_ptr<scalar_t>());
+#endif
+				}
+
+
+				// M,N,K are dims of matrix A and B
+				// (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
+				int64_t n = n_output_plane * kernel_height * kernel_width;
+				int64_t m = input_n.size(0); // n_input_plane
+				int64_t k = input_height * input_width;
+#if 1
+				auto gemm_in_ptr = need_columns ? columns_dp.device_buffer()
+						: grad_output_n_dp.device_buffer();
+						
+				auto gemm_in_offset = need_columns ? columns_dp.device_offset()
+						: grad_output_n_dp.device_offset();
+				
+				const float beta = 1.0;
+				
+				clblast::Gemm(clblast::Layout::kColMajor,
+					clblast::Transpose::kYes,
+					clblast::Transpose::kNo,
+					n,
+					m,
+					k,
+					scale,
+					gemm_in_ptr, gemm_in_offset,
+					k,
+					input_n_dp.device_buffer(), input_n_dp.device_offset(),
+					k,
+					beta,
+					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(),
+					n,
+					stream.queue());
+#else
+				// Do GEMM (note: this is a bit confusing because gemm assumes
+				// column-major matrices)
+				auto gemm_in_ptr = need_columns ? columns.const_data_ptr<scalar_t>()
+						: grad_output_n.const_data_ptr<scalar_t>();
+				at::cuda::blas::gemm<scalar_t>(
+						't',
+						'n',
+						n,
+						m,
+						k,
+						scale,
+						gemm_in_ptr,
+						k,
+						input_n.const_data_ptr<scalar_t>(),
+						k,
+						1,
+						grad_weight_dp.mutable_data_ptr<scalar_t>(),
+						n);
+#endif
+			}
+		}
+
+		if (grad_bias.defined()) {
+			at::sum_out(grad_bias, grad_output, IntArrayRef{0, 2, 3});
+		}
+
+		// Resize
+		if (is_batch) {
+			grad_output.resize_({n_output_plane, output_height, output_width});
+			input.resize_({input.size(1), input_height, input_width});
+		}
+	}
 }

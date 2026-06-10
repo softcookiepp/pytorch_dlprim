@@ -59,7 +59,8 @@ inline void slow_conv2d_shape_check(
 		int64_t stride_width,
 		int64_t pad_height,
 		int64_t pad_width,
-		bool weight_optional) {
+		bool weight_optional)
+{
 	TORCH_CHECK(
 			kernel_width > 0 && kernel_height > 0,
 			"kernel size should be greater than zero, but got kernel_height: ",
@@ -369,13 +370,15 @@ Tensor slow_conv_transpose2d_vk(
 	const Tensor& input,
 	const Tensor& weight,
 	IntArrayRef kernel_size,
-	OptionalTensorRef bias_opt,
+	//const Tensor& bias_opt,
+	const Tensor& bias,
 	IntArrayRef stride,
 	IntArrayRef padding,
 	IntArrayRef output_padding,
 	IntArrayRef dilation)
 {
-	const Tensor& bias = bias_opt.getTensorRef();
+	//c10::MaybeOwned<Tensor> bias_maybe_owned = at::borrow_from_optional_tensor(bias_opt);
+	//const Tensor& bias = *bias_maybe_owned;
 	std::vector<int64_t> output_size = get_conv_transpose2d_output_size(
 		input, weight, kernel_size, stride, padding, output_padding, dilation);
 	
@@ -457,10 +460,7 @@ std::tuple<Tensor, Tensor, Tensor> slow_conv_transpose2d_backward_vk(
 
 	if (grad_weight.defined() || grad_bias.defined())
 	{
-#if 1
-		throw std::runtime_error("AND WHAT ON EARTH ARE YOU DOING HERE???");
-#else
-		slow_conv_transpose2d_acc_grad_parameters_cuda_template(
+		slow_conv_transpose2d_acc_grad_parameters_vk_template(
 				input,
 				grad_output,
 				grad_weight,
@@ -471,7 +471,6 @@ std::tuple<Tensor, Tensor, Tensor> slow_conv_transpose2d_backward_vk(
 				output_padding,
 				dilation,
 				1);
-#endif
 	}
 
 	return std::tuple<Tensor, Tensor, Tensor>(grad_input, grad_weight, grad_bias);
