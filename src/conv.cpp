@@ -397,6 +397,7 @@ Tensor slow_conv_transpose2d_vk(
 	return output;
 }
 
+
 std::tuple<Tensor, Tensor, Tensor> slow_conv_transpose2d_backward_vk(
 		const Tensor& grad_output,
 		const Tensor& input,
@@ -432,10 +433,7 @@ std::tuple<Tensor, Tensor, Tensor> slow_conv_transpose2d_backward_vk(
 
 	if (grad_input.defined())
 	{
-#if 1
-		throw std::runtime_error("WHAT ARE YOU DOING HERE?");
-#else
-		slow_conv_transpose2d_backward_out_cuda_template(
+		slow_conv_transpose2d_backward_out_vk_template(
 				input,
 				grad_output,
 				grad_input,
@@ -445,7 +443,6 @@ std::tuple<Tensor, Tensor, Tensor> slow_conv_transpose2d_backward_vk(
 				padding,
 				output_padding,
 				dilation);
-#endif
 	}
 
 	if (grad_weight.defined()) {

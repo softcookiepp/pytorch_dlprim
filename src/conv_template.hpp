@@ -259,7 +259,7 @@ void slow_conv_dilated_all_vk_template(
 	);
 #endif
 
-} // slow_conv_dilated_all_cuda_template
+} // slow_conv_dilated_all_vk_template
 
 
 void slow_conv_transpose2d_out_vk_template(
@@ -501,6 +501,357 @@ void slow_conv_transpose2d_out_vk_template(
 		if (is_batch) {
 			output.resize_({n_output_plane, output_height, output_width});
 			input_.resize_({n_input_plane, input_height, input_width});
+		}
+	}
+#if 0
+	); // end of dispatch
+#endif
+}
+
+
+static inline void slow_conv_transpose2d_shape_check(
+		const Tensor& input,
+		const Tensor& grad_output,
+		const Tensor& weight,
+		const Tensor& bias,
+		int kernel_height,
+		int kernel_width,
+		int stride_height,
+		int stride_width,
+		int pad_height,
+		int pad_width,
+		int output_padding_height,
+		int output_padding_width,
+		int dilation_height,
+		int dilation_width,
+		bool weight_nullable)
+{
+	TORCH_CHECK(
+			kernel_width > 0 && kernel_height > 0,
+			"kernel size should be greater than zero, but got kernel_height: ",
+			kernel_height,
+			" kernel_width: ",
+			kernel_width);
+	TORCH_CHECK(
+			stride_width > 0 && stride_height > 0,
+			"stride should be greater than zero, but got stride_height: ",
+			stride_height,
+			" stride_width: ",
+			stride_width);
+	TORCH_CHECK(
+			dilation_width > 0 && dilation_height > 0,
+			"dilation should be greater than zero, but got dilation_height: ",
+			dilation_height,
+			", dilation_width: ",
+			dilation_width);
+	TORCH_CHECK(
+			(output_padding_width < stride_width ||
+			 output_padding_width < dilation_width) &&
+					(output_padding_height < stride_height ||
+					 output_padding_height < dilation_height),
+			"output padding must be smaller than either stride or dilation, ",
+			"but got output_padding_height: ",
+			output_padding_height,
+			" output_padding_width: ",
+			output_padding_width,
+			" stride_height: ",
+			stride_height,
+			" stride_width: ",
+			stride_width,
+			" dilation_height: ",
+			dilation_height,
+			" dilation_width: ",
+			dilation_width);
+
+	if (weight.defined()) {
+		TORCH_CHECK(
+				weight.numel() != 0 && (weight.dim() == 2 || weight.dim() == 4),
+				"non-empty 2D or 4D weight tensor expected, but got: ",
+				weight.sizes());
+		if (bias.defined()) {
+			check_dim_size(bias, 1, 0, weight.size(1));
+		}
+	} else if (!weight_nullable) {
+		TORCH_CHECK(false, "weight tensor is expected to be non-nullable");
+	}
+
+	int ndim = input.dim();
+	int dimf = 0;
+	int dimh = 1;
+	int dimw = 2;
+
+	if (ndim == 4) {
+		dimf++;
+		dimh++;
+		dimw++;
+	}
+
+	TORCH_CHECK(
+			input.numel() != 0 && (ndim == 3 || ndim == 4),
+			"non-empty 3D or 4D input tensor expected but got a tensor with size ",
+			input.sizes());
+
+	int64_t input_height = input.size(dimh);
+	int64_t input_width = input.size(dimw);
+	int64_t output_height = (input_height - 1) * stride_height - 2 * pad_height +
+			(dilation_height * (kernel_height - 1) + 1) + output_padding_height;
+	int64_t output_width = (input_width - 1) * stride_width - 2 * pad_width +
+			(dilation_width * (kernel_width - 1) + 1) + output_padding_width;
+
+	if (output_width < 1 || output_height < 1) {
+		TORCH_CHECK(false,
+				"Given input size per channel: (",
+				input_height,
+				" x ",
+				input_width,
+				"). Calculated output spatial size per channel: (",
+				output_height,
+				" x ",
+				output_width,
+				"). Output size is too small");
+	}
+
+	if (weight.defined()) {
+		int64_t n_input_plane = weight.size(0);
+		check_dim_size(input, ndim, dimf, n_input_plane);
+	}
+
+	if (grad_output.defined()) {
+		if (weight.defined()) {
+			int64_t n_output_plane = weight.size(1);
+			check_dim_size(grad_output, ndim, dimf, n_output_plane);
+		} else if (bias.defined()) {
+			int64_t n_output_plane = bias.size(0);
+			check_dim_size(grad_output, ndim, dimf, n_output_plane);
+		}
+		check_dim_size(grad_output, ndim, dimh, output_height);
+		check_dim_size(grad_output, ndim, dimw, output_width);
+	}
+}
+
+static void slow_conv_transpose2d_backward_out_vk_template(
+		const Tensor& input_,
+		const Tensor& grad_output_,
+		Tensor& grad_input,
+		const Tensor& weight_,
+		IntArrayRef kernel_size,
+		IntArrayRef stride,
+		IntArrayRef padding,
+		IntArrayRef output_padding,
+		IntArrayRef dilation)
+{
+	TORCH_CHECK(
+			kernel_size.size() == 2,
+			"It is expected kernel_size equals to 2, but got size ",
+			kernel_size.size());
+
+	TORCH_CHECK(
+			dilation.size() == 2,
+			"It is expected dilation equals to 2, but got size ",
+			dilation.size());
+
+	TORCH_CHECK(
+			padding.size() == 2,
+			"It is expected padding equals to 2, but got size ",
+			padding.size());
+
+	TORCH_CHECK(
+			stride.size() == 2,
+			"It is expected stride equals to 2, but got size ",
+			stride.size());
+
+	TORCH_CHECK(
+			output_padding.size() == 2,
+			"It is expected stride equals to 2, but got size ",
+			output_padding.size());
+	
+	dlprim::ExecutionContext stream = getExecutionContext(input_);
+	dlprim::Context ctx(stream);
+
+	int n_input_plane = weight_.size(0);
+	int n_output_plane = weight_.size(1);
+
+	int64_t kernel_height = kernel_size[0];
+	int64_t kernel_width = kernel_size[1];
+	int64_t dilation_height = dilation[0];
+	int64_t dilation_width = dilation[1];
+	int64_t pad_height = padding[0];
+	int64_t pad_width = padding[1];
+	int64_t stride_height = stride[0];
+	int64_t stride_width = stride[1];
+	int64_t output_padding_height = output_padding[0];
+	int64_t output_padding_width = output_padding[1];
+
+	slow_conv_transpose2d_shape_check(
+			input_,
+			grad_output_,
+			weight_,
+			Tensor(),
+			kernel_height,
+			kernel_width,
+			stride_height,
+			stride_width,
+			pad_height,
+			pad_width,
+			output_padding_height,
+			output_padding_width,
+			dilation_height,
+			dilation_width,
+			false);
+
+	Tensor input = input_.contiguous();
+	Tensor grad_output = grad_output_.contiguous();
+	Tensor weight = weight_.contiguous();
+	dlprim::Tensor weight_dp = todp(weight);
+
+	bool is_batch = false;
+	if (input.dim() == 3) {
+		// Force batch
+		is_batch = true;
+		input.resize_({1, input.size(0), input.size(1), input.size(2)});
+		grad_output.resize_(
+				{1, grad_output.size(0), grad_output.size(1), grad_output.size(2)});
+	}
+
+	int64_t input_width = input.size(3);
+	int64_t input_height = input.size(2);
+	int64_t output_height = (input_height - 1) * stride_height - 2 * pad_height +
+			(dilation_height * (kernel_height - 1) + 1) + output_padding_height;
+	int64_t output_width = (input_width - 1) * stride_width - 2 * pad_width +
+			(dilation_width * (kernel_width - 1) + 1) + output_padding_width;
+
+	// Batch size + input planes
+	int64_t batch_size = input.size(0);
+
+	// Resize output
+	grad_input.resize_({batch_size, n_input_plane, input_height, input_width});
+
+	// Create temporary columns
+	bool need_columns = (kernel_height != 1 || kernel_width != 1 || stride_height != 1 ||
+			stride_width != 1 || pad_height != 0 || pad_width != 0 ||
+			dilation_height != 1 || dilation_width != 1);
+	Tensor grad_columns = need_columns ? at::empty({n_output_plane * kernel_width * kernel_height,
+			input_height * input_width}, input.options()) : Tensor();
+	dlprim::Tensor grad_columns_dp = todp(grad_columns);
+#if 0
+	AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16,
+			grad_output.scalar_type(), "slow_conv_transpose2d_backward_out_cuda", [&]
+#endif
+	{
+		// Helpers
+		Tensor grad_input_n = Tensor();
+		Tensor grad_output_n = Tensor();
+
+		// For each elt in batch, do:
+		for (int elt = 0; elt < batch_size; elt++)
+		{
+			// Matrix multiply per sample:
+			grad_input_n = grad_input.select(0, elt);
+			grad_output_n = grad_output.select(0, elt);
+			
+			dlprim::Tensor grad_input_n_dp = todp(grad_input_n);
+			dlprim::Tensor grad_output_n_dp = todp(grad_output_n);
+
+			if (need_columns)
+			{
+#if 1
+				dlprim::gpu::im2col(
+					stream,
+					grad_output_n_dp.device_buffer(),
+					grad_output_n_dp.device_offset(),
+					n_output_plane,
+					output_height,
+					output_width,
+					input_height,
+					input_width,
+					kernel_height,
+					kernel_width,
+					pad_height,
+					pad_width,
+					stride_height,
+					stride_width,
+					dilation_height,
+					dilation_width,
+					grad_columns_dp.device_buffer(),
+					grad_columns_dp.device_offset(),
+					grad_columns_dp.dtype());
+#else
+				im2col<scalar_t>(
+						at::cuda::getCurrentCUDAStream(),
+						grad_output_n.const_data_ptr<scalar_t>(),
+						n_output_plane,
+						output_height,
+						output_width,
+						input_height,
+						input_width,
+						kernel_height,
+						kernel_width,
+						pad_height,
+						pad_width,
+						stride_height,
+						stride_width,
+						dilation_height,
+						dilation_width,
+						grad_columns.mutable_data_ptr<scalar_t>());
+#endif
+			}
+
+			// M,N,K are dims of matrix A and B
+			// (see http://docs.nvidia.com/cuda/cublas/#cublas-lt-t-gt-gemm)
+			int64_t m = weight.size(0);
+			int64_t n = input_height * input_width;
+			int64_t k = weight.size(1) * weight.size(2) * weight.size(3);
+#if 1
+			const float alpha = 1.0;
+			const float beta = 0.0;
+			
+			auto gemm_in_ptr = need_columns ? grad_columns_dp.device_buffer()
+					: grad_output_n_dp.device_buffer();
+			auto gemm_in_offset = need_columns ? grad_columns_dp.device_offset()
+					: grad_output_n_dp.device_offset();
+			
+			clblast::Gemm(clblast::Layout::kColMajor,
+				clblast::Transpose::kNo,
+				clblast::Transpose::kNo,
+				n,
+				m,
+				k,
+				alpha,
+				gemm_in_ptr, gemm_in_offset,
+				n,
+				weight_dp.device_buffer(), weight_dp.device_offset(),
+				k,
+				beta,
+				grad_input_n_dp.device_buffer(), grad_input_n_dp.device_offset(),
+				n,
+				stream.queue());
+#else
+			// Do GEMM (note: this is a bit confusing because gemm assumes
+			// column-major matrices)
+			auto gemm_in_ptr = need_columns ? grad_columns.const_data_ptr<scalar_t>()
+					: grad_output_n.const_data_ptr<scalar_t>();
+			at::cuda::blas::gemm<scalar_t>(
+					'n',
+					'n',
+					n,
+					m,
+					k,
+					1,
+					gemm_in_ptr,
+					n,
+					weight.const_data_ptr<scalar_t>(),
+					k,
+					0,
+					grad_input_n.mutable_data_ptr<scalar_t>(),
+					n);
+#endif
+		}
+
+		// Resize output
+		if (is_batch) {
+			grad_output.resize_({n_output_plane, output_height, output_width});
+			input.resize_({n_input_plane, input_height, input_width});
+			grad_input.resize_({n_input_plane, input_height, input_width});
 		}
 	}
 #if 0
