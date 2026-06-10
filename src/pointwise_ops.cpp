@@ -1525,13 +1525,14 @@ using c10::DeviceType;
         GUARD;
         Tensor self_c = self.contiguous(), output_c = output.contiguous(), buffer_c = buffer.contiguous();
         dlprim::Tensor x=todp(self_c), out = todp(output_c), buf = todp(buffer_c);
+        std::cout << "	before\n";
         dlprim::core::pointwise_operation({x},{out,buf},{},
                     R"xxx(
-                    y1 = exp(-fabs(x0));
-                    y0 = min((dtype)(0),x0) - log1p(y1);
+                    y1 = exp(-abs(x0));
+                    y0 = min(dtype(0),x0) - log( dtype(1.0) + y1);
                     )xxx",
                     getExecutionContext(self));
-        
+        std::cout << "	after\n";
         if(!output.is_contiguous())
             output.copy_(output_c);
 
@@ -1570,10 +1571,10 @@ using c10::DeviceType;
 
         dlprim::core::pointwise_operation({x,buf,dy},{dx},{},
                     R"xxx(
-                    int is_negative = x0 < 0;
-                    dtype maxd = is_negative ? 1.0f: 0.0f;
-                    dtype s = is_negative ? 1.0f: -1.0f;
-                    y0 = (maxd - s * (x1 / ((dtype)(1) + x1))) * x2;
+                    bool is_negative = x0 < 0;
+                    dtype maxd = is_negative ? dtype(1.0): dtype(0.0);
+                    dtype s = is_negative ? dtype(1.0): dtype(-1.0);
+                    y0 = (maxd - s * (x1 / (dtype(1) + x1))) * x2;
                     )xxx",
                     getExecutionContext(self));
         
