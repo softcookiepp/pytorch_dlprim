@@ -2,7 +2,7 @@
 
 - Setup pip virtual enviromnet with _CPU_ version of pytorch. Supported pytorch version are 2.4 and above. Also pytorch 1.13 is supprted.
 - Build dlprim\_backend and install at location you want
-- import `pytorch_ocl` and use `ocl` device instead of `cuda`
+- import `pytorch_vk` and use `vk` device instead of `cuda`
 
 ## Now in details
 
@@ -35,11 +35,11 @@ Note: if you use python version that is different from 3.10 just fix the path ab
 Test it runs:
 
     export PYTHONPATH=/path/to/install/location/python
-	python mnist.py --device ocl:0
+	python mnist.py --device vk:0
 
 If you want to test it in build environment use `export PYTHONPATH=build`
 
-Note: for pytorch 1.13 use privateuseone device instead of ocl
+Note: for pytorch 1.13 use privateuseone device instead of vk
 
 ## Building on Windows
 
@@ -95,6 +95,6 @@ Once build is complete go back to previous directory and run mnist example to te
 
     cd ..
     set PYTHONPATH=build
-	python mnist.py --device=ocl:0
+	python mnist.py --device=vk:0
 	
-For your daily use `set PYTHONPATH=c:\path\to\install\python` and include `import pytorch_ocl`
+For your daily use `set PYTHONPATH=c:\path\to\install\python` and include `import pytorch_vk`

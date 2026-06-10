@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-torch.ops.load_library("build/pytorch_ocl/pt_ocl.so")
+torch.ops.load_library("build/pytorch_vk/pt_vk.so")
 if False:
     x=torch.randn(10,requires_grad=True)
     y=torch.ops.my_ops.artik_op(x)
@@ -13,7 +13,7 @@ if False:
     print('dx=',x.grad)
 
 if torch.version.__version__[0:3] == "2.4":
-	dev = "ocl:0"
+	dev = "vk:0"
 elif torch.version.__version__[0:4] == "1.13":
 	dev='privateuseone:0'
 else:

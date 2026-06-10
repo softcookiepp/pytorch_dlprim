@@ -23,7 +23,7 @@ using c10::DeviceType;
     torch::Tensor allocate_empty(torch::IntArrayRef size, c10::optional<ScalarType> dtype, c10::optional<Layout> layout, c10::optional<Device> device, c10::optional<bool> /*pin_memory*/, c10::optional<MemoryFormat> /*memory_format*/)
     {
         GUARD;
-        TORCH_CHECK(!layout || *layout == Layout::Strided,"pytorch_ocl supports only strided layout")
+        TORCH_CHECK(!layout || *layout == Layout::Strided,"pytorch_vk supports only strided layout")
         // FIX ME Later -how to handle non Contiguous format {
         //TORCH_CHECK(!memory_format || *memory_format == MemoryFormat::Contiguous,"Contigonous format expected");
         // }
@@ -31,7 +31,7 @@ using c10::DeviceType;
         c10::ScalarType st = dtype ? *dtype : c10::kFloat; 
         if(st == c10::kDouble && !CLContextManager::fp64(dev.index())) {
             st = c10::kFloat;
-            TORCH_WARN("This device ocl:" + std::to_string(dev.index()) + " does not support cl_khr_fp64, falling back to float");
+            TORCH_WARN("This device vk:" + std::to_string(dev.index()) + " does not support cl_khr_fp64, falling back to float");
         }
         return ptdlprim::new_ocl_tensor(size,dev,st);
     }
@@ -447,7 +447,7 @@ using c10::DeviceType;
     void fallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
     {
       TORCH_WARN("The operator '", op.schema().operator_name(), "' is not currently ",
-                 "supported on the ocl backend. Please open an issue at for requesting support "
+                 "supported on the vk backend. Please open an issue at for requesting support "
                  "https://github.com/artyom-beilis/pytorch_dlprim/issues");
       native::cpu_fallback(op, stack);
     }

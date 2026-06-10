@@ -36,11 +36,11 @@ def run_case(device: str, shape, groups: int, eps: float = 1e-5):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--device", default="ocl:0")
+    p.add_argument("--device", default="vk:0")
     args = p.parse_args()
 
-    if args.device.startswith("ocl") or args.device.startswith("privateuseone"):
-        import pytorch_ocl  # noqa: F401
+    if args.device.startswith("vk") or args.device.startswith("privateuseone"):
+        import pytorch_vk  # noqa: F401
 
     torch.manual_seed(0)
     run_case(args.device, (2, 8, 4, 4), groups=2)

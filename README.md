@@ -47,6 +47,8 @@ DLPrimitves itself is tested on following devies:
 
 # Installation
 
+DONT READ THIS YET, ITS NOT DONE
+
 The simplest way is to download `whl` package from release page - builds for Windows and Linux are provided.
 
 Create virtual evironment, install _CPU_ version of pytorch >= 2.4, download `whl` file that corresponds
@@ -54,9 +56,9 @@ to python version, pytorch version and architecture and install it. For example:
 
     pip install pytorch_ocl-0.1.0+torch2.4-cp310-none-linux_x86_64.whl
 
-Now all you need is to import `pytorch_ocl` and now you can use device 'ocl' instead of cuda:
+Now all you need is to import `pytorch_vk` and now you can use device 'vk' instead of cuda:
 
-    torch.randn(10,10,device='ocl:0')
+    torch.randn(10,10,device='vk:0')
 
 If you don't have prebuilt whl file for your enviromnent, you want use latest updates or modify the code,
 please refer to README-build.md
@@ -69,24 +71,24 @@ So if something fails. It is either not implemented or it is implemented incorre
 Note: pytorch backend is based on dlprimitives library that actually implements all the operators and
 it is relatively well tested.
 
-If you still want to try: import package `pytorch_ocl`
+If you still want to try: import package `pytorch_vk`
 
 Keep in mind you may have several OpenCL devices. Refer to `clinfo --list` to list
-of the devices and their order. Now instead of calling `something.to('cuda')` you call `something.to('ocl:0')` or 
-`something.to('privateuseone:0' for pytorch 1.13)` or another `ocl:1` etc.
+of the devices and their order. Now instead of calling `something.to('cuda')` you call `something.to('vk:0')` or 
+`something.to('privateuseone:0' for pytorch 1.13)` or another `vk:1` etc.
 
 ## Known Issues
 
 1. Many operators not implemented and there may be fallbacks to CPU. Sometimes it is minor but sometimes it may hamper the performance, some may just fail
-2. When you save/restore the model move it to CPU. Currently there is an issue with loading back saved state dictionary if it was saved from ocl device
+2. When you save/restore the model move it to CPU. Currently there is an issue with loading back saved state dictionary if it was saved from vk device
 
 
-## `pytorch_ocl` specific API
+## `pytorch_vk` specific API
 
-Some functions specific to `pytorch_ocl`. When using pytorch >= 2.4 they are accessible from `torch.ocl` and `pytorch_ocl`, for 1.13 you must use `pytorch_ocl`
+Some functions specific to `pytorch_vk`. When using pytorch >= 2.4 they are accessible from `torch.vk` and `pytorch_vk`, for 1.13 you must use `pytorch_vk`
 
-- `torch.ocl.empty_cache()`: Same as `torch.cuda.empty_cache()` remove all cached GPU memory
-- `torch.ocl.synchronize(device=None)`: synchronize all operations queue on the device, if device is None - all of them same as `torch.cuda.synchonize`
-- `torch.ocl.manual_seed_all(seed)`: reset random number generator state. `torch.manual_seed` - it calls automatically for pytorch >= 2.4. Note for pytorch 1.13 you must call `pytorch_ocl.manual_seed_all`
+- `torch.vk.empty_cache()`: Same as `torch.cuda.empty_cache()` remove all cached GPU memory
+- `torch.vk.synchronize(device=None)`: synchronize all operations queue on the device, if device is None - all of them same as `torch.cuda.synchonize`
+- `torch.vk.manual_seed_all(seed)`: reset random number generator state. `torch.manual_seed` - it calls automatically for pytorch >= 2.4. Note for pytorch 1.13 you must call `pytorch_vk.manual_seed_all`
 
 

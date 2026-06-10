@@ -9,7 +9,7 @@ torch::Device device(torch::kPrivateUse1, 0);    /* backend : torch::kPrivateUse
 
 
 void load_device() {
-    const char* lib_path = "<path-to-pt_ocl.so>";
+    const char* lib_path = "<path-to-pt_vk.so>";
     /* load dynamic library */
     void* handle = dlopen(lib_path, RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {

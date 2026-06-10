@@ -145,7 +145,7 @@ namespace ptdlprim {
 #else
         auto &data = instance().data(device);
         if(!data.enable_profiling || !data.timing) {
-            throw std::runtime_error("You must enable profiling: torch.ocl.enable_profiling(device) and call stop after finishing ");
+            throw std::runtime_error("You must enable profiling: torch.vk.enable_profiling(device) and call stop after finishing ");
         }
         data.queue.finish();
         ExecGuard::set_profiling_context(nullptr);
@@ -198,7 +198,7 @@ namespace ptdlprim {
     {
         auto &data = instance().data(device);
         if(!data.enable_profiling) {
-            throw std::runtime_error("You must enable profiling: torch.ocl.enable_profiling(device)");
+            throw std::runtime_error("You must enable profiling: torch.vk.enable_profiling(device)");
         }
         data.queue.finish();
         data.timing.reset(new dlprim::TimingData());

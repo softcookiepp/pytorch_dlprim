@@ -237,7 +237,7 @@ if __name__ == '__main__':
     cuda=False
     ocl_direct=False
     if r.device.find('ocl')==0 or r.device.find('privateuseone') == 0:
-        import pytorch_ocl
+        import pytorch_vk
         if r.device.find('privateuseone') == 0:
             ocl_direct = True
         else:
@@ -287,7 +287,7 @@ if __name__ == '__main__':
             if ocl:
                 torch.ocl.empty_cache()
             if ocl_direct:
-                pytorch_ocl.empty_cache()
+                pytorch_vk.empty_cache()
             if cuda:
                 torch.cuda.empty_cache()
     else:

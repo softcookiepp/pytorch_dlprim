@@ -1,5 +1,5 @@
 import torch
-from .pt_ocl import *
+from .pt_vk import *
 
 def _device_index(device):
     if isinstance(device, int):
@@ -80,7 +80,7 @@ def empty_cache():
 
 
 try: 
-    torch.utils.rename_privateuse1_backend('ocl')
-    torch._register_device_module("ocl", _OCL)
+    torch.utils.rename_privateuse1_backend('vk')
+    torch._register_device_module("vk", _OCL)
 except:
     pass

@@ -746,8 +746,8 @@ using c10::DeviceType;
                 {scale,double(D)},
                 {dp_qkv.dtype(),dlprim::int64_data},
                 R"xxx(
-                    long position_d1 = index.s[1];
-                    typeof_x0 scale = position_d1 < w1 ? w0 : 1;
+                    uint position_d1 = uint(index.s[1]);
+                    typeof_x0 scale = position_d1 < uint(w1) ? w0 : typeof_x0(1);
                     y0 = (x0 + x1)*scale;
                 )xxx",
                 getExecutionContext(qkv),

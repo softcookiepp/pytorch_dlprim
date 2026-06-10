@@ -520,8 +520,8 @@ def test_concat(dev):
 
 def seed_dev(dev,s):
 	if dev.find('privateuseone') == 0:
-		import pytorch_ocl
-		pytorch_ocl.manual_seed_all(s)
+		import pytorch_vk
+		pytorch_vk.manual_seed_all(s)
 	else:
 		torch.manual_seed(s)
 
@@ -595,10 +595,10 @@ def test_comp(device):
 
 if __name__ == '__main__': 
 	p = argparse.ArgumentParser()
-	p.add_argument('--device',default='ocl:0')
+	p.add_argument('--device',default='vk:0')
 	r = p.parse_args()
-	if r.device.find('ocl')==0 or r.device.find('privateuseone')==0:
-		import pytorch_ocl
+	if r.device.find('vk')==0 or r.device.find('privateuseone')==0:
+		import pytorch_vk
 	test_logical(r.device)
 	test_comp(r.device)
 	test_all(r.device)

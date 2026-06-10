@@ -58,7 +58,7 @@ def train(args, model, device, train_loader, optimizer, epoch,profile):
             return loss.item()
 
         if profile and epoch == 1 and batch_idx == 5:
-            with torch.ocl.profile(device,profile):
+            with torch.vk.profile(device,profile):
                 loss = single_run(data,target)
         else:
             loss = single_run(data,target)
@@ -127,10 +127,10 @@ def main():
     torch.manual_seed(args.seed)
 
     device = args.device
-    if device.find('ocl')==0 or device.find('privateuseone') == 0:
-        import pytorch_ocl
+    if device.find('vk')==0 or device.find('privateuseone') == 0:
+        import pytorch_vk
         if args.profile:
-            torch.ocl.enable_profiling(device)
+            torch.vk.enable_profiling(device)
     if device.find('xpu')==0:
         import intel_extension_for_pytorch
 

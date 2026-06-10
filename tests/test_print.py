@@ -4,7 +4,7 @@ import numpy as np
 
 device = sys.argv[1]
 if device.find('privateuseone')==0:
-    torch.ops.load_library("build/libpt_ocl.so")
+    torch.ops.load_library("build/libpt_vk.so")
 
 with torch.no_grad():
     for k in [1,5,10,20,(2,3)]:

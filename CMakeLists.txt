@@ -27,7 +27,7 @@ if(NOT WIN32)
 endif()
 
 # Define our library target
-add_library(pt_ocl SHARED 
+add_library(pt_vk SHARED 
         src/pointwise_ops.cpp
         src/tensor_ops.cpp
         src/vision_ops.cpp
@@ -43,19 +43,19 @@ add_library(pt_ocl SHARED
         src/python_iface.cpp
         )
 
-target_compile_features(pt_ocl PRIVATE cxx_std_17)
+target_compile_features(pt_vk PRIVATE cxx_std_17)
 
 # Link against LibTorch
-target_link_libraries(pt_ocl ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core ${Python3_LIBRARIES})
+target_link_libraries(pt_vk ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core ${Python3_LIBRARIES})
 if(WIN32)
-    target_link_libraries(pt_ocl ${Python3_LIBRARIES})
+    target_link_libraries(pt_vk ${Python3_LIBRARIES})
 endif()
-set_target_properties(pt_ocl PROPERTIES PREFIX "" OUTPUT_NAME "pt_ocl")
+set_target_properties(pt_vk PROPERTIES PREFIX "" OUTPUT_NAME "pt_vk")
 if(NOT WIN32)
-	set_target_properties(pt_ocl PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pytorch_ocl/")
+	set_target_properties(pt_vk PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pytorch_vk/")
 else()
-	set_target_properties(pt_ocl PROPERTIES
-		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pytorch_ocl/"
+	set_target_properties(pt_vk PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pytorch_vk/"
 		SUFFIX ".pyd"
 	)
 	 
@@ -65,13 +65,13 @@ endif()
 
 
 foreach(PYNAME __init__.py)
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/python/pytorch_ocl/${PYNAME} "${CMAKE_BINARY_DIR}/pytorch_ocl/${PYNAME}" COPYONLY)
-    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/python/pytorch_ocl/${PYNAME} DESTINATION python/pytorch_ocl)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/python/pytorch_vk/${PYNAME} "${CMAKE_BINARY_DIR}/pytorch_vk/${PYNAME}" COPYONLY)
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/python/pytorch_vk/${PYNAME} DESTINATION python/pytorch_vk)
 endforeach()
 
-install(TARGETS pt_ocl 
-		LIBRARY DESTINATION python/pytorch_ocl
-		RUNTIME DESTINATION python/pytorch_ocl
+install(TARGETS pt_vk 
+		LIBRARY DESTINATION python/pytorch_vk
+		RUNTIME DESTINATION python/pytorch_vk
 	)
 
 # Add C++ examples

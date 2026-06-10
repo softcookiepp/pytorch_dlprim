@@ -22,7 +22,7 @@ foreach(dir ${CHILD_DIRS})
             )
 
             # Link main library and dependencies
-            target_link_libraries(${TARGET_NAME} PRIVATE pt_ocl ${TORCH_LIBRARIES} ${OCL_LIB} )
+            target_link_libraries(${TARGET_NAME} PRIVATE pt_vk ${TORCH_LIBRARIES} ${OCL_LIB} )
 
             # Set C++17
             target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
