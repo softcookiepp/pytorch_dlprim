@@ -336,7 +336,7 @@ using c10::DeviceType;
             Tensor other_c = other.contiguous();
             dlprim::Tensor x1=todp(other_c);
             dlprim::core::pointwise_operation_broadcast({x0,x1},{y0},{},
-                                        "y0 = x0/x1;",
+                                        "y0 = typeof_y0(x0) / typeof_y0(x1);",
                                         getExecutionContext(self));
         }
         

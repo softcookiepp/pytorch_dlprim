@@ -101,10 +101,6 @@ void slow_conv_dilated_all_vk_template(
 	
 	dlprim::Tensor columns_dp = todp(columns);
 	dlprim::Tensor weight_dp = todp(weight);
-#if 0
-	AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16,
-			input.scalar_type(), "slow_conv_dilated<>", [&]
-#endif
 	{
 		// For each elt in batch, do:
 		for (int elt = 0; elt < batchSize; elt++)
@@ -255,10 +251,6 @@ void slow_conv_dilated_all_vk_template(
 			}
 		}
 	}
-#if 0
-	);
-#endif
-
 } // slow_conv_dilated_all_vk_template
 
 
@@ -324,17 +316,7 @@ void slow_conv_transpose2d_out_vk_template(
 
 	// Define a buffer of ones, for bias accumulation
 	Tensor ones_ = bias.defined() ? at::ones({output_height, output_width}, input_.options()) : Tensor();
-#if 0
-	AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16,
-			input_.scalar_type(), "slow_conv_transpose2d_out_cuda", [&]
-#endif
 	{
-#if 1
-		auto accscalar_t = todp(input).dtype();
-#else
-		using accscalar_t = at::acc_type<scalar_t, true>;
-#endif
-
 		// Helpers
 		Tensor input_n;
 		Tensor output_n;
@@ -353,7 +335,7 @@ void slow_conv_transpose2d_out_vk_template(
 			int64_t m = weight_.size(1) * weight_.size(2) * weight_.size(3);
 			int64_t n = input_height * input_width;
 			int64_t k = weight_.size(0);
-#if 1
+
 			const float alpha = 1.0;
 			const float beta = 0.0;
 			clblast::Gemm<float>(clblast::Layout::kColMajor,
@@ -374,26 +356,7 @@ void slow_conv_transpose2d_out_vk_template(
 				columns_dp.device_offset(),
 				n,
 				stream.queue());
-#else
-			// Do GEMM (note: this is a bit confusing because gemm assumes
-			// column-major matrices)
-			at::cuda::blas::gemm<scalar_t>(
-					'n',
-					't',
-					n,
-					m,
-					k,
-					1,
-					input_n.const_data_ptr<scalar_t>(),
-					n,
-					weight_.const_data_ptr<scalar_t>(),
-					m,
-					0,
-					columns_.mutable_data_ptr<scalar_t>(),
-					n);
-#endif
 
-#if 1
 			dlprim::gpu::col2im(
 				stream,
 				columns_dp.device_buffer(),
@@ -415,26 +378,7 @@ void slow_conv_transpose2d_out_vk_template(
 				output_n_dp.device_offset(),
 				output_n_dp.dtype(),
 				output_n_dp.dtype());
-#else
-			// Unpack columns back into input:
-			col2im<scalar_t, accscalar_t>(
-					at::cuda::getCurrentCUDAStream(),
-					columns_.const_data_ptr<scalar_t>(),
-					n_output_plane,
-					output_height,
-					output_width,
-					input_height,
-					input_width,
-					kernel_height,
-					kernel_width,
-					pad_height,
-					pad_width,
-					stride_height,
-					stride_width,
-					dilation_height,
-					dilation_width,
-					output_n.mutable_data_ptr<scalar_t>());
-#endif
+
 
 			// Do Bias after:
 			// M,N,K are dims of matrix A and B
@@ -447,7 +391,6 @@ void slow_conv_transpose2d_out_vk_template(
 			// column-major matrices)
 			if (bias.defined() && bias_.defined())
 			{
-#if 1
 				dlprim::Tensor bias_dp = todp(bias_);
 				dlprim::Tensor ones_dp = todp(ones_);
 				
@@ -471,22 +414,6 @@ void slow_conv_transpose2d_out_vk_template(
 					output_n_dp.device_offset(),
 					n_,
 					stream.queue());
-#else
-				at::cuda::blas::gemm<scalar_t>(
-						't',
-						'n',
-						n_,
-						m_,
-						k_,
-						1,
-						ones_.const_data_ptr<scalar_t>(),
-						k_,
-						bias_.const_data_ptr<scalar_t>(),
-						k_,
-						1,
-						output_n.mutable_data_ptr<scalar_t>(),
-						n_);
-#endif
 			}
 		}
 
@@ -496,9 +423,6 @@ void slow_conv_transpose2d_out_vk_template(
 			input_.resize_({n_input_plane, input_height, input_width});
 		}
 	}
-#if 0
-	); // end of dispatch
-#endif
 }
 
 
@@ -726,10 +650,7 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 	Tensor grad_columns = need_columns ? at::empty({n_output_plane * kernel_width * kernel_height,
 			input_height * input_width}, input.options()) : Tensor();
 	dlprim::Tensor grad_columns_dp = todp(grad_columns);
-#if 0
-	AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16,
-			grad_output.scalar_type(), "slow_conv_transpose2d_backward_out_cuda", [&]
-#endif
+
 	{
 		// Helpers
 		Tensor grad_input_n = Tensor();
@@ -774,7 +695,7 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 			int64_t m = weight.size(0);
 			int64_t n = input_height * input_width;
 			int64_t k = weight.size(1) * weight.size(2) * weight.size(3);
-#if 1
+
 			const float alpha = 1.0;
 			const float beta = 0.0;
 			
@@ -798,26 +719,6 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 				grad_input_n_dp.device_buffer(), grad_input_n_dp.device_offset(),
 				n,
 				stream.queue());
-#else
-			// Do GEMM (note: this is a bit confusing because gemm assumes
-			// column-major matrices)
-			auto gemm_in_ptr = need_columns ? grad_columns.const_data_ptr<scalar_t>()
-					: grad_output_n.const_data_ptr<scalar_t>();
-			at::cuda::blas::gemm<scalar_t>(
-					'n',
-					'n',
-					n,
-					m,
-					k,
-					1,
-					gemm_in_ptr,
-					n,
-					weight.const_data_ptr<scalar_t>(),
-					k,
-					0,
-					grad_input_n.mutable_data_ptr<scalar_t>(),
-					n);
-#endif
 		}
 
 		// Resize output
@@ -827,9 +728,6 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 			grad_input.resize_({n_input_plane, input_height, input_width});
 		}
 	}
-#if 0
-	); // end of dispatch
-#endif
 }
 
 void slow_conv_transpose2d_acc_grad_parameters_vk_template(
@@ -971,7 +869,6 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 				dlprim::Tensor columns_dp = todp(columns);
 				if (need_columns)
 				{
-#if 1
 					dlprim::gpu::im2col(
 						stream,
 						grad_output_n_dp.device_buffer(),
@@ -992,26 +889,6 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 						columns_dp.device_buffer(),
 						columns_dp.device_offset(),
 						columns_dp.dtype());
-#else
-					// Extract columns:
-					im2col<scalar_t>(
-							at::cuda::getCurrentCUDAStream(),
-							grad_output_n.const_data_ptr<scalar_t>(),
-							n_output_plane,
-							output_height,
-							output_width,
-							input_height,
-							input_width,
-							kernel_height,
-							kernel_width,
-							pad_height,
-							pad_width,
-							stride_height,
-							stride_width,
-							dilation_height,
-							dilation_width,
-							columns.mutable_data_ptr<scalar_t>());
-#endif
 				}
 
 
@@ -1020,7 +897,7 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 				int64_t n = n_output_plane * kernel_height * kernel_width;
 				int64_t m = input_n.size(0); // n_input_plane
 				int64_t k = input_height * input_width;
-#if 1
+
 				auto gemm_in_ptr = need_columns ? columns_dp.device_buffer()
 						: grad_output_n_dp.device_buffer();
 						
@@ -1044,26 +921,6 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(),
 					n,
 					stream.queue());
-#else
-				// Do GEMM (note: this is a bit confusing because gemm assumes
-				// column-major matrices)
-				auto gemm_in_ptr = need_columns ? columns.const_data_ptr<scalar_t>()
-						: grad_output_n.const_data_ptr<scalar_t>();
-				at::cuda::blas::gemm<scalar_t>(
-						't',
-						'n',
-						n,
-						m,
-						k,
-						scale,
-						gemm_in_ptr,
-						k,
-						input_n.const_data_ptr<scalar_t>(),
-						k,
-						1,
-						grad_weight_dp.mutable_data_ptr<scalar_t>(),
-						n);
-#endif
 			}
 		}
 
