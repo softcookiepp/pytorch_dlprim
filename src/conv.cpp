@@ -327,10 +327,10 @@ std::tuple<Tensor, Tensor, Tensor> slow_conv_dilated2d_backward_vk(
 
 std::vector<int64_t> get_conv_transpose2d_output_size(const Tensor& input, const Tensor& weight,
 	IntArrayRef kernel_size,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef output_padding,
-    IntArrayRef dilation)
+		IntArrayRef stride,
+		IntArrayRef padding,
+		IntArrayRef output_padding,
+		IntArrayRef dilation)
 {
 	int64_t n_input_plane = weight.size(0);
 	int64_t n_output_plane = weight.size(1);
@@ -376,7 +376,6 @@ Tensor slow_conv_transpose2d_vk(
 	IntArrayRef dilation)
 {
 	const Tensor& bias = bias_opt.getTensorRef();
-#if 1
 	std::vector<int64_t> output_size = get_conv_transpose2d_output_size(
 		input, weight, kernel_size, stride, padding, output_padding, dilation);
 	
@@ -395,19 +394,90 @@ Tensor slow_conv_transpose2d_vk(
 			padding,
 			output_padding,
 			dilation);
-#else
-	slow_conv_transpose2d_out_cuda_template(
-			output,
-			input,
-			weight,
-			kernel_size,
-			bias,
-			stride,
-			padding,
-			output_padding,
-			dilation);
-#endif
 	return output;
+}
+
+std::tuple<Tensor, Tensor, Tensor> slow_conv_transpose2d_backward_vk(
+		const Tensor& grad_output,
+		const Tensor& input,
+		const Tensor& weight,
+		IntArrayRef kernel_size,
+		IntArrayRef stride,
+		IntArrayRef padding,
+		IntArrayRef output_padding,
+		IntArrayRef dilation,
+		std::array<bool, 3> output_mask)
+{
+	Tensor grad_input;
+	Tensor grad_weight;
+	Tensor grad_bias;
+
+	if (output_mask[0]) {
+		grad_input = at::empty({0}, grad_output.options());
+	} else {
+		grad_input = Tensor();
+	}
+
+	if (output_mask[1]) {
+		grad_weight = at::empty({0}, grad_output.options());
+	} else {
+		grad_weight = Tensor();
+	}
+
+	if (output_mask[2]) {
+		grad_bias = at::empty({0}, grad_output.options());
+	} else {
+		grad_bias = Tensor();
+	}
+
+	if (grad_input.defined())
+	{
+#if 1
+		throw std::runtime_error("WHAT ARE YOU DOING HERE?");
+#else
+		slow_conv_transpose2d_backward_out_cuda_template(
+				input,
+				grad_output,
+				grad_input,
+				weight,
+				kernel_size,
+				stride,
+				padding,
+				output_padding,
+				dilation);
+#endif
+	}
+
+	if (grad_weight.defined()) {
+		grad_weight.resize_(weight.sizes());
+		grad_weight.zero_();
+	}
+
+	if (grad_bias.defined()) {
+		grad_bias.resize_({weight.size(1)});
+		grad_bias.zero_();
+	}
+
+	if (grad_weight.defined() || grad_bias.defined())
+	{
+#if 1
+		throw std::runtime_error("AND WHAT ON EARTH ARE YOU DOING HERE???");
+#else
+		slow_conv_transpose2d_acc_grad_parameters_cuda_template(
+				input,
+				grad_output,
+				grad_weight,
+				grad_bias,
+				kernel_size,
+				stride,
+				padding,
+				output_padding,
+				dilation,
+				1);
+#endif
+	}
+
+	return std::tuple<Tensor, Tensor, Tensor>(grad_input, grad_weight, grad_bias);
 }
 
 static Tensor _convolution_nogroup_backend(
@@ -496,6 +566,7 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> _convolution_backward_nogr
 		torch::IntArrayRef padding,
 		torch::IntArrayRef dilation,
 		bool transposed,
+		torch::IntArrayRef output_padding,
 		const std::array<bool, 3> output_mask)
 {
 #if 1
@@ -532,17 +603,19 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> _convolution_backward_nogr
 	}
 	else
 	{
-#if 0
-		if (dilated)
+		if (transposed)
+		{
+			return slow_conv_transpose2d_backward_vk(
+				grad_output, input, weight, kernel_size, stride, padding,
+				output_padding, dilation, output_mask);
+		}
+#if 1
+		else
+#else
+		else if(dilated)
 #endif
 		{
-			if (transposed)
-			{
-				throw std::runtime_error("conv transpose not implemented");
-			}
-			else
-			{
-				return slow_conv_dilated2d_backward_vk(grad_output,
+			return slow_conv_dilated2d_backward_vk(grad_output,
 					input,
 					weight,
 					kernel_size,
@@ -550,17 +623,11 @@ static std::tuple<at::Tensor, at::Tensor, at::Tensor> _convolution_backward_nogr
 					padding,
 					dilation,
 					output_mask);
-			}
 		}
 #if 0
 		else
 		{
-			if (transposed)
-			{
-			}
-			else
-			{
-			}
+			
 		}
 #endif
 	}
@@ -660,7 +727,7 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> convolution_backward_overr
 		{
 			std::tie(backend_grad_input, backend_grad_weight, backend_grad_bias) =
 				_convolution_backward_nogroup_backend(
-					grad_output, input_contiguous, weight_contiguous, stride, padding, dilation, transposed, output_mask);
+					grad_output, input_contiguous, weight_contiguous, stride, padding, dilation, transposed, output_padding, output_mask);
 		}
 		else
 		{
@@ -673,7 +740,7 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> convolution_backward_overr
 				auto weight_g = subtensor(weight_contiguous, 0, groups, g);
 				std::tie(backend_grad_inputs[g], backend_grad_weights[g], backend_grad_biases[g]) =
 					_convolution_backward_nogroup_backend(
-						grad_output_g, input_g, weight_g, stride, padding, dilation, transposed, output_mask);
+						grad_output_g, input_g, weight_g, stride, padding, dilation, transposed, output_padding, output_mask);
 			}
 			if (output_mask[0]) {
 				backend_grad_input = at::cat(backend_grad_inputs, 1);
