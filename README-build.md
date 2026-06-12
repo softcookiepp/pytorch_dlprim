@@ -9,18 +9,21 @@
 1.  Setup pip virtual environment and install CPU version of pytorch - 2.4 is recommended. Pytorch 1.13 is still supported.
 
     Install CPU variant since you don't need CUDA support for OpenCL backend to work.
+```
+pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cpu
+```
 
-2.  Make sure you have OpenCL headers and library. It should include `opencl.hpp` or`cl2.hpp` - not the old one `cl.hpp`
+2.  Install the Vulkan development headers. Instructions will vary depending on your OS, and will be more specific in the near future!
 
 3.  It is strongly recommended to have SQLite3 library and headers avalible as well, it would improve startup times by caching OpenCL kernels on disk.
 
 4. Clone The repository
 
-        git clone --recurse-submodules https://github.com/artyom-beilis/pytorch_dlprim.git
+        git clone --recurse-submodules https://github.com/softcookiepp/pytorch_dlprim.git
 
 5.  Build the backend.
 
-## Building the on Linux
+## Building on Linux
 
 Make sure you are in the virtual environment
 
@@ -43,7 +46,7 @@ Note: for pytorch 1.13 use privateuseone device instead of vk
 
 ## Building on Windows
 
-It was tested using MSVC 2022, pytorch 2.4, python 3.12 with ninja build tool. 
+No idea yet. It would be greatly appreciated if someone familiar with Vulkan development on Windows could help!
 
 ### Dependencies
 
