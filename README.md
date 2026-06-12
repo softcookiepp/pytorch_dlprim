@@ -1,8 +1,8 @@
-# Pytorch OpenCL backend based on dlprimitives
+# Pytorch Vulkan backend based on ported dlprimitives, ported CLBlast, and other odds and ends
 
-DLPrimitives-OpenCL out of tree backend for pytorch
+Out-of-tree backend for pytorch supporting any GPU with a Vulkan driver!
 
-It is only beginning, but you can train some vision nets using OpenCL devices.
+Originally based [pytorch_dlprim](https://github.com/artyom-beilis/pytorch_dlprim), but will likely have even more functionality in the future.
 
 Supported pytorch versions are 1.13 and torch `>=` 2.4
 
