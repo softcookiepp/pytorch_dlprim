@@ -47,9 +47,22 @@ def test_fwd(inputs,call,device, *extra_args, print_results = False):
 
 	y_cpu = call_cpu(*xs_cpu)
 	y_dev = call_dev(*xs_dev)
-
-	if get_diff(y_cpu,y_dev) > 1e-5:
-		raise Exception("Diff too big")
+	
+	if True:
+		try:
+			torch.testing.assert_allclose(y_cpu, y_dev.to("cpu"))
+		except AssertionError:
+			print(xs_cpu)
+			print(y_cpu)
+			print(y_dev.to("cpu"))
+			raise Exception("Not close!")
+	else:
+		if get_diff(y_cpu,y_dev) > 1e-5:
+			raise Exception("Diff too big")
+		elif torch.any(y_dev.to("cpu") == torch.nan):
+			print(y_cpu)
+			print(y_dev.to("cpu"))
+			raise Exception("NaN detected!")
 	print("Ok")
 	if print_results:
 		print(y_dev)
@@ -95,6 +108,7 @@ def test_fwd_bwd_op(inputs,call,device,randgen=torch.randn,paramgen = None):
 	call.zero_grad()
 	call = call.to(device)
 	y_dev = call(*xs_dev)
+	torch.testing.assert_allclose(y_cpu, y_dev.to("cpu"))
 	y_dev.backward(dy_dev,retain_graph=True)
 	dW_dev = {}
 	for n in p_names:
@@ -106,8 +120,10 @@ def test_fwd_bwd_op(inputs,call,device,randgen=torch.randn,paramgen = None):
 		diffs.append(('y',get_diff(y_cpu,y_dev)))
 		for i in range(len(inputs)):
 			if inputs[i][1] <= 0:
+				torch.testing.assert_allclose(xs_cpu[i].grad, xs_dev[i].grad.to("cpu"))
 				diffs.append(('x%d' % i ,get_diff(xs_cpu[i].grad,xs_dev[i].grad)))
 		for name in p_names:
+			torch.testing.assert_allclose(dW_cpu[name], dW_dev[name].to("cpu"))
 			diffs.append(('p_' + name,get_diff(dW_cpu[name],dW_dev[name])))
 
 		diffs.sort(key=lambda x:x[1],reverse=True)
@@ -141,6 +157,8 @@ def test_fwd_bwd(inputs,call,device,randgen=torch.randn):
 		call_dev = copy.deepcopy(call_cpu).to(device)
 	y_cpu = call_cpu(*xs_cpu)
 	y_dev = call_dev(*xs_dev)
+	
+	torch.testing.assert_allclose(y_cpu, y_dev.to("cpu"))
 
 	if y_cpu.shape:
 		with torch.no_grad():
@@ -158,6 +176,7 @@ def test_fwd_bwd(inputs,call,device,randgen=torch.randn):
 		diffs.append(('y',get_diff(y_cpu,y_dev)))
 		for i in range(len(inputs)):
 			if inputs[i][1] <= 0:
+				torch.testing.assert_allclose(xs_cpu[i].grad, xs_dev[i].grad.to("cpu"))
 				diffs.append(('x%d' % i ,get_diff(xs_cpu[i].grad,xs_dev[i].grad)))
 
 		diffs.sort(key=lambda x:x[1],reverse=True)
@@ -404,7 +423,7 @@ def test_all(device):
 	test_fwd_bwd_op([([2,3,4,30],-1)],torch.nn.LayerNorm((4,30),elementwise_affine=True),device,paramgen = torch.randn)
 
 	print("Test logit eps")
-	test_fwd([([4,3,5],-1)],lambda x:torch.logit(x,eps=0.1),device)
+	test_fwd([([4,3,5],-1)],lambda x:torch.logit(x, eps=0.1),device)
 
 	print("Test logit")
 	test_fwd([([4,3,5],-1)],lambda x:torch.logit(torch.clamp(x,min=0.1,max=0.9)),device)

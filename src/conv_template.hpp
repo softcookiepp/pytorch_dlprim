@@ -151,6 +151,7 @@ void slow_conv_dilated_all_vk_template(
 					beta,
 					output_n_dp.device_buffer(), output_n_dp.device_offset(), columns.size(1),
 					stream.queue());
+				stream.queue()->sync();
 			}
 			else
 			{
@@ -180,6 +181,7 @@ void slow_conv_dilated_all_vk_template(
 					beta,
 					columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // c
 					stream.queue());
+				stream.queue()->sync();
 					
 				// Unpack columns back into input:
 				Tensor grad_input_n = grad_input.select(0, elt);
@@ -235,6 +237,7 @@ void slow_conv_dilated_all_vk_template(
 					beta,
 					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(), columns.size(0), // c
 					stream.queue());
+				stream.queue()->sync();
 			}
 
 			// Gradient of bias:
@@ -356,6 +359,7 @@ void slow_conv_transpose2d_out_vk_template(
 				columns_dp.device_offset(),
 				n,
 				stream.queue());
+			stream.queue()->sync();
 
 			dlprim::gpu::col2im(
 				stream,
@@ -414,6 +418,7 @@ void slow_conv_transpose2d_out_vk_template(
 					output_n_dp.device_offset(),
 					n_,
 					stream.queue());
+				stream.queue()->sync();
 			}
 		}
 
@@ -719,6 +724,7 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 				grad_input_n_dp.device_buffer(), grad_input_n_dp.device_offset(),
 				n,
 				stream.queue());
+			stream.queue()->sync();
 		}
 
 		// Resize output
@@ -921,6 +927,7 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(),
 					n,
 					stream.queue());
+				stream.queue()->sync();
 			}
 		}
 
