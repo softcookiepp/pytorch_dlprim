@@ -1,8 +1,25 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 project(dlprim_backend)
+
 set(Python_FIND_VIRTUALENV FIRST)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-find_package(Torch 1.13 REQUIRED)
+
+# CMake is a Rube Goldberg machine platform, I don't care what people say.
+# This is all because pyproject.toml has no way of specifying the package index for the build environment packages,
+# and I don't want the build system to install a bunch of CUDA bloat just to have torch's cmake files.
+if(NOT DEFINED BUILD_TORCH_PACKAGE_NAME)
+	set(BUILD_TORCH_PACKAGE_NAME "torch==2.4.0")
+endif()
+if(NOT DEFINED BUILD_TORCH_PACKAGE_INDEX)
+	set(BUILD_TORCH_PACKAGE_INDEX "https://download.pytorch.org/whl/cpu")
+endif()
+execute_process(COMMAND ${Python3_EXECUTABLE} -m pip install ${BUILD_TORCH_PACKAGE_NAME} --index-url ${BUILD_TORCH_PACKAGE_INDEX})
+
+# This will get the cmake prefix of torch
+execute_process(COMMAND ${Python3_EXECUTABLE} -c "import torch; import os; print(os.path.join(torch.utils.cmake_prefix_path, 'Torch'))" OUTPUT_VARIABLE TORCH_CMAKE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${TORCH_CMAKE_DIR})
+
+find_package(Torch REQUIRED)
 find_package(pybind11 REQUIRED)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
