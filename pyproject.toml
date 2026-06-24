@@ -15,16 +15,15 @@ cmake.args = ["-DCMAKE_POLICY_VERSION_MINIMUM=3.5"]
 wheel.packages = ["python/pytorch_vk"]
 
 [tool.scikit-build.cmake.define]
-BUILD_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+BUILD_TORCH_PACKAGE_INDEX = "https://download.pytorch.org/whl/cpu"
 BUILD_TORCH_PACKAGE_NAME = "torch==2.4.0"
 INSTALL_TORCH = "ON"
 INSTALL_PYBIND11 = "ON"
 TART_ENABLE_SHADER_COMPILERS = "OFF"
 
-[[tool.pip]]
+[tool.pip]
 extra-index-url = "https://download.pytorch.org/whl/cpu"
 
 [build-system]
 requires = ["scikit-build-core>=0.12", "pybind11>=3", "pip", "pybind11-global"]
 build-backend = "scikit_build_core.build"
-#tool.pip.extra-index-url = ["https://download.pytorch.org/whl/cpu"]

@@ -4,16 +4,18 @@ project(dlprim_backend)
 set(Python_FIND_VIRTUALENV FIRST)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
-# CMake is a Rube Goldberg machine platform, I don't care what people say.
-# This is all because pyproject.toml has no way of specifying the package index for the build environment packages,
-# and I don't want the build system to install a bunch of CUDA bloat just to have torch's cmake files.
-if(NOT DEFINED BUILD_TORCH_PACKAGE_NAME)
-	set(BUILD_TORCH_PACKAGE_NAME "torch==2.4.0")
+if(INSTALL_TORCH)
+	# CMake is a Rube Goldberg machine platform, I don't care what people say.
+	# This is all because pyproject.toml has no way of specifying the package index for the build environment packages,
+	# and I don't want the build system to install a bunch of CUDA bloat just to have torch's cmake files.
+	if(NOT DEFINED BUILD_TORCH_PACKAGE_NAME)
+		set(BUILD_TORCH_PACKAGE_NAME "torch==2.4.0")
+	endif()
+	if(NOT DEFINED BUILD_TORCH_PACKAGE_INDEX)
+		set(BUILD_TORCH_PACKAGE_INDEX "https://download.pytorch.org/whl/cpu")
+	endif()
+	execute_process(COMMAND ${Python3_EXECUTABLE} -m pip install ${BUILD_TORCH_PACKAGE_NAME} --index-url ${BUILD_TORCH_PACKAGE_INDEX})
 endif()
-if(NOT DEFINED BUILD_TORCH_PACKAGE_INDEX)
-	set(BUILD_TORCH_PACKAGE_INDEX "https://download.pytorch.org/whl/cpu")
-endif()
-execute_process(COMMAND ${Python3_EXECUTABLE} -m pip install ${BUILD_TORCH_PACKAGE_NAME} --index-url ${BUILD_TORCH_PACKAGE_INDEX})
 
 # This will get the cmake prefix of torch
 execute_process(COMMAND ${Python3_EXECUTABLE} -c "import torch; import os; print(os.path.join(torch.utils.cmake_prefix_path, 'Torch'))" OUTPUT_VARIABLE TORCH_CMAKE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -61,6 +63,7 @@ if(1)
 			)
 
 	target_compile_features(pt_vk PRIVATE cxx_std_17)
+	set_target_properties(pt_vk PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 
 	# Link against LibTorch
 	target_link_libraries(pt_vk ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core ${Python3_LIBRARIES})
@@ -87,8 +90,8 @@ if(1)
 	endforeach()
 
 	install(TARGETS pt_vk 
-			LIBRARY DESTINATION python/pytorch_vk
-			RUNTIME DESTINATION python/pytorch_vk
+			LIBRARY DESTINATION pytorch_vk
+			RUNTIME DESTINATION pytorch_vk
 		)
 else()
 	# This is attempt #2 at proper pybind11 usage with this project.
