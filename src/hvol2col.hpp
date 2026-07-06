@@ -14,7 +14,8 @@ void hvol2col(
 		const tart::buffer_ptr& data_col,
 		const uint32_t data_col_offset,
 		const dlprim::DataType Dtype,
-		const uint32_t dim)
+		const uint32_t dim,
+		const tart::command_sequence_ptr& sequence = nullptr)
 {
 	if (dim == 3)
 	{
@@ -67,7 +68,8 @@ void hvol2col(
 				dilation_size[1],
 				data_col,
 				data_col_offset,
-				Dtype);
+				Dtype,
+				sequence);
 	}
 }
 
@@ -85,7 +87,8 @@ void col2hvol(
 		const tart::buffer_ptr& data_hvol,
 		const uint32_t data_hvol_offset,
 		const dlprim::DataType Dtype,
-		uint32_t dim)
+		uint32_t dim,
+		const tart::command_sequence_ptr& sequence = nullptr)
 {
 	if (dim == 3)
 	{
@@ -114,7 +117,8 @@ void col2hvol(
 				dilation_size[0],
 				dilation_size[1],
 				dilation_size[2],
-				data_hvol);
+				data_hvol,
+				sequence);
 #endif
 	}
 	if (dim == 2)
@@ -139,6 +143,7 @@ void col2hvol(
 			data_hvol,
 			data_hvol_offset,
 			Dtype,
-			Dtype);
+			Dtype,
+			sequence);
 	}
 }
