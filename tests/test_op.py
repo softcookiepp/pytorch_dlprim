@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import copy
 
+from ..mnist import Net
 
 def get_diff(cpu,dev):
 	c_dev = dev.to('cpu')
