@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import copy
 
-from ..mnist import Net
+
 
 def get_diff(cpu,dev):
 	c_dev = dev.to('cpu')
@@ -159,7 +159,11 @@ def test_fwd_bwd(inputs,call,device,randgen=torch.randn):
 	y_cpu = call_cpu(*xs_cpu)
 	y_dev = call_dev(*xs_dev)
 	
-	torch.testing.assert_allclose(y_cpu, y_dev.to("cpu"))
+	try:
+		torch.testing.assert_allclose(y_cpu, y_dev.to("cpu"))
+	except:
+		print(xs_cpu)
+		raise ValueError(f"Tensors are not close: {y_cpu} vs {y_dev.to('cpu')}")
 
 	if y_cpu.shape:
 		with torch.no_grad():
@@ -280,6 +284,8 @@ def test_bmm(device):
 	
 
 def test_all(device):
+	print("Softmax")
+	test_fwd_bwd([([4,3],-1)],torch.nn.Softmax(dim=1),device)
 	print("Mean 1d")
 	test_fwd_bwd([([2,3,4],-1)],lambda x:torch.mean(x,dim=0,keepdim=True),device)
 	print("Mean 2d")
@@ -360,6 +366,9 @@ def test_all(device):
 
 	print("atan")
 	test_fwd_bwd([([4,3,5],-1)], torch.atan, device)
+	
+	print("cross_entropy")
+	test_fwd_bwd([([128, 0], -1), ([128, 0], -1)], F.cross_entropy, device)
 
 	print("ChannelShuffle")
 	test_fwd([([3, 4, 2, 2],-1)], torch.nn.ChannelShuffle(2), device)

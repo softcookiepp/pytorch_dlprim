@@ -158,6 +158,7 @@ using c10::DeviceType;
             x.reshape(new_shape);
             y.reshape(new_shape);
         }
+        getExecutionContext(self).queue()->sync();
         dlprim::core::softmax_forward(x,y,is_log,getExecutionContext(self));
         sync_if_needed(self.device());
         return out;
