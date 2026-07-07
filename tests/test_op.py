@@ -358,10 +358,10 @@ def test_all(device):
 	test_fwd_bwd([([4,3],-1)],lambda x:torch.nn.GELU(approximate='tanh')(x*1.0),device)
 
 	print("atan")
-	test_fwd([([4,3,5],-1)],torch.atan,device)
+	test_fwd_bwd([([4,3,5],-1)], torch.atan, device)
 
-	#print("ChannelShuffle")
-	#test_fwd_bwd([([3, 4, 2, 2],-1)],torch.nn.ChannelShuffle(2),device)
+	print("ChannelShuffle")
+	test_fwd([([3, 4, 2, 2],-1)], torch.nn.ChannelShuffle(2), device)
 	print("BCE Loss")
 	test_fwd_bwd([([4,3,5],-1),([4,3,5],-1)],torch.nn.BCELoss(),device,torch.rand)
 	print("BCE Loss no reduction")
@@ -373,19 +373,19 @@ def test_all(device):
 	print("MSE Loss no reduction")
 	test_fwd_bwd([([4,3,5],-1),([4,3,5],-1)],torch.nn.MSELoss(reduction='none'),device,torch.rand)
 	print("Min")
-	test_fwd([([4,3,5],-1)],torch.min,device)
+	test_fwd_bwd([([4,3,5],-1)],torch.min,device)
 	print("Max")
-	test_fwd([([4,3,5],-1)],torch.max,device)
+	test_fwd_bwd([([4,3,5],-1)],torch.max,device)
 	print("Lerp")
-	test_fwd([([4,3,5],-1),([4,3,1],-1)],lambda x,y:torch.lerp(x,y,0.1),device)
+	test_fwd_bwd([([4,3,5],-1),([4,3,1],-1)],lambda x,y:torch.lerp(x,y,0.1),device)
 	print("Dot")
-	test_fwd([([16],-1),([16],-1)],torch.dot,device)
+	test_fwd_bwd([([16],-1),([16],-1)],torch.dot,device)
 	print("Clamp 1")
-	test_fwd([([4,3,5],-1)],lambda x:torch.clamp(x,min=-0.2,max=0.3),device)
+	test_fwd_bwd([([4,3,5],-1)],lambda x:torch.clamp(x,min=-0.2,max=0.3),device)
 	print("Clamp 2")
-	test_fwd([([4,3,5],-1)],lambda x:torch.clamp(x,min=-0.2),device)
+	test_fwd_bwd([([4,3,5],-1)],lambda x:torch.clamp(x,min=-0.2),device)
 	print("Clamp 3")
-	test_fwd([([4,3,5],-1)],lambda x:torch.clamp(x,max=0.3),device)
+	test_fwd_bwd([([4,3,5],-1)],lambda x:torch.clamp(x,max=0.3),device)
 
 	print("Linear 2d")
 	test_fwd_bwd_op([([8,10],-1)],torch.nn.Linear(10,5),device)
@@ -398,15 +398,15 @@ def test_all(device):
 	test_fwd([([2, 90, 20],-1)], torch.ops.aten.col2im,device, [3, 5], [2, 3], [1, 2], [1, 2], [1, 1])
 	
 	print("Conv (forward only, no bias)")
-	test_fwd([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2, bias = False),device)
+	test_fwd_bwd([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2, bias = False),device)
 	print("Conv (forward only, with bias)")
-	test_fwd([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2, bias = True),device)
+	test_fwd_bwd([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2, bias = True),device)
 	
 	print("Conv")
 	test_fwd_bwd_op([([2,6,10,20],-1)],torch.nn.Conv2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)
 	
 	print("ConvTr (forward only)")
-	test_fwd([([2,6,10,20],-1)],torch.nn.ConvTranspose2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)
+	test_fwd_bwd([([2,6,10,20],-1)],torch.nn.ConvTranspose2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)
 	print("ConvTr")
 	test_fwd_bwd_op([([2,6,10,20],-1)],torch.nn.ConvTranspose2d(6,8,[3,5],stride=[1,2],padding=[1,2],dilation=1,groups=2),device)
 	
@@ -423,10 +423,10 @@ def test_all(device):
 	test_fwd_bwd_op([([2,3,4,30],-1)],torch.nn.LayerNorm((4,30),elementwise_affine=True),device,paramgen = torch.randn)
 
 	print("Test logit eps")
-	test_fwd([([4,3,5],-1)],lambda x:torch.logit(x, eps=0.1),device)
+	test_fwd_bwd([([4,3,5],-1)],lambda x:torch.logit(x, eps=0.1),device)
 
 	print("Test logit")
-	test_fwd([([4,3,5],-1)],lambda x:torch.logit(torch.clamp(x,min=0.1,max=0.9)),device)
+	test_fwd_bwd([([4,3,5],-1)],lambda x:torch.logit(torch.clamp(x,min=0.1,max=0.9)),device)
 
 	print("Test arange out")
 	test_fwd([([10],-1)],lambda x:torch.arange(0,10,out=x),device)
@@ -453,13 +453,13 @@ def test_all(device):
 	test_fwd_bwd([([2,3,4,5],-1)],lambda x:torch.amin(x,keepdim=False),device)
 
 	print("Test addmm 0/1")
-	test_fwd([([2,4],-1),([2,3],-1),([3,4],-1)],lambda a,b,c:torch.addmm(a,b,c,beta=0.0,alpha=1.0),device)
+	test_fwd_bwd([([2,4],-1),([2,3],-1),([3,4],-1)],lambda a,b,c:torch.addmm(a,b,c,beta=0.0,alpha=1.0),device)
 	print("Test addmm 1/1")
-	test_fwd([([2,4],-1),([2,3],-1),([3,4],-1)],lambda a,b,c:torch.addmm(a,b,c,beta=1.0,alpha=1.0),device)
+	test_fwd_bwd([([2,4],-1),([2,3],-1),([3,4],-1)],lambda a,b,c:torch.addmm(a,b,c,beta=1.0,alpha=1.0),device)
 	print("Test addmm 1.0/0.5")
-	test_fwd([([2,4],-1),([2,3],-1),([3,4],-1)],lambda a,b,c:torch.addmm(a,b,c,beta=1.0,alpha=0.5),device)
+	test_fwd_bwd([([2,4],-1),([2,3],-1),([3,4],-1)],lambda a,b,c:torch.addmm(a,b,c,beta=1.0,alpha=0.5),device)
 	print("Test addmm 0.5/0.5")
-	test_fwd([([2,4],-1),([2,3],-1),([3,4],-1)],lambda a,b,c:torch.addmm(a,b,c,beta=0.5,alpha=0.5),device)
+	test_fwd_bwd([([2,4],-1),([2,3],-1),([3,4],-1)],lambda a,b,c:torch.addmm(a,b,c,beta=0.5,alpha=0.5),device)
 
 	print("Test addmm 0/1 cp")
 	test_fwd([([2,4],-1),([2,3],-1),([3,4],-1),([4,2],-1)],lambda a,b,c,o:torch.addmm(a,b,c,beta=0.0,alpha=1.0,out=o.T),device)
@@ -499,10 +499,10 @@ def test_all(device):
 	test_fwd_bwd([([2,3,10,15],-1)],lambda x:torch.nn.functional.interpolate(x,size=(20,20),mode='bilinear',align_corners=True),device)
 
 	print("Test pow 2")
-	test_fwd([([2,4],-1)],lambda a:torch.abs(a)**2.0,device)
+	test_fwd_bwd([([2,4],-1)],lambda a:torch.abs(a)**2.0,device)
 
 	print("Test pow 1.3")
-	test_fwd([([2,4],-1)],lambda a:torch.abs(a)**1.3,device)
+	test_fwd_bwd([([2,4],-1)],lambda a:torch.abs(a)**1.3,device)
 
 	print("Test log_sigmoid_forward")
 	test_fwd_bwd([([2,4],-1)],nn.LogSigmoid(),device)
