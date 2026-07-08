@@ -52,15 +52,9 @@ def train(args, model, device, train_loader, optimizer, epoch,profile):
 			data, target = d.to(device), t.to(device)
 			optimizer.zero_grad()
 			output = model(data)
-			input(output.shape)
 			loss = F.cross_entropy(output,target)
 			loss.backward()
 			optimizer.step()
-			print(loss.grad)
-			input(loss)
-			for k, v in model.state_dict().items():
-				print(k)
-				input(v)
 			return loss.item()
 
 		if profile and epoch == 1 and batch_idx == 5:

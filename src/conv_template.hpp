@@ -101,17 +101,14 @@ void slow_conv_dilated_all_vk_template(
 	
 	dlprim::Tensor columns_dp = todp(columns);
 	dlprim::Tensor weight_dp = todp(weight);
-	{	
+	{
 		// For each elt in batch, do:
 		for (int elt = 0; elt < batchSize; elt++)
 		{
 			// Matrix multiply per output:
 			Tensor input_n = input.select(0, elt);
 			dlprim::Tensor input_n_dp = todp(input_n);
-			
-			// if we can fit the whole thing in one sequence, that would be ideal. However, that may not be possible yet :c
-			tart::command_sequence_ptr sequence = stream.queue()->createSequence();
-			
+
 			// Output
 			if (output.defined())
 			{
@@ -125,8 +122,6 @@ void slow_conv_dilated_all_vk_template(
 					}
 				}
 				dlprim::Tensor output_n_dp = todp(output_n);
-				
-				
 				
 				// Extract columns:
 				hvol2col(
@@ -143,10 +138,7 @@ void slow_conv_dilated_all_vk_template(
 					columns_dp.device_buffer(),
 					columns_dp.device_offset(),
 					input_n_dp.dtype(),
-					dim, sequence);
-				
-				sequence->recordBarrier(columns_dp.device_buffer());
-				
+					dim);
 				const float alpha = 1.0;
 				const float beta = 1.0;
 				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kNo, clblast::Transpose::kNo,
@@ -158,8 +150,7 @@ void slow_conv_dilated_all_vk_template(
 					weight_dp.device_buffer(), weight_dp.device_offset(), columns.size(0),
 					beta,
 					output_n_dp.device_buffer(), output_n_dp.device_offset(), columns.size(1),
-					stream.queue(), nullptr, nullptr, sequence);
-				sequence->recordBarrier(output_n_dp.device_buffer());
+					stream.queue());
 			}
 			else
 			{
@@ -188,9 +179,7 @@ void slow_conv_dilated_all_vk_template(
 					weight_dp.device_buffer(), weight_dp.device_offset(), columns.size(0), // b
 					beta,
 					columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // c
-					stream.queue(), nullptr, nullptr, sequence);
-				sequence->recordBarrier(columns_dp.device_buffer());
-				//stream.queue()->sync();
+					stream.queue());
 					
 				// Unpack columns back into input:
 				Tensor grad_input_n = grad_input.select(0, elt);
@@ -209,8 +198,7 @@ void slow_conv_dilated_all_vk_template(
 						grad_input_n_dp.device_buffer(),
 						grad_input_n_dp.device_offset(),
 						grad_input_n_dp.dtype(),
-						dim, sequence);
-				sequence->recordBarrier(grad_input_n_dp.device_buffer());
+						dim);
 			}
 
 			// Gradient of weight:
@@ -230,8 +218,7 @@ void slow_conv_dilated_all_vk_template(
 					columns_dp.device_buffer(),
 					columns_dp.device_offset(),
 					columns_dp.dtype(),
-					dim, sequence);
-				sequence->recordBarrier(columns_dp.device_buffer());
+					dim);
 					
 				const float alpha = 1.0;
 				const float beta = 1.0;
@@ -247,11 +234,8 @@ void slow_conv_dilated_all_vk_template(
 					grad_output_n_dp.device_buffer(), grad_output_n_dp.device_offset(), columns.size(1), // b
 					beta,
 					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(), columns.size(0), // c
-					stream.queue(), nullptr, nullptr, sequence);
-				
-				sequence->recordBarrier(grad_weight_dp.device_buffer());
+					stream.queue());
 			}
-			stream.queue()->submitSequence(sequence);
 
 			// Gradient of bias:
 			if (grad_bias.defined()) {
@@ -372,7 +356,6 @@ void slow_conv_transpose2d_out_vk_template(
 				columns_dp.device_offset(),
 				n,
 				stream.queue());
-			stream.queue()->sync();
 
 			dlprim::gpu::col2im(
 				stream,
@@ -431,7 +414,6 @@ void slow_conv_transpose2d_out_vk_template(
 					output_n_dp.device_offset(),
 					n_,
 					stream.queue());
-				stream.queue()->sync();
 			}
 		}
 
@@ -737,7 +719,6 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 				grad_input_n_dp.device_buffer(), grad_input_n_dp.device_offset(),
 				n,
 				stream.queue());
-			stream.queue()->sync();
 		}
 
 		// Resize output
@@ -940,7 +921,6 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(),
 					n,
 					stream.queue());
-				stream.queue()->sync();
 			}
 		}
 

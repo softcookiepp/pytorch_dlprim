@@ -1447,14 +1447,14 @@ using c10::DeviceType;
         dlprim::Tensor Y = todp(out_c);
         auto q = getExecutionContext(self);
         if(eps) {
-            float e = *eps;
+            double e = *eps;
             dlprim::core::pointwise_operation({X},{Y},{e},
-                "dtype z = x0; if (x0 < w0) z = w0; else if (x0 > dtype(1.0) - w0) z = dtype(1.0) - w0;"
-                "y0 = log(z / (dtype(1.0) - z)); ", q);
+                "dtype z = min(1.0f-w0,max(w0,x0)); "
+                "y0 = log(z / (z-1.0f)); ",q);
         }
         else {
             dlprim::core::pointwise_operation({X},{Y},{},
-                "y0 = log(x0 / (dtype(1.0) - x0));",q);
+                "y0 = log(x0 / (x0-1.0f));",q);
         }
         if(!out.is_contiguous())
             out.copy_(out_c);
