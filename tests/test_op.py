@@ -15,6 +15,8 @@ import copy
 
 def get_diff(cpu,dev):
 	c_dev = dev.to('cpu')
+	if cpu.numel() == 0 and c_dev.numel() == 0:
+		return 0.0
 	r = torch.max(torch.abs(cpu - c_dev)).item()
 	if r > 1e-5:
 		print(cpu)
