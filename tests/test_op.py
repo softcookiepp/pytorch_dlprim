@@ -183,7 +183,10 @@ def test_fwd_bwd(inputs,call,device,randgen=torch.randn):
 		diffs.append(('y',get_diff(y_cpu,y_dev)))
 		for i in range(len(inputs)):
 			if inputs[i][1] <= 0:
-				torch.testing.assert_allclose(xs_cpu[i].grad, xs_dev[i].grad.to("cpu"))
+				try:
+					torch.testing.assert_allclose(xs_cpu[i].grad, xs_dev[i].grad.to("cpu"))
+				except AssertionError:
+					raise ValueError(f"Tensors are not close:\n{xs_cpu[i].grad}\n\n{xs_dev[i].grad.to('cpu')}\n")
 				diffs.append(('x%d' % i ,get_diff(xs_cpu[i].grad,xs_dev[i].grad)))
 
 		diffs.sort(key=lambda x:x[1],reverse=True)
