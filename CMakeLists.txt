@@ -52,6 +52,7 @@ if(1)
 			src/vision_ops.cpp
 			src/conv.cpp
 			src/im2col.cpp
+			src/softmax_impl.cpp
 			src/loss_ops.cpp
 			src/random_ops.cpp
 			src/norm_ops.cpp

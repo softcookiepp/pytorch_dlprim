@@ -291,6 +291,7 @@ def test_bmm(device):
 def test_all(device):
 	print("Softmax")
 	test_fwd_bwd([([4,3],-1)],torch.nn.Softmax(dim=1),device)
+	test_fwd_bwd([([4,3],-1)],torch.nn.Softmax(dim=0),device)
 	print("Mean 1d")
 	test_fwd_bwd([([2,3,4],-1)],lambda x:torch.mean(x,dim=0,keepdim=True),device)
 	print("Mean 2d")
@@ -373,7 +374,10 @@ def test_all(device):
 	test_fwd_bwd([([4,3,5],-1)], torch.atan, device)
 	
 	print("cross_entropy")
-	test_fwd_bwd([([128, 0], -1), ([128, 0], -1)], F.cross_entropy, device)
+	test_fwd_bwd([([128, 0], -1), ([128, 0], -1)], F.cross_entropy, device, torch.rand)
+	
+	print("binary_cross_entropy")
+	test_fwd_bwd([([128, 0], -1), ([128, 0], -1)], F.binary_cross_entropy, device, torch.rand)
 
 	print("ChannelShuffle")
 	test_fwd([([3, 4, 2, 2],-1)], torch.nn.ChannelShuffle(2), device)
