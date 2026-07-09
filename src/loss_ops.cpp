@@ -223,7 +223,19 @@ using c10::DeviceType;
 	// {"schema": "aten::_softmax_backward_data.out(Tensor grad_output, Tensor output, int dim, ScalarType input_dtype, *, Tensor(a!) grad_input) -> Tensor(a!)", "dispatch": "True", "default": "False"}
 	Tensor & _softmax_backward_data_out(const Tensor & grad_output, const Tensor & output, int64_t dim, ScalarType /*input_dtype*/, Tensor & grad_input)
 	{
+#if 1
+		host_softmax_backward(
+			SoftmaxEpilogue::eBackward,
+			false,
+			grad_output,
+			output,
+			dim,
+			false,
+			grad_input);
+		return grad_input;
+#else
 		return impl_softmax_backward_data_out(grad_output,output,dim,false,grad_input);
+#endif
 	}
 
 	

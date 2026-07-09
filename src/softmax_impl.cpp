@@ -235,5 +235,147 @@ Tensor& host_softmax(
 	return output;
 }
 
+#if 0
+template<typename input_t, typename output_t, typename accscalar_t, template<typename, typename, typename> class Epilogue>
+void dispatch_host_softmax_backward(int64_t dim_size, dim3 grid, Tensor &grad, Tensor &output, const Tensor &gI)
+{
+	cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+	constexpr int ILP = sizeof(float4) / sizeof(output_t);
+	dim3 block = SoftMax_getBlockSize(ILP, dim_size);
+
+	size_t smem_reduction_sz = block.x / at::cuda::warp_size() * sizeof(accscalar_t);
+	auto max_elements_per_smem = (at::cuda::getCurrentDeviceProperties()->sharedMemPerBlock -
+		smem_reduction_sz) / sizeof(output_t);
+	bool can_use_smem = static_cast<size_t>(dim_size) < max_elements_per_smem;
+	can_use_smem &= (!(reinterpret_cast<uintptr_t>(gI.const_data_ptr<input_t>()) % ALIGN_BYTES));
+	can_use_smem &= (!(reinterpret_cast<uintptr_t>(output.const_data_ptr<output_t>()) % ALIGN_BYTES));
+	can_use_smem &= !(reinterpret_cast<uintptr_t>(grad.const_data_ptr<output_t>()) % ALIGN_BYTES);
+	can_use_smem &= !(dim_size % ILP);
+	// This should not be needed on current generation GPUs because the size of shared memory is so low.
+	// But we add this check to be defensive and future-proof just in case shared memory size goes up
+	// to be so large as to requires 64-bits of addressing.
+	can_use_smem &= (dim_size < std::numeric_limits<int32_t>::max());
+
+	if (can_use_smem) {
+		size_t smem_sz = dim_size * sizeof(output_t) + smem_reduction_sz;
+		cunn_SoftMaxBackwardSmem<ILP, input_t, accscalar_t, output_t, Epilogue>
+		<<<grid, block, smem_sz, stream>>>(
+			gI.mutable_data_ptr<input_t>(), output.const_data_ptr<output_t>(), grad.const_data_ptr<output_t>(), dim_size);
+	} else {
+		cunn_SoftMaxBackward<ILP, input_t, accscalar_t, output_t, Epilogue>
+		<<<grid, block, block.x * sizeof(accscalar_t), stream>>>(
+				gI.mutable_data_ptr<input_t>(), output.const_data_ptr<output_t>(), grad.const_data_ptr<output_t>(), dim_size
+			);
+	}
+	C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+#endif
+
+void host_softmax_backward(
+	SoftmaxEpilogue epilogue,
+	bool is_log_softmax,
+	const Tensor &grad_,
+	const Tensor &output_,
+	int64_t dim_,
+	bool half_to_float,
+	const Tensor &gI)
+{
+	int64_t dim = maybe_wrap_dim(dim_, grad_.dim());
+	if (grad_.numel() == 0)
+	{
+		return;
+	}
+	auto grad = grad_.contiguous();
+	
+	if (grad.dim() == 0) grad = grad.view(1);
+	TORCH_CHECK(dim >=0 && dim < grad.dim(), "dim must be non-negative and less than input dimensions");
+	auto output = output_.contiguous();
+	if (output.dim() == 0) output = output.view(1);
+	int64_t outer_size = 1;
+	int64_t dim_size = output.size(dim);
+	int64_t inner_size = 1;
+	for (int64_t i = 0; i < dim; ++i)
+		outer_size *= output.size(i);
+	for (int64_t i = dim + 1; i < output.dim(); ++i)
+		inner_size *= output.size(i);
+		
+// See descriptions of kernels above.
+	auto stream = getExecutionContext(output_);
+	if (inner_size == 1)
+	{
+#if 1
+		throw std::runtime_error("not implemented");
+#else
+		dim3 grid(outer_size);
+		using accscalar_t = acc_type<scalar_t, true>;
+		if (!half_to_float)
+		{
+			if (dim_size <= 1024 && dim_size*sizeof(scalar_t) <= 4096) {
+				auto gI_ptr = gI.mutable_data_ptr<scalar_t>();
+				auto grad_ptr = grad.const_data_ptr<scalar_t>();
+				auto output_ptr = output.const_data_ptr<scalar_t>();
+				int64_t remaining = outer_size;
+				int64_t chunk_size = (1<<30) / dim_size;
+				while(remaining > 0) {
+					dispatch_softmax_backward<scalar_t, scalar_t, accscalar_t, is_log_softmax, false /* masked_softmax */>(
+						gI_ptr, grad_ptr, output_ptr, dim_size, dim_size, std::min<int64_t>(remaining, chunk_size));
+					gI_ptr += chunk_size * dim_size;
+					grad_ptr += chunk_size * dim_size;
+					output_ptr += chunk_size * dim_size;
+					remaining -= chunk_size;
+				}
+			} else {
+				dispatch_host_softmax_backward<scalar_t, scalar_t, accscalar_t, Epilogue>(dim_size, grid, grad, output, gI);
+			}
+		}
+		else
+		{
+			if (dim_size <= 1024 && dim_size*sizeof(scalar_t) <= 4096)
+			{
+				auto gI_ptr = gI.mutable_data_ptr<scalar_t>();
+				auto grad_ptr = grad.const_data_ptr<accscalar_t>();
+				auto output_ptr = output.const_data_ptr<accscalar_t>();
+				int64_t remaining = outer_size;
+				int64_t chunk_size = (1<<30) / dim_size;
+				while(remaining > 0) {
+					dispatch_softmax_backward<accscalar_t, scalar_t, accscalar_t, is_log_softmax, false /* masked_softmax */>(
+						gI_ptr, grad_ptr, output_ptr, dim_size, dim_size, std::min<int64_t>(remaining, chunk_size));
+					gI_ptr += chunk_size * dim_size;
+					grad_ptr += chunk_size * dim_size;
+					output_ptr += chunk_size * dim_size;
+					remaining -= chunk_size;
+				}
+			}
+			else
+			{
+				dispatch_host_softmax_backward<scalar_t, accscalar_t, accscalar_t, Epilogue>(dim_size, grid, grad, output, gI);
+			}
+		}
+#endif
+	}
+	else
+	{
+		// this goes in dlprimitives::gpu
+		auto gI_dp = todp(gI);
+		auto output_dp = todp(output_);
+		auto grad_dp = todp(grad_);
+		
+		dlprim::gpu::spatial_softmax_backward(
+			stream,
+			todp(output.dtype()),
+			epilogue,
+			gI_dp.device_buffer(),
+			gI_dp.device_offset(),
+			output_dp.device_buffer(),
+			output_dp.device_offset(),
+			grad_dp.device_buffer(),
+			grad_dp.device_offset(),
+			outer_size,
+			dim_size,
+			inner_size,
+			false,
+			nullptr);
+	}
+}
 
 }

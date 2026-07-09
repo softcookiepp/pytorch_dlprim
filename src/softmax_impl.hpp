@@ -32,4 +32,13 @@ Tensor& host_softmax(
 	const bool half_to_float,
 	Tensor& output);
 
+void host_softmax_backward(
+	SoftmaxEpilogue epilogue,
+	bool is_log_softmax,
+	const Tensor &grad_,
+	const Tensor &output_,
+	int64_t dim_,
+	bool half_to_float,
+	const Tensor &gI);
+
 } // namespace ptdlprim
