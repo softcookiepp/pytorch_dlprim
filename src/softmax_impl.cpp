@@ -21,7 +21,7 @@ using c10::DeviceType;
 
 using dlprim::gpu::SoftmaxEpilogue;
 
-Tensor host_softmax(
+Tensor& host_softmax(
 	SoftmaxEpilogue epilogue,
 	SoftmaxEpilogue epilogueWithMul,
 	bool is_log_softmax,
@@ -29,8 +29,9 @@ Tensor host_softmax(
 	const Tensor & input_,
 	const int64_t dim_,
 	const bool half_to_float,
-	const Tensor& output)
+	Tensor& output)
 {
+	std::cout << "WEEEEEEEEEEEEEEEEEE" << std::endl;
 	if (half_to_float)
 	{
 		throw std::runtime_error("not implemented");
@@ -213,6 +214,9 @@ Tensor host_softmax(
 			
 			if (output.dtype() != input_.dtype())
 				throw std::invalid_argument("input and output for softmax must be same dtype");
+			
+			if (epilogue != SoftmaxEpilogue::eForward)
+				throw std::runtime_error("only forward, non-log softmax is implemented");
 			
 			dlprim::gpu::spatial_softmax(
 				stream,

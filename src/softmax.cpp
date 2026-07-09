@@ -1,4 +1,4 @@
-
+#if 0
 #include "CLTensor.h"
 #include "utils.h"
 
@@ -114,4 +114,5 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 	  m.impl("aten::_softmax.out",&ptdlprim::_softmax_out);
 	  // m.impl("aten::_softmax_backward_data.out",&ptdlprim::_softmax_backward_data_out);;
 } 
+#endif
 #endif

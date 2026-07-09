@@ -56,6 +56,7 @@ def test_fwd(inputs,call,device, *extra_args, print_results = False):
 			torch.testing.assert_allclose(y_cpu, y_dev.to("cpu"))
 		except AssertionError:
 			print(xs_cpu)
+			print(xs_dev)
 			print(y_cpu)
 			print(y_dev.to("cpu"))
 			raise Exception("Not close!")
@@ -289,9 +290,10 @@ def test_bmm(device):
 	
 
 def test_all(device):
-	print("Softmax")
-	test_fwd_bwd([([4,3],-1)],torch.nn.Softmax(dim=1),device)
-	test_fwd_bwd([([4,3],-1)],torch.nn.Softmax(dim=0),device)
+	print("Softmax (fwd only)")
+	test_fwd([([1028, 4, 3, 2],-1)],torch.nn.Softmax(dim=0),device)
+	test_fwd([([4,3],-1)],torch.nn.Softmax(dim=1),device)
+	
 	print("Mean 1d")
 	test_fwd_bwd([([2,3,4],-1)],lambda x:torch.mean(x,dim=0,keepdim=True),device)
 	print("Mean 2d")
