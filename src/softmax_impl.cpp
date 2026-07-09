@@ -355,6 +355,7 @@ void host_softmax_backward(
 	}
 	else
 	{
+		std::cout << "DOING SOFTMAX BACKWARD" << std::endl;
 		// this goes in dlprimitives::gpu
 		auto gI_dp = todp(gI);
 		auto output_dp = todp(output_);
