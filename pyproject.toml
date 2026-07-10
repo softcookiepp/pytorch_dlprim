@@ -18,8 +18,9 @@ wheel.packages = ["python/pytorch_vk"]
 BUILD_TORCH_PACKAGE_INDEX = "https://download.pytorch.org/whl/cpu"
 BUILD_TORCH_PACKAGE_NAME = "torch==2.4.0"
 INSTALL_TORCH = "ON"
-INSTALL_PYBIND11 = "ON"
-TART_ENABLE_SHADER_COMPILERS = "OFF"
+#INSTALL_PYBIND11 = "ON"
+TART_ENABLE_SHADER_COMPILERS = "ON"
+CMAKE_BUILD_TYPE = "Release"
 
 [tool.pip]
 extra-index-url = "https://download.pytorch.org/whl/cpu"
