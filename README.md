@@ -4,78 +4,20 @@ Out-of-tree backend for pytorch supporting any GPU with a Vulkan driver!
 
 Originally based [pytorch_dlprim](https://github.com/artyom-beilis/pytorch_dlprim), but will likely have even more functionality in the future.
 
-Supported pytorch versions are 1.13 and torch `>=` 2.4
-
-# Validated Networks
-
-Following torchvision networks were validated:
-
-| Network               |   Notes                                   |
-|-----------------------|-------------------------------------------|
-| `alexnet`             |                                           |
-| `resnet18`            |                                           |
-| `resnet50`            |                                           |
-| `convnext_small`      |                                           |
-| `vgg16`               |                                           |
-| `squeezenet1_0`       |                                           |
-| `googlenet`           |                                           |
-| `densenet161`         |                                           |
-| `inception_v3`        | fwd only - backward fails on cuda/cpu     |
-| `shufflenet_v2_x1_0`  |                                           |
-| `mobilenet_v2`        |                                           |
-| `mobilenet_v3_large`  |                                           |
-| `mobilenet_v3_small`  | fwd only - same failure on bwd on cuda.   |
-| `resnext50_32x4d`     |                                           |
-| `wide_resnet50_2`     |                                           |
-| `mnasnet1_0`          |                                           |
-| `efficientnet_b0`     |                                           |
-| `efficientnet_b4`     |                                           |
-| `regnet_y_400mf`      |                                           |
-| `vit_b_16`            |                                           |
-
-
-Calculations validated agaist CPU reference for both forward and backward popogation.
-
-# Tested Devices
-
-DLPrimitves itself is tested on following devies: 
-
-- AMD rx 6600XT with ROCM drivers, rx560 16cu with AMDGPU-pro drivers
-- Nvidia: GTX 960
-- Intel:  HD 530, UHD 770, Arc A380
-
+Currently pytorch version 2.4.0 is required, but this will change in the future.
 
 # Installation
 
-DONT READ THIS YET, ITS NOT DONE
-
-The simplest way is to download `whl` package from release page - builds for Windows and Linux are provided.
-
-Create virtual evironment, install _CPU_ version of pytorch >= 2.4, download `whl` file that corresponds
-to python version, pytorch version and architecture and install it. For example: python 3.10, torch 2.4 on Linux it is:
-
-    pip install pytorch_ocl-0.1.0+torch2.4-cp310-none-linux_x86_64.whl
-
-Now all you need is to import `pytorch_vk` and now you can use device 'vk' instead of cuda:
-
-    torch.randn(10,10,device='vk:0')
-
-If you don't have prebuilt whl file for your enviromnent, you want use latest updates or modify the code,
-please refer to README-build.md
+See [README-build.md](README-build.md)
     
 ## How to Use
-    
-Keep it mind... it is earky version that misses a lot of functionality and it isn't fully tested yet.
-So if something fails. It is either not implemented or it is implemented incorrectly
 
-Note: pytorch backend is based on dlprimitives library that actually implements all the operators and
-it is relatively well tested.
-
-If you still want to try: import package `pytorch_vk`
-
-Keep in mind you may have several OpenCL devices. Refer to `clinfo --list` to list
-of the devices and their order. Now instead of calling `something.to('cuda')` you call `something.to('vk:0')` or 
-`something.to('privateuseone:0' for pytorch 1.13)` or another `vk:1` etc.
+Example:
+```
+import pytorch_vk
+import torch
+a = torch.randn(256).to("vk:0")
+```
 
 ## Known Issues
 
