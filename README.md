@@ -23,6 +23,7 @@ a = torch.randn(256).to("vk:0")
 
 1. Many operators not implemented and there may be fallbacks to CPU. Sometimes it is minor but sometimes it may hamper the performance, some may just fail
 2. When you save/restore the model move it to CPU. Currently there is an issue with loading back saved state dictionary if it was saved from vk device
+3. Efficiency is currently abysmal due to GPU under-utilization. Optimization has been put on the backburner in order to focus on making sure all the computations pass correctness tests, but hopefully this will soon change.
 
 
 ## `pytorch_vk` specific API
