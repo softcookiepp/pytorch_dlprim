@@ -188,7 +188,8 @@ using c10::DeviceType;
                 sync_if_needed(self.device());
             else
 #if VULKAN_API
-                getExecutionContext(self.device()).queue()->sync();
+			{}
+                //getExecutionContext(self.device()).queue()->sync();
 #else
                 getExecutionContext(self.device()).queue().flush();
 #endif
