@@ -7,6 +7,7 @@ To build on Linux, you will need the following:
 ### Building with pip
 
 If you just want to use the package, run `pip install git+https://github.com/softcookiepp/pytorch_dlprim.git`
+
 You will still need the aformentioned build dependencies to do this.
 
 ### Building the wheel
