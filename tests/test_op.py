@@ -447,11 +447,11 @@ def test_all(device):
 	print("LayerNorm Aff")
 	test_fwd_bwd_op([([2,3,4,30],-1)],torch.nn.LayerNorm((4,30),elementwise_affine=True),device,paramgen = torch.randn)
 
-	print("Test logit eps")
-	test_fwd_bwd([([4,3,5],-1)],lambda x:torch.logit(x, eps=0.1),device)
-
 	print("Test logit")
 	test_fwd_bwd([([4,3,5],-1)],lambda x:torch.logit(torch.clamp(x,min=0.1,max=0.9)),device)
+
+	print("Test logit eps")
+	test_fwd_bwd([([4,3,5],-1)],lambda x:torch.logit(x, eps=0.1),device)
 
 	print("Test arange out")
 	test_fwd([([10],-1)],lambda x:torch.arange(0,10,out=x),device)

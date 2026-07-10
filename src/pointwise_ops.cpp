@@ -1450,11 +1450,14 @@ using c10::DeviceType;
             double e = *eps;
             dlprim::core::pointwise_operation({X},{Y},{e},
                 "dtype z = min(1.0f-w0,max(w0,x0)); "
-                "y0 = log(z / (z-1.0f)); ",q);
+                //"dtype eps = w0; "
+                //"z = x0; " // default
+                //"z = x0 > 1.0 - eps ? "
+                "y0 = log(z / (1.0f - z)); ",q);
         }
         else {
             dlprim::core::pointwise_operation({X},{Y},{},
-                "y0 = log(x0 / (x0-1.0f));",q);
+                "y0 = log(x0 / (1.0f - x0));",q);
         }
         if(!out.is_contiguous())
             out.copy_(out_c);
