@@ -25,6 +25,12 @@ a = torch.randn(256).to("vk:0")
 2. When you save/restore the model move it to CPU. Currently there is an issue with loading back saved state dictionary if it was saved from vk device
 3. Efficiency is currently abysmal due to GPU under-utilization. Optimization has been put on the backburner in order to focus on making sure all the computations pass correctness tests, but hopefully this will soon change.
 
+## To-do list
+
+In order of priority:
+- Refactor codebases of upstream dependencies. They have far too many goofy abstractions that only exist because of limitations inherent to OpenCL and/or the ability to support multiple GPGPU APIs, and this makes maintenance and optimization difficult.
+- Optimize as much as possible.
+- Implement missing operators.
 
 ## `pytorch_vk` specific API
 
