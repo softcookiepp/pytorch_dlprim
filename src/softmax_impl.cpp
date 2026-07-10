@@ -271,19 +271,19 @@ void dispatch_host_softmax_backward(int64_t dim_size, dim3 grid, Tensor &grad, T
 }
 #endif
 
-void host_softmax_backward(
+Tensor& host_softmax_backward(
 	SoftmaxEpilogue epilogue,
 	bool is_log_softmax,
 	const Tensor &grad_,
 	const Tensor &output_,
 	int64_t dim_,
 	bool half_to_float,
-	const Tensor &gI)
+	Tensor &gI)
 {
 	int64_t dim = maybe_wrap_dim(dim_, grad_.dim());
 	if (grad_.numel() == 0)
 	{
-		return;
+		return gI;
 	}
 	auto grad = grad_.contiguous();
 	
@@ -358,8 +358,8 @@ void host_softmax_backward(
 		std::cout << "DOING SOFTMAX BACKWARD" << std::endl;
 		// this goes in dlprimitives::gpu
 		auto gI_dp = todp(gI);
-		auto output_dp = todp(output_);
-		auto grad_dp = todp(grad_);
+		auto output_dp = todp(output);
+		auto grad_dp = todp(grad);
 		
 		dlprim::gpu::spatial_softmax_backward(
 			stream,
@@ -377,6 +377,7 @@ void host_softmax_backward(
 			false,
 			nullptr);
 	}
+	return gI;
 }
 
 }

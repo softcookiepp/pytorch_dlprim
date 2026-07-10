@@ -224,7 +224,7 @@ using c10::DeviceType;
 	Tensor & _softmax_backward_data_out(const Tensor & grad_output, const Tensor & output, int64_t dim, ScalarType /*input_dtype*/, Tensor & grad_input)
 	{
 #if 1
-		host_softmax_backward(
+		return host_softmax_backward(
 			SoftmaxEpilogue::eBackward,
 			false,
 			grad_output,
@@ -232,7 +232,7 @@ using c10::DeviceType;
 			dim,
 			false,
 			grad_input);
-		return grad_input;
+			
 #else
 		return impl_softmax_backward_data_out(grad_output,output,dim,false,grad_input);
 #endif
@@ -300,7 +300,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 	  m.impl("aten::_log_softmax.out",&ptdlprim::_log_softmax_out);
 	  m.impl("aten::_log_softmax_backward_data.out",&ptdlprim::_log_softmax_backward_data_out);
 	  m.impl("aten::_softmax.out",&ptdlprim::_softmax_out);
-	  m.impl("aten::_softmax_backward_data.out",&ptdlprim::_softmax_backward_data_out);
+	  //m.impl("aten::_softmax_backward_data.out",&ptdlprim::_softmax_backward_data_out);
 	  m.impl("aten::mse_loss",&ptdlprim::mse_loss);
 	  m.impl("aten::mse_loss_backward",&ptdlprim::mse_loss_backward);
 } 
