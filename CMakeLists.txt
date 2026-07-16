@@ -17,6 +17,10 @@ if(INSTALL_TORCH)
 	execute_process(COMMAND ${Python3_EXECUTABLE} -m pip install ${BUILD_TORCH_PACKAGE_NAME} --index-url ${BUILD_TORCH_PACKAGE_INDEX})
 endif()
 
+if(INSTALL_PYBIND11)
+	execute_process(COMMAND ${Python3_EXECUTABLE} -m pip install pybind11 pybind11-global)
+endif()
+
 # This will get the cmake prefix of torch
 execute_process(COMMAND ${Python3_EXECUTABLE} -c "import torch; import os; print(os.path.join(torch.utils.cmake_prefix_path, 'Torch'))" OUTPUT_VARIABLE TORCH_CMAKE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${TORCH_CMAKE_DIR})

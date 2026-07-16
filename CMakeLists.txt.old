@@ -1,0 +1,112 @@
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+project(dlprim_backend)
+set(Python_FIND_VIRTUALENV FIRST)
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+
+message("platlib dir: ${SKBUILD_PLATLIB_DIR}")
+option(INSTALL_TORCH "Install pytorch" OFF)
+option(BUILD_CORE_ONLY "Core Build" ON)
+option(DLPRIM_STATIC_BUILD "Build static version only" ON)
+option(BUILD_CPLUS_EXAMPLE "Build C++ examples" OFF)
+
+# set the prefix path to the torch directory automatically
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/get_torch_paths.py"
+    OUTPUT_VARIABLE CMAKE_PREFIX_PATH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+message("${CMAKE_CURRENT_SOURCE_DIR}")
+message("${CMAKE_PREFIX_PATH}")
+find_package(Torch REQUIRED)
+find_package(pybind11 CONFIG REQUIRED)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+
+add_subdirectory(dlprimitives)
+include_directories(${PYTHON_INCLUDE_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/dlprimitives)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/dlprimitives/include)
+include_directories(${Python3_INCLUDE_DIRS})   # Python include
+include_directories(${pybind11_INCLUDE_DIRS})  # pybind11 include
+
+message(" Pytorch libraries: ${TORCH_LIBRARIES}")
+message(" Python libraries: ${Python3_LIBRARIES}")
+message(" Python include: ${Python3_INCLUDE_DIRS}")
+
+if(NOT WIN32)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O2 -Wall")
+endif()
+if(0)
+	# Define our library target
+	add_library(pt_vk SHARED 
+			src/pointwise_ops.cpp
+			src/tensor_ops.cpp
+			src/vision_ops.cpp
+			src/conv.cpp
+			src/im2col.cpp
+			src/loss_ops.cpp
+			src/random_ops.cpp
+			src/norm_ops.cpp
+			src/utils.cpp
+			src/registeration.cpp
+			src/CLTensor.cpp
+			src/guard.cpp
+			src/python_iface.cpp
+			)
+
+	target_compile_features(pt_vk PRIVATE cxx_std_17)
+
+	# Link against LibTorch
+	target_link_libraries(pt_vk ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core ${Python3_LIBRARIES})
+	if(WIN32)
+		target_link_libraries(pt_vk ${Python3_LIBRARIES})
+	endif()
+	set_target_properties(pt_vk PROPERTIES PREFIX "" OUTPUT_NAME "pt_vk")
+	if(NOT WIN32)
+		set_target_properties(pt_vk PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pytorch_vk/")
+	else()
+		set_target_properties(pt_vk PROPERTIES
+			RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pytorch_vk/"
+			SUFFIX ".pyd"
+		)
+		 
+	endif()
+
+	
+
+
+	foreach(PYNAME __init__.py)
+		configure_file(${CMAKE_CURRENT_SOURCE_DIR}/python/pytorch_vk/${PYNAME} "${CMAKE_BINARY_DIR}/pytorch_vk/${PYNAME}" COPYONLY)
+		install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/python/pytorch_vk/${PYNAME} DESTINATION python/pytorch_vk)
+	endforeach()
+
+	install(TARGETS pt_vk 
+			LIBRARY DESTINATION python/pytorch_vk
+			RUNTIME DESTINATION python/pytorch_vk
+		)
+else()
+	pybind11_add_module(pt_vk
+			src/pointwise_ops.cpp
+			src/tensor_ops.cpp
+			src/vision_ops.cpp
+			src/conv.cpp
+			src/im2col.cpp
+			src/loss_ops.cpp
+			src/random_ops.cpp
+			src/norm_ops.cpp
+			src/utils.cpp
+			src/registeration.cpp
+			src/CLTensor.cpp
+			src/guard.cpp
+			src/python_iface.cpp
+			)
+	
+	target_link_libraries(pt_vk PRIVATE ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core ${Python3_LIBRARIES})
+	target_compile_features(pt_vk PRIVATE cxx_std_17)
+	install(TARGETS pt_vk DESTINATION .)
+endif()
+
+# Add C++ examples
+if(BUILD_CPLUS_EXAMPLE)
+    add_subdirectory(examples/cplus)
+endif()

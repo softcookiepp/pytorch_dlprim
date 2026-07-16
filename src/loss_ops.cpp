@@ -297,9 +297,9 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 	  //m.impl("aten::binary_cross_entropy",&ptdlprim::binary_cross_entropy);
 	  //m.impl("aten::binary_cross_entropy_backward",&ptdlprim::binary_cross_entropy_backward);
 	  //m.impl("aten::binary_cross_entropy_backward.grad_input",&ptdlprim::binary_cross_entropy_backward_out);
-	  m.impl("aten::_log_softmax.out",&ptdlprim::_log_softmax_out);
+	  //m.impl("aten::_log_softmax.out",&ptdlprim::_log_softmax_out);
 	  //m.impl("aten::_log_softmax_backward_data.out",&ptdlprim::_log_softmax_backward_data_out);
-	  m.impl("aten::_softmax.out",&ptdlprim::_softmax_out);
+	  //m.impl("aten::_softmax.out",&ptdlprim::_softmax_out);
 	  //m.impl("aten::_softmax_backward_data.out",&ptdlprim::_softmax_backward_data_out);
 	  m.impl("aten::mse_loss",&ptdlprim::mse_loss);
 	  m.impl("aten::mse_loss_backward",&ptdlprim::mse_loss_backward);

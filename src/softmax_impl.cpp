@@ -374,8 +374,7 @@ Tensor& host_softmax_backward(
 			outer_size,
 			dim_size,
 			inner_size,
-			false,
-			nullptr);
+			false);
 	}
 	return gI;
 }

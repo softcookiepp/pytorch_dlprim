@@ -449,7 +449,7 @@ using c10::DeviceType;
     {
       TORCH_WARN("The operator '", op.schema().operator_name(), "' is not currently ",
                  "supported on the vk backend. Please open an issue at for requesting support "
-                 "https://github.com/artyom-beilis/pytorch_dlprim/issues");
+                 "https://github.com/softcookiepp/pytorch_dlprim/issues");
       native::cpu_fallback(op, stack);
     }
 
