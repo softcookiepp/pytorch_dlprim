@@ -34,7 +34,7 @@ void gpu_kernel_impl(TensorIteratorBase& iter, const func_t& f) {
 	}
 	using traits = function_traits<func_t>;
 	using arg0_t = typename traits::result_type;
-	constexpr int ntensors = traits::arity + 1;
+	constexpr int ntensors = traits::arity + 1; // input arguments + one output tensor
 
 	TORCH_INTERNAL_ASSERT(iter.can_use_32bit_indexing());
 	TORCH_INTERNAL_ASSERT(iter.ninputs() == traits::arity);
@@ -79,4 +79,29 @@ void gpu_kernel_impl(TensorIteratorBase& iter, const func_t& f) {
 			c10::cast_and_store<arg0_t>(dtypes[0], out, result);
 		});
 	}
+}
+
+template <typename func_t>
+void gpu_kernel(TensorIteratorBase& iter, const func_t& f) {
+
+#if 0 // check for Vulkan later
+	for (int arg = 0; arg < iter.ntensors(); arg++) {
+		TORCH_CHECK(
+			iter.device(arg).is_cuda(),
+			"argument ", arg, ": expected a CUDA device but found ", iter.device(arg));
+	}
+#endif
+	if (iter.numel() == 0) {
+		return;
+	}
+	
+	// this may cause other problems later. though I am not certain yet
+	if (!iter.can_use_32bit_indexing()) {
+		for (auto& sub_iter : iter.with_32bit_indexing()) {
+			gpu_kernel(sub_iter, f);
+		}
+		return;
+	}
+
+	gpu_kernel_impl(iter, f);
 }

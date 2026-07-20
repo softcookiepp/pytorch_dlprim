@@ -122,7 +122,6 @@ using c10::DeviceType;
         if(self.numel() == 0 && dst.numel() == 0) {
             return self;
         }
-        std::cout << "executing _copy_from\n";
         if(dst.device().type() == c10::DeviceType::CPU && self.device().type() == OpenCLDeviceType) {
             Tensor c_src = make_contiguous_as_target_type(self,dst);
             dlprim::Tensor t = todp(c_src);

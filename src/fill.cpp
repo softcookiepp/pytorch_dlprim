@@ -23,12 +23,14 @@
 #include <ATen/ops/_native_multi_head_attention_cpu_dispatch.h>
 #include <ATen/native/ConvUtils.h>
 #include <ATen/native/DilatedConvolutionUtils.h>
+
+#include <ATen/native/Fill.h>
+
 #include <ATen/div_rtn.h>
 #include <ATen/native/vol2col.h>
 
 #include <clblast_vk.h>
 
-#include "hvol2col.hpp"
 
 namespace ptdlprim
 {
@@ -42,31 +44,8 @@ using c10::Device;
 using c10::DeviceType;
 
 
-template <typename func_t>
-void gpu_kernel(TensorIteratorBase& iter, const func_t& f) {
 
-#if 0 // check for Vulkan later
-	for (int arg = 0; arg < iter.ntensors(); arg++) {
-		TORCH_CHECK(
-			iter.device(arg).is_cuda(),
-			"argument ", arg, ": expected a CUDA device but found ", iter.device(arg));
-	}
-#endif
-	if (iter.numel() == 0) {
-		return;
-	}
-	
-	// this may cause other problems later. though I am not certain yet
-	if (!iter.can_use_32bit_indexing()) {
-		for (auto& sub_iter : iter.with_32bit_indexing()) {
-			gpu_kernel(sub_iter, f);
-		}
-		return;
-	}
-
-	gpu_kernel_impl(iter, f);
-}
-
+#if 0
 // This will eventually be placed in the compute shader, in some way or another.
 template<typename scalar_t>
 struct FillFunctor {
@@ -100,11 +79,19 @@ Tensor& fill_out(Tensor& self, const Scalar& value)
 	return self;
 }
 
-Tensor& fill_(Tensor& self, const Tensor& value)
+#endif
+
+Tensor& fill_Tensor_(Tensor& self, const Tensor& value)
 {
 	TORCH_CHECK(value.dim() == 0, "fill_ only supports 0-dimension value tensor but got tensor with ", value.dim(), " dimensions.");
-	if (self.device() != value.device()){
-		return fill_out(self, value.item());
+	if (self.device() != value.device())
+	{
+#if 1
+		auto valDevice = value.to(self.device());
+		return fill_Tensor_(self, valDevice);
+#else
+		return at::native::fill_out(self, value.item());
+#endif
 	}
 	// Check if value is a view of self and if it is we clone
 	// it to avoid overwriting self prematurely
@@ -120,10 +107,10 @@ Tensor& fill_(Tensor& self, const Tensor& value)
 
 } // namespace ptdlprim
 
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m)
 {
-	m.impl("aten::convolution_overrideable",&ptdlprim::convolution_overrideable);
-	m.impl("aten::convolution_backward_overrideable",&ptdlprim::convolution_backward_overrideable);
+	m.impl("aten::fill_.Tensor", &ptdlprim::fill_Tensor_);
 }
 
 #endif

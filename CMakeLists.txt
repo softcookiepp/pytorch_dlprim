@@ -65,6 +65,7 @@ if(1)
 			src/CLTensor.cpp
 			src/guard.cpp
 			src/python_iface.cpp
+			src/fill.cpp
 			)
 
 	target_compile_features(pt_vk PRIVATE cxx_std_17)
