@@ -6,6 +6,9 @@
 
 
 namespace ptdlprim {
+	
+	tart::profiler_ptr gProfiler = std::make_shared<tart::HostProfiler>();
+	
     std::uint64_t CLCache::round(uint64_t v)
     {
         v--;

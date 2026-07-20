@@ -18,6 +18,7 @@ using c10::DeviceType;
     // {"schema": "aten::native_batch_norm(Tensor input, Tensor? weight, Tensor? bias, Tensor? running_mean, Tensor? running_var, bool training, float momentum, float eps) -> (Tensor, Tensor, Tensor)", "dispatch": "True", "default": "False"}
     ::std::tuple<Tensor,Tensor,Tensor> native_batch_norm(const Tensor & input, const c10::optional<Tensor> & weight, const c10::optional<Tensor> & bias, const c10::optional<Tensor> & running_mean, const c10::optional<Tensor> & running_var, bool training, double momentum, double eps)
     {
+		PTD_TIMER_GUARD("native_batch_norm");
         GUARD;
         bool weight_present = weight && weight->numel()>0; 
         bool bias_present = bias && bias->numel()>0; 
@@ -95,6 +96,7 @@ using c10::DeviceType;
                                                                   double eps,
                                                                   ::std::array<bool,3> output_mask)
     {
+		PTD_TIMER_GUARD("native_batch_norm_backward");
         GUARD;
         bool weight_present = weight && weight->numel()>0; 
         bool affine = weight_present;
@@ -166,6 +168,7 @@ using c10::DeviceType;
     // {"schema": "aten::native_layer_norm(Tensor input, SymInt[] normalized_shape, Tensor? weight, Tensor? bias, float eps) -> (Tensor, Tensor, Tensor)", "dispatch": "True", "default": "True"}
     std::tuple<Tensor,Tensor,Tensor> native_layer_norm(const Tensor & input, c10::SymIntArrayRef normalized_shape, const c10::optional<Tensor> & weight, const c10::optional<Tensor> & bias, double eps)
     {
+		PTD_TIMER_GUARD("native_layer_norm");
         int N = 1;
         for(auto v:normalized_shape) {
             N*=v.expect_int();
@@ -244,6 +247,7 @@ using c10::DeviceType;
             const c10::optional<Tensor> & bias,
             ::std::array<bool,3> output_mask)
     {
+		PTD_TIMER_GUARD("native_layer_norm_backward");
         GUARD;
         int N = 1;
         std::vector<int> ns;
@@ -354,6 +358,7 @@ using c10::DeviceType;
     std::tuple<Tensor,Tensor,Tensor> native_group_norm(const Tensor& input, const c10::optional<Tensor>& weight, const c10::optional<Tensor>& bias, c10::SymInt N_sym, c10::SymInt C_sym, c10::SymInt HxW_sym, int64_t group, double eps)
 
     {
+		PTD_TIMER_GUARD("native_group_norm");
         GUARD;
         bool weight_present = weight && weight->numel() > 0;
         bool bias_present = bias && bias->numel() > 0;
@@ -427,6 +432,7 @@ using c10::DeviceType;
     // {"schema": "aten::native_group_norm_backward(Tensor grad_out, Tensor input, Tensor mean, Tensor rstd, Tensor? weight, SymInt N, SymInt C, SymInt HxW, int group, bool[3] output_mask) -> (Tensor, Tensor, Tensor)", "dispatch": "True", "default": "False"}
     std::tuple<Tensor,Tensor,Tensor> native_group_norm_backward(const Tensor & grad_out, const Tensor & input, const Tensor & mean, const Tensor & rstd, const c10::optional<Tensor> & weight, c10::SymInt N_sym, c10::SymInt C_sym, c10::SymInt HxW_sym, int64_t group, ::std::array<bool,3> output_mask)
     {
+		PTD_TIMER_GUARD("native_group_norm_backward");
         GUARD;
         bool weight_present = weight && weight->numel() > 0;
         int64_t N = N_sym.expect_int();

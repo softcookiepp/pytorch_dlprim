@@ -321,6 +321,7 @@ Tensor& im2col_out_vk(const Tensor& input,
 		IntArrayRef stride,
 		Tensor& output)
 {
+	PTD_TIMER_GUARD("im2col_out_vk");
 	im2col_out_vk_template(output, input, kernel_size, dilation, padding, stride);
 	return output;
 }
@@ -344,6 +345,7 @@ Tensor& col2im_out_vk(const Tensor& input,
 		IntArrayRef stride,
 		Tensor& output)
 {
+	PTD_TIMER_GUARD("col2im_out_vk");
 	col2im_out_vk_template(
 			output, input, output_size, kernel_size, dilation, padding, stride);
 	return output;

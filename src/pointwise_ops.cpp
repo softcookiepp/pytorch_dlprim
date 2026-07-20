@@ -108,6 +108,7 @@ using c10::DeviceType;
 
     template<dlprim::StandardActivations Act>
     torch::Tensor act_autograd(torch::Tensor const &x) {
+		PTD_TIMER_GUARD("act_autograd<?>");
         GUARD;
         return act_cls<Act>::apply(x);
     }

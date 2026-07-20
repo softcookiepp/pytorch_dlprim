@@ -250,6 +250,7 @@ using c10::DeviceType;
         }
         static Tensor linear_forward(AutogradContext *ctx,const Tensor & input, const Tensor & weight, const c10::optional<Tensor> & bias)
         {
+			PTD_TIMER_GUARD("linear_cls::linear_forward");
             GUARD;
             at::AutoDispatchBelowADInplaceOrView g;
 
@@ -291,6 +292,7 @@ using c10::DeviceType;
             return linear_backward(ctx,grad_outputs);
         }
         static tensor_list linear_backward(AutogradContext *ctx, tensor_list grad_outputs) {
+			PTD_TIMER_GUARD("linear_cls::linear_backward");
             GUARD;
             dlprim::Tensor X = todp(ctx->get_saved_variables()[0]);
             dlprim::Tensor W = todp(ctx->get_saved_variables()[1]);
@@ -361,6 +363,7 @@ using c10::DeviceType;
 
         static torch::Tensor max_pool2d_forward(AutogradContext *ctx,torch::Tensor const &self, IntArrayRef kernel_size, IntArrayRef stride, IntArrayRef padding, IntArrayRef dilation, bool ceil_mode) 
         {
+			PTD_TIMER_GUARD("max_pool2d_cls::max_pool2d_forward");
             GUARD;
             at::AutoDispatchBelowADInplaceOrView g;
 
@@ -411,6 +414,7 @@ using c10::DeviceType;
             return max_pool_2d_backward(ctx,grad_outputs);
         }
         static tensor_list max_pool_2d_backward(AutogradContext *ctx, tensor_list grad_outputs) {
+			PTD_TIMER_GUARD("max_pool2d_cls::max_pool2d_backward");
             GUARD;
             torch::Tensor grad_output = grad_outputs[0];
             torch::Tensor input = ctx->get_saved_variables()[0];
@@ -627,11 +631,13 @@ using c10::DeviceType;
      // {"schema": "aten::mm.out(Tensor self, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & mm_out(const Tensor & self, const Tensor & mat2, Tensor & out)
     {
+		PTD_TIMER_GUARD("mm_out");
         return mm_bmm_out(self,mat2,out,0);
     }
     // {"schema": "aten::bmm.out(Tensor self, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bmm_out(const Tensor & self, const Tensor & mat2, Tensor & out)
     {
+		PTD_TIMER_GUARD("bmm_out");
         return mm_bmm_out(self,mat2,out,1);
     }
 

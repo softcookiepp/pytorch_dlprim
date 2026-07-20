@@ -117,6 +117,7 @@ using c10::DeviceType;
 
     Tensor _copy_from(const Tensor & self, const Tensor & dst, bool non_blocking)
     {
+		PTD_TIMER_GUARD("_copy_from");
         GUARD;
         if(self.numel() == 0 && dst.numel() == 0) {
             return self;
@@ -218,6 +219,7 @@ using c10::DeviceType;
 
     Tensor &fill_(Tensor &self, const c10::Scalar &value)
     {
+		PTD_TIMER_GUARD("fill_");
         GUARD;
         dlprim::Tensor t(todp(self));
         auto q = getExecutionContext(self);
@@ -228,6 +230,7 @@ using c10::DeviceType;
     
     Tensor &zero_(Tensor &self)
     {
+		PTD_TIMER_GUARD("zero_");
         GUARD;
         if(self.numel() == 0)
             return self;
@@ -253,6 +256,7 @@ using c10::DeviceType;
     // {"schema": "aten::_local_scalar_dense(Tensor self) -> Scalar", "dispatch": "True", "default": "False"}
     Scalar _local_scalar_dense(const Tensor & self)
     {
+		PTD_TIMER_GUARD("_local_scalar_dense");
         GUARD;
         TORCH_CHECK(self.numel()==1);
         dlprim::Tensor x=todp(self);
@@ -317,6 +321,7 @@ using c10::DeviceType;
     // {"schema": "aten::masked_select(Tensor self, Tensor mask) -> Tensor", "dispatch": "True", "default": "False"}
     Tensor masked_select(const Tensor & self, const Tensor & mask)
     {
+		PTD_TIMER_GUARD("masked_select");
         GUARD;
         Tensor self_c = self.contiguous();
         Tensor mask_c = mask.contiguous();
@@ -396,6 +401,7 @@ using c10::DeviceType;
     // {"schema": "aten::resize_(Tensor(a!) self, SymInt[] size, *, MemoryFormat? memory_format=None) -> Tensor(a!)", "dispatch": "True", "default": "False"}    
     const Tensor & resize_(const Tensor & self, c10::SymIntArrayRef size, ::std::optional<MemoryFormat> memory_format)
     {
+		PTD_TIMER_GUARD("resize_");
         if(memory_format) {
             TORCH_CHECK(*memory_format == MemoryFormat::Contiguous,"resize_ only supports contiguous memory format");
         }

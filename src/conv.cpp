@@ -673,6 +673,7 @@ torch::Tensor convolution_overrideable(
 	torch::IntArrayRef output_padding,
 	int64_t groups)
 {
+	PTD_TIMER_GUARD("convolution_overrideable");
 	GUARD;
 	
 	c10::MaybeOwned<torch::Tensor> bias_maybe_owned = at::borrow_from_optional_tensor(bias);
@@ -712,6 +713,7 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> convolution_backward_overr
 		torch::IntArrayRef output_padding,
 		int64_t groups, std::array<bool,3> output_mask)
 {
+	PTD_TIMER_GUARD("convolution_backward_overrideable");
 	GUARD;
 	Tensor backend_grad_input, backend_grad_weight, backend_grad_bias;
 	auto kernel_size = weight.sizes().slice(2);

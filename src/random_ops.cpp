@@ -36,6 +36,7 @@ using c10::DeviceType;
     // {"schema": "aten::bernoulli_.float(Tensor(a!) self, float p=0.5, *, Generator? generator=None) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bernoulli_(Tensor & self, double p, c10::optional<Generator> generator)
     {
+		PTD_TIMER_GUARD("bernoulli_");
         GUARD;
         dlprim::Tensor rnd=todp(self);
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
@@ -47,6 +48,7 @@ using c10::DeviceType;
     // {"schema": "aten::normal_(Tensor(a!) self, float mean=0, float std=1, *, Generator? generator=None) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & normal_(Tensor & self, double mean, double std, c10::optional<Generator> generator)
     {
+		PTD_TIMER_GUARD("normal_");
         GUARD;
         dlprim::Tensor rnd=todp(self);
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
@@ -58,6 +60,7 @@ using c10::DeviceType;
     // {"schema": "aten::uniform_(Tensor(a!) self, float from=0, float to=1, *, Generator? generator=None) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & uniform_(Tensor & self, double from, double to, c10::optional<Generator> generator)
     {
+		PTD_TIMER_GUARD("uniform_");
         GUARD;
         dlprim::Tensor rnd=todp(self);
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
@@ -68,6 +71,7 @@ using c10::DeviceType;
     // {"schema": "aten::native_dropout(Tensor input, float p, bool? train) -> (Tensor, Tensor)", "dispatch": "True", "default": "False"}
     ::std::tuple<Tensor,Tensor> native_dropout(const Tensor & input, double p, ::std::optional<bool> train)
     {
+		PTD_TIMER_GUARD("native_dropout");
         GUARD;
         Tensor input_c = input.contiguous();
         dlprim::Tensor X = todp(input_c);
@@ -90,6 +94,7 @@ using c10::DeviceType;
     // {"schema": "aten::native_dropout_backward(Tensor grad_output, Tensor mask, float scale) -> Tensor", "dispatch": "True", "default": "False"}
     Tensor native_dropout_backward(const Tensor & grad_output, const Tensor & mask, double scale)
     {
+		PTD_TIMER_GUARD("native_dropout_backward");
         GUARD;
         Tensor grad_output_c=grad_output.contiguous();
         Tensor mask_c=mask.contiguous();
