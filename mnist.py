@@ -52,6 +52,7 @@ def train(args, model, device, train_loader, optimizer, epoch,profile):
 			data, target = d.to(device), t.to(device)
 			optimizer.zero_grad()
 			output = model(data)
+			input("model done")
 			loss = F.cross_entropy(output,target)
 			loss.backward()
 			optimizer.step()
@@ -165,7 +166,6 @@ def main():
 	else:
 		raise Exception("Unsupported model")
 	optimizer = optim.Adam(model.parameters(), lr=args.lr)
-
 	scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 	for epoch in range(1, args.epochs + 1):
 		train(args, model, device, train_loader, optimizer, epoch,args.profile)

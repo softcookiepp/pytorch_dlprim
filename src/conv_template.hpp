@@ -118,6 +118,8 @@ void slow_conv_dilated_all_vk_template(
 						 slow_conv_dilated_all_cuda_template in
 						 ATen/native/DilatedConvolution.cpp */
 					for (int n = 0; n < nOutputPlane; n++) {
+						// This causes CPU backend to be invoked.
+						// TODO: figure out how to stop it.
 						output_n.select(0, n).fill_(bias[n]);
 					}
 				}

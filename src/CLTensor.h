@@ -14,6 +14,8 @@
 
 #define PTD_TIMER_GUARD(function_name) tart::TimerGuard _TG_(function_name, gProfiler)
 
+#define ASSERT_DLPRIM(tensor_) { if () }
+
 namespace ptdlprim {
 	
 extern tart::profiler_ptr gProfiler;

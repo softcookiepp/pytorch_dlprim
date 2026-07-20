@@ -151,8 +151,6 @@ static void im2col_out_vk_template(
 				output_n_dp.device_buffer(),
 				output_n_dp.device_offset(),
 				input_n_dp.dtype());
-			
-			sync_if_needed(input.device());
 		}
 	}
 	

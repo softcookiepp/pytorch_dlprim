@@ -122,7 +122,7 @@ using c10::DeviceType;
         if(self.numel() == 0 && dst.numel() == 0) {
             return self;
         }
-        
+        std::cout << "executing _copy_from\n";
         if(dst.device().type() == c10::DeviceType::CPU && self.device().type() == OpenCLDeviceType) {
             Tensor c_src = make_contiguous_as_target_type(self,dst);
             dlprim::Tensor t = todp(c_src);
@@ -256,6 +256,7 @@ using c10::DeviceType;
     // {"schema": "aten::_local_scalar_dense(Tensor self) -> Scalar", "dispatch": "True", "default": "False"}
     Scalar _local_scalar_dense(const Tensor & self)
     {
+		std::cout << "executing _local_scalar_dense\n";
 		PTD_TIMER_GUARD("_local_scalar_dense");
         GUARD;
         TORCH_CHECK(self.numel()==1);
