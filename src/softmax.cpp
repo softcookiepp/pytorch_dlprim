@@ -107,12 +107,10 @@ using c10::DeviceType;
 #endif
 
 } // namespace dlprim
-#if 0
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 	  // m.impl("aten::_log_softmax.out",&ptdlprim::_log_softmax_out);
 	  // m.impl("aten::_log_softmax_backward_data.out",&ptdlprim::_log_softmax_backward_data_out);
 	  m.impl("aten::_softmax.out",&ptdlprim::_softmax_out);
 	  // m.impl("aten::_softmax_backward_data.out",&ptdlprim::_softmax_backward_data_out);;
 } 
-#endif
 #endif
