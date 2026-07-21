@@ -453,10 +453,11 @@ using c10::DeviceType;
 
     void fallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
     {
-      TORCH_WARN("The operator '", op.schema().operator_name(), "' is not currently ",
-                 "supported on the vk backend. Please open an issue at for requesting support "
-                 "https://github.com/softcookiepp/pytorch_dlprim/issues");
-      native::cpu_fallback(op, stack);
+		PTD_TIMER_GUARD("fallback");
+		TORCH_WARN("The operator '", op.schema().operator_name(), "' is not currently ",
+				 "supported on the vk backend. Please open an issue at for requesting support "
+				 "https://github.com/softcookiepp/pytorch_dlprim/issues");
+		native::cpu_fallback(op, stack);
     }
 
 } // namespace dtype
