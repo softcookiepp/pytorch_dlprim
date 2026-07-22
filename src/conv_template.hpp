@@ -63,36 +63,7 @@ void slow_conv_dilated_all_vk_template(
 	if (output.defined() && !bias.defined()) {
 		output.zero_();
 	}
-// not sure if this will be needed; time will tell...
-#if 0 //defined(USE_ROCM)
-	/* When using ROCm, the sum evaluation is inaccurate for double
-		 tensors. The reason is currently unknown. Hence, we use gemv for
-		 computing `grad_output_n.sum(dims)` until the ROCm-sum issue is
-		 resolved. */
-	Tensor ones = at::empty({0}, options);
-	if (grad_bias.defined()) {
-		ones.resize_({output_vsize});
-		ones.fill_(1);
-	}
-	/* MSVC does not like #ifdef-s inside the CPP macro
-		 AT_DISPATCH_FLOATING_TYPES_AND_HALF. So, we define the code
-		 branching outside the CPP macro: */
-#define CALCULATE_GRAD_BIAS																\
-	at::cuda::blas::gemv<scalar_t>(													\
-			/*trans=*/'t',																			 \
-			/*		m=*/output_vsize,															\
-			/*		n=*/nOutputPlane,															\
-			/*alpha=*/static_cast<scalar_t>(1),									\
-			/*		A=*/grad_output_n.const_data_ptr<scalar_t>(),	\
-			/*	lda=*/output_vsize,															\
-			/*		x=*/ones.const_data_ptr<scalar_t>(),					 \
-			/* incx=*/1,																				 \
-			/* beta=*/static_cast<scalar_t>(1),									\
-			/*		y=*/grad_bias.mutable_data_ptr<scalar_t>(),		\
-			/* incy=*/1)
-#else
 #define CALCULATE_GRAD_BIAS grad_bias += grad_output_n.sum(dims)
-#endif
 
 	// Helpers
 	Tensor grad_output_n;
@@ -101,29 +72,51 @@ void slow_conv_dilated_all_vk_template(
 	
 	dlprim::Tensor columns_dp = todp(columns);
 	dlprim::Tensor weight_dp = todp(weight);
-	{
-		// For each elt in batch, do:
-		for (int elt = 0; elt < batchSize; elt++)
-		{
-			// Matrix multiply per output:
-			Tensor input_n = input.select(0, elt);
-			dlprim::Tensor input_n_dp = todp(input_n);
 
-			// Output
-			if (output.defined())
-			{
-				Tensor output_n = output.select(0, elt);
-				if (bias.defined()) {
-					/* For gemm argument derivation, see
-						 slow_conv_dilated_all_cuda_template in
-						 ATen/native/DilatedConvolution.cpp */
-					for (int n = 0; n < nOutputPlane; n++) {
-						// This causes CPU backend to be invoked.
-						// TODO: figure out how to stop it.
-						output_n.select(0, n).fill_(bias[n]);
-					}
+	// For each elt in batch, do:
+	for (int elt = 0; elt < batchSize; elt++)
+	{
+		// Matrix multiply per output:
+		Tensor input_n = input.select(0, elt);
+		dlprim::Tensor input_n_dp = todp(input_n);
+
+		// Output
+		if (output.defined())
+		{
+			Tensor output_n = output.select(0, elt);
+			if (bias.defined()) {
+				/* For gemm argument derivation, see
+					 slow_conv_dilated_all_cuda_template in
+					 ATen/native/DilatedConvolution.cpp */
+				for (int n = 0; n < nOutputPlane; n++) {
+					// This causes CPU backend to be invoked.
+					// TODO: figure out how to stop it.
+					output_n.select(0, n).fill_(bias[n]);
 				}
+			}
 				dlprim::Tensor output_n_dp = todp(output_n);
+			#if 0
+				// There is something I am fundamentally misunderstanding about the way this function works.
+				size_t num_kernels = output.size(1)*output.size(2);
+				clblast::Convgemm<float>(clblast::KernelMode::kCrossCorrelation,
+					(size_t)input.size(1),
+					(size_t)input.size(2),
+					(size_t)input.size(3),
+					(size_t)kernel_size[0],
+					(size_t)kernel_size[1],
+					(size_t)pad_size[0],
+					(size_t)pad_size[1],
+					(size_t)stride_size[0],
+					(size_t)stride_size[1],
+					(size_t)dilation_size[0],
+					(size_t)dilation_size[1],
+					7, // num_kernels. Ok, this is something I actually have to calculate myself.
+					1, // batch_count
+					input_n_dp.device_buffer(), (size_t)input_n_dp.device_offset(),
+					weight_dp.device_buffer(), (size_t)weight_dp.device_offset(), output_n_dp.device_buffer(),
+					(size_t)output_n_dp.device_offset(), stream.queue(), nullptr);
+			#else
+				
 				
 				// Extract columns:
 				hvol2col(
@@ -153,63 +146,44 @@ void slow_conv_dilated_all_vk_template(
 					beta,
 					output_n_dp.device_buffer(), output_n_dp.device_offset(), columns.size(1),
 					stream.queue());
-			}
-			else
-			{
-				// All gradients
-				grad_output_n = grad_output.select(0, elt);
-			}
-			
-			dlprim::Tensor grad_output_n_dp;
-			
-			if (grad_output_n.defined())
-			{
-				grad_output_n_dp = todp(grad_output_n);
-			}
+			#endif
+		}
+		else
+		{
+			// All gradients
+			grad_output_n = grad_output.select(0, elt);
+		}
+		
+		dlprim::Tensor grad_output_n_dp;
+		
+		if (grad_output_n.defined())
+		{
+			grad_output_n_dp = todp(grad_output_n);
+		}
 
-			// Gradient of input:
-			if (grad_input.defined())
-			{
-				const float alpha = 1.0;
-				const float beta = 0.0;
-				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kNo, clblast::Transpose::kYes,
-					columns.size(1),
-					columns.size(0),
-					nOutputPlane,
-					alpha,
-					grad_output_n_dp.device_buffer(), grad_output_n_dp.device_offset(), columns.size(1), // a
-					weight_dp.device_buffer(), weight_dp.device_offset(), columns.size(0), // b
-					beta,
-					columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // c
-					stream.queue());
-					
-				// Unpack columns back into input:
-				Tensor grad_input_n = grad_input.select(0, elt);
-				dlprim::Tensor grad_input_n_dp = todp(grad_input_n);
-				col2hvol(
-						stream,
-						columns_dp.device_buffer(),
-						columns_dp.device_offset(),
-						nInputPlane,
-						input_size,
-						output_size,
-						kernel_size,
-						stride_size,
-						pad_size,
-						dilation_size,
-						grad_input_n_dp.device_buffer(),
-						grad_input_n_dp.device_offset(),
-						grad_input_n_dp.dtype(),
-						dim);
-			}
-
-			// Gradient of weight:
-			if (grad_weight.defined()) {
-				// Extract columns:
-				hvol2col(
+		// Gradient of input:
+		if (grad_input.defined())
+		{
+			const float alpha = 1.0;
+			const float beta = 0.0;
+			clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kNo, clblast::Transpose::kYes,
+				columns.size(1),
+				columns.size(0),
+				nOutputPlane,
+				alpha,
+				grad_output_n_dp.device_buffer(), grad_output_n_dp.device_offset(), columns.size(1), // a
+				weight_dp.device_buffer(), weight_dp.device_offset(), columns.size(0), // b
+				beta,
+				columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // c
+				stream.queue());
+				
+			// Unpack columns back into input:
+			Tensor grad_input_n = grad_input.select(0, elt);
+			dlprim::Tensor grad_input_n_dp = todp(grad_input_n);
+			col2hvol(
 					stream,
-					input_n_dp.device_buffer(),
-					input_n_dp.device_offset(),
+					columns_dp.device_buffer(),
+					columns_dp.device_offset(),
 					nInputPlane,
 					input_size,
 					output_size,
@@ -217,40 +191,59 @@ void slow_conv_dilated_all_vk_template(
 					stride_size,
 					pad_size,
 					dilation_size,
-					columns_dp.device_buffer(),
-					columns_dp.device_offset(),
-					columns_dp.dtype(),
+					grad_input_n_dp.device_buffer(),
+					grad_input_n_dp.device_offset(),
+					grad_input_n_dp.dtype(),
 					dim);
-					
-				const float alpha = 1.0;
-				const float beta = 1.0;
-				
-				dlprim::Tensor grad_weight_dp = todp(grad_weight);
-				
-				clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kYes, clblast::Transpose::kNo,
-					columns.size(0),
-					nOutputPlane,
-					columns.size(1),
-					alpha,
-					columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // a
-					grad_output_n_dp.device_buffer(), grad_output_n_dp.device_offset(), columns.size(1), // b
-					beta,
-					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(), columns.size(0), // c
-					stream.queue());
-			}
+		}
 
-			// Gradient of bias:
-			if (grad_bias.defined()) {
-				/* For gemv argument derivation, see
-					 slow_conv_dilated_all_cpu_template in
-					 ATen/native/DilatedConvolution.cpp */
-				CALCULATE_GRAD_BIAS; /* MSVC does not like #ifdef-s
-																inside the CPP macros, see above. */
-				/*
-					TODO: when scale != 1 is introduced then use:
-						grad_bias += scale * grad_output_n.sum(dims);
-				 */
-			}
+		// Gradient of weight:
+		if (grad_weight.defined()) {
+			// Extract columns:
+			hvol2col(
+				stream,
+				input_n_dp.device_buffer(),
+				input_n_dp.device_offset(),
+				nInputPlane,
+				input_size,
+				output_size,
+				kernel_size,
+				stride_size,
+				pad_size,
+				dilation_size,
+				columns_dp.device_buffer(),
+				columns_dp.device_offset(),
+				columns_dp.dtype(),
+				dim);
+				
+			const float alpha = 1.0;
+			const float beta = 1.0;
+			
+			dlprim::Tensor grad_weight_dp = todp(grad_weight);
+			
+			clblast::Gemm(clblast::Layout::kColMajor, clblast::Transpose::kYes, clblast::Transpose::kNo,
+				columns.size(0),
+				nOutputPlane,
+				columns.size(1),
+				alpha,
+				columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // a
+				grad_output_n_dp.device_buffer(), grad_output_n_dp.device_offset(), columns.size(1), // b
+				beta,
+				grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(), columns.size(0), // c
+				stream.queue());
+		}
+
+		// Gradient of bias:
+		if (grad_bias.defined()) {
+			/* For gemv argument derivation, see
+				 slow_conv_dilated_all_cpu_template in
+				 ATen/native/DilatedConvolution.cpp */
+			CALCULATE_GRAD_BIAS; /* MSVC does not like #ifdef-s
+															inside the CPP macros, see above. */
+			/*
+				TODO: when scale != 1 is introduced then use:
+					grad_bias += scale * grad_output_n.sum(dims);
+			 */
 		}
 	}
 } // slow_conv_dilated_all_vk_template
