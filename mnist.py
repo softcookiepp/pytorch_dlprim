@@ -53,7 +53,8 @@ def train(args, model, device, train_loader, optimizer, epoch,profile):
 			optimizer.zero_grad()
 			output = model(data)
 			#input("model done")
-			loss = F.cross_entropy(output,target)
+			#loss = F.cross_entropy(output, target)
+			loss = F.mse_loss(output, target.reshape(-1, 1))
 			loss.backward()
 			optimizer.step()
 			return loss.item()
@@ -124,8 +125,10 @@ def main():
 
 	parser.add_argument('--device',default='cpu')
 	args = parser.parse_args()
-
+	
+	torch.set_num_threads(os.cpu_count() - 1)
 	torch.manual_seed(args.seed)
+	
 
 	device = args.device
 	if device.find('vk')==0 or device.find('privateuseone') == 0:

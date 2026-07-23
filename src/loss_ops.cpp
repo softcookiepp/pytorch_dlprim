@@ -260,8 +260,8 @@ using c10::DeviceType;
 		dlprim::Context ctx(q);
 		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
 					{x.specs(),lbl.specs()},{y.specs()},0,x.dtype(),
-					"y0 = (x0-x1)*(x0-x1);",
-					"reduce_y0 = 0;",
+					"y0 = (typeof_y0(x0) - typeof_y0(x1))*(typeof_y0(x0) - typeof_y0(x1));",
+					"reduce_y0 = typeof_y0(0);",
 					"reduce_y0 += y0;");
 		WSGuard wsg(op->workspace(),self.device());
 		op->enqueue({x,lbl},{y},wsg.ws,{},{scale},{0},q);
@@ -283,7 +283,7 @@ using c10::DeviceType;
 		dlprim::Tensor dx = todp(result);
 		double scale = reduction == 1 ? (1.0f/x.shape().total_size()) : 1.0;
 		dlprim::core::pointwise_operation_broadcast({dy,x,lbl},{dx},{scale},
-			"y0 = 2*(x1 -x2) * x0 * w0;",getExecutionContext(self.device()));
+			"y0 = typeof_y0(2)*(typeof_y0(x1) - typeof_y0(x2)) * typeof_y0(x0) * typeof_y0(w0);",getExecutionContext(self.device()));
 		sync_if_needed(self.device());
 		return result;
 	}

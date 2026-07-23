@@ -1,0 +1,1 @@
+PYTHONPATH=. perf record -o perf.data --call-graph dwarf,8192 --aio -z --sample-cpu --mmap-pages 16M /home/me/external/miniconda3/envs/torch-vk-dev/bin/python ../tests/test_op.py
