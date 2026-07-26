@@ -27,7 +27,6 @@ a = torch.randn(256).to("vk:0")
 
 ## To-do list
 
-In order of priority:
 - Refactor codebases of upstream dependencies. They have far too many goofy abstractions that only exist because of limitations inherent to OpenCL and/or the ability to support multiple GPGPU APIs, and this makes maintenance and optimization difficult.
 - Optimize as much as possible.
 - Implement missing operators.
