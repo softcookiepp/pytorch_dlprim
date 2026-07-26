@@ -7,7 +7,6 @@
 #include <dlprim/gpu/program_cache.hpp>
 #include <dlprim/json.hpp>
 #include <dlprim/utils/json_helpers.hpp>
-#include <dlprim/cpu/cpu_ops.hpp>
 #include <dlprim/core/pointwise.hpp>
 
 #include <dlprim/core/util.hpp>
