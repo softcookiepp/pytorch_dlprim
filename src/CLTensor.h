@@ -139,7 +139,8 @@ extern tart::profiler_ptr gProfiler;
         static std::unique_ptr<CLMemAllocation> alloc(int id,int64_t size)
         {
             auto &d = instance().data(id);
-            return d.cache.allocate(id,d.ctx.context(),size);
+            tart::device_ptr device = d.ctx.device();
+            return d.cache.allocate(id, device, size);
         }
         static void release(std::unique_ptr<CLMemAllocation> &&mem)
         {
@@ -304,12 +305,8 @@ extern tart::profiler_ptr gProfiler;
             if(res.ready)
                 return res;
             res.ctx = dlprim::Context(res.name);
-            res.fp64 = res.ctx.check_device_extension("cl_khr_fp64");
-#if VULKAN_API
+            res.fp64 = res.ctx.device()->getMetadata().double_;
             res.queue = res.ctx.make_execution_context(0);
-#else
-            res.queue = res.ctx.make_execution_context(res.enable_profiling ? CL_QUEUE_PROFILING_ENABLE : 0);
-#endif
             res.cache.prepare(res.ctx);
             res.ready = true;
             std::cout << "Accessing device #" << i << ":" << res.ctx.name() << std::endl;
