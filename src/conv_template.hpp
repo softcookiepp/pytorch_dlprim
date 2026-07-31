@@ -83,6 +83,7 @@ void slow_conv_dilated_all_vk_template(
 		// Output
 		if (output.defined())
 		{
+			size_t outChannels = output.size(1);
 			Tensor output_n = output.select(0, elt);
 			if (bias.defined()) {
 				/* For gemm argument derivation, see
@@ -110,7 +111,7 @@ void slow_conv_dilated_all_vk_template(
 					(size_t)stride_size[1],
 					(size_t)dilation_size[0],
 					(size_t)dilation_size[1],
-					7, // num_kernels. Ok, this is something I actually have to calculate myself.
+					outChannels, // num_kernels. Ok, this is something I actually have to calculate myself.
 					1, // batch_count
 					input_n_dp.device_buffer(), (size_t)input_n_dp.device_offset(),
 					weight_dp.device_buffer(), (size_t)weight_dp.device_offset(), output_n_dp.device_buffer(),
