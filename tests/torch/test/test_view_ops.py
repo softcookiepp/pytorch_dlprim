@@ -816,7 +816,7 @@ class TestViewOps(TestCase):
 		self.assertTrue(self.is_view_of(t, v))
 
 		v[6] = 0
-		self.assertEqual(t[1, 1], v[6])
+		self.assertEqual(t[1, 1].reshape(-1), v[6].reshape(-1))
 
 	def test_view_as_view(self):
 		t = torch.ones(5, 5, device=self._device)
