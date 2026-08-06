@@ -1,5 +1,4 @@
 # Owner(s): ["module: dataloader"]
-# ruff: noqa: F841
 
 import ctypes
 import errno
@@ -25,16 +24,15 @@ from torch.testing._internal.common_device_type import instantiate_device_type_t
 from torch.testing._internal.common_utils import (
     IS_CI,
     IS_JETSON,
-    IS_LINUX,
     IS_MACOS,
-    IS_S390X,
     IS_SANDCASTLE,
     IS_WINDOWS,
     load_tests,
+    NO_MULTIPROCESSING_SPAWN,
     parametrize,
     run_tests,
     skipIfNoDill,
-    skipIfXpu,
+    skipIfRocm,
     slowTest,
     TEST_CUDA,
     TEST_NUMPY,
@@ -47,7 +45,6 @@ from torch.utils.data import (
     ChainDataset,
     ConcatDataset,
     DataLoader,
-    dataloader,
     Dataset,
     IterableDataset,
     IterDataPipe,
@@ -64,15 +61,14 @@ try:
     import psutil
 
     HAS_PSUTIL = True
-except ModuleNotFoundError:
+except ImportError:
     HAS_PSUTIL = False
-    psutil = None
     err_msg = (
         "psutil not found. Some critical data loader tests relying on it "
         "(e.g., TestDataLoader.test_proper_exit) will not run."
     )
     if IS_CI:
-        raise ModuleNotFoundError(err_msg) from None
+        raise ImportError(err_msg) from None
     else:
         warnings.warn(err_msg)
 
@@ -81,39 +77,32 @@ try:
     import numpy as np
 
     HAS_NUMPY = True
-except ModuleNotFoundError:
+except ImportError:
     HAS_NUMPY = False
-    np = None
 skipIfNoNumpy = unittest.skipIf(not HAS_NUMPY, "no NumPy")
 
 # load_tests from torch.testing._internal.common_utils is used to automatically filter tests for
 # sharding on sandcastle. This line silences flake warnings
-load_tests = load_tests  # noqa: PLW0127
+load_tests = load_tests
 
-TEST_CUDA_IPC = (
-    torch.cuda.is_available()
-    and sys.platform != "darwin"
-    and sys.platform != "win32"
-    and not IS_JETSON
-    #    and not TEST_WITH_ROCM
-)  # https://github.com/pytorch/pytorch/issues/90940
+if TEST_CUDA:
+    torch.cuda.memory._set_allocator_settings("expandable_segments:False")
 
-TEST_MULTIGPU = TEST_CUDA_IPC and torch.cuda.device_count() > 1
-
-# We want to use `spawn` if able because some of our tests check that the
-# data loader terminates gracefully. To prevent hanging in the testing
-# process, such data loaders are run in a separate subprocess.
-#
-# We also want to test the `pin_memory=True` configuration, thus `spawn` is
-# required to launch such processes and they initialize the CUDA context.
-#
-# Mixing different start method is a recipe for disaster (e.g., using a fork
-# `mp.Event` with a spawn `mp.Process` segfaults). So we set this globally
-# to avoid bugs.
-#
-# Get a multiprocessing context because some test / third party library will
-# set start_method when imported, and setting again triggers `RuntimeError`.
-mp = mp.get_context(method="spawn")
+if not NO_MULTIPROCESSING_SPAWN:
+    # We want to use `spawn` if able because some of our tests check that the
+    # data loader terminiates gracefully. To prevent hanging in the testing
+    # process, such data loaders are run in a separate subprocess.
+    #
+    # We also want to test the `pin_memory=True` configuration, thus `spawn` is
+    # required to launch such processes and they initialize the CUDA context.
+    #
+    # Mixing different start method is a recipe for disaster (e.g., using a fork
+    # `mp.Event` with a spawn `mp.Process` segfaults). So we set this globally
+    # to avoid bugs.
+    #
+    # Get a multiprocessing context because some test / third party library will
+    # set start_method when imported, and setting again triggers `RuntimeError`.
+    mp = mp.get_context(method="spawn")
 
 
 # 60s of timeout?
@@ -132,26 +121,9 @@ supported_multiprocessing_contexts = [None] + list(
 )
 
 
-# The following collate functions are defined globally here for pickle purposes.
-
-
-# collate_fn that returns the batch cloned
+# collate_fn that returns the batch cloned; defined globally here for pickle purposes.
 def _clone_collate(b):
     return [x.clone() for x in b]
-
-
-# collate_fn that returns the batch of sparse coo tensors cloned
-def _sparse_coo_collate(b):
-    lst = []
-    for x in b:
-        t = x.clone()
-        lst.append(t)
-        # Force sparse tensor invariants checks. check_pinning=True
-        # reproduces gh-153143.
-        torch._validate_sparse_coo_tensor_args(
-            t._indices(), t._values(), t.size(), t.is_coalesced(), check_pinning=False
-        )
-    return lst
 
 
 @unittest.skipIf(
@@ -242,14 +214,14 @@ class TestDatasetRandomSplit(TestCase):
         dataset = CustomDataset(self, x)
         dataset = random_split(dataset, [5])[0]
         data_loader = DataLoader(dataset)
-        for _batch in data_loader:
+        for batch in data_loader:
             pass
 
         # fractional splitting
         dataset = CustomDataset(self, x)
         dataset = random_split(dataset, [1.0])[0]
         data_loader = DataLoader(dataset)
-        for _batch in data_loader:
+        for batch in data_loader:
             pass
 
     def test_splits_reproducibility(self):
@@ -429,13 +401,6 @@ class TestTensorDataset(TestCase):
             self.assertEqual(t2[i], source[i][2])
             self.assertEqual(t3[i], source[i][3])
 
-    def test_size_mismatch(self):
-        tensor1 = torch.randn(10, 5)
-        tensor2 = torch.randn(10, 3)
-        tensor3 = torch.randn(20, 7)
-        with self.assertRaisesRegex(AssertionError, "Size mismatch between tensors"):
-            TensorDataset(tensor1, tensor2, tensor3)
-
 
 @unittest.skipIf(
     TEST_WITH_TSAN,
@@ -503,7 +468,7 @@ class TestStackDataset(TestCase):
 
     def test_getitems(self):
         class GetItemsDataset(Dataset):
-            def __init__(self) -> None:
+            def __init__(self):
                 self.data = torch.randn(4)
 
             def __getitem__(self, item):
@@ -532,7 +497,7 @@ class TestStackDataset(TestCase):
 
     def test_getitems_raises_index_error(self):
         class GetItemsDataset(Dataset):
-            def __init__(self) -> None:
+            def __init__(self):
                 self.data = torch.randn(4)
 
             def __getitem__(self, item):
@@ -554,7 +519,7 @@ class TestStackDataset(TestCase):
 
     def test_getitems_value_error(self):
         class GetItemsDataset(Dataset):
-            def __init__(self) -> None:
+            def __init__(self):
                 self.data = torch.randn(4)
 
             def __getitem__(self, item):
@@ -687,14 +652,12 @@ class ErrorTrackingProcess(mp.Process):
             raise
 
     def print_traces_of_all_threads(self):
-        if not self.is_alive():
-            raise AssertionError(
-                "can only use print_traces_of_all_threads if the process is alive"
-            )
-        if self.disable_stderr:
-            raise AssertionError(
-                "do not disable stderr if you use print_traces_of_all_threads"
-            )
+        assert (
+            self.is_alive()
+        ), "can only use print_traces_of_all_threads if the process is alive"
+        assert (
+            not self.disable_stderr
+        ), "do not disable stderr if you use print_traces_of_all_threads"
         # On platforms without `SIGUSR1`, `set_faulthander_if_available` sets
         # `faulthandler.enable()`, and `print_traces_of_all_threads` may kill
         # the process. So let's poll the exception first
@@ -742,12 +705,12 @@ class SleepDataset(Dataset):
     def __init__(self, size, sleep_sec):
         self.size = size
         self.sleep_sec = sleep_sec
-        self.slept = False
+        self.sleeped = False
 
     def __getitem__(self, idx):
-        if not self.slept:
+        if not self.sleeped:
             time.sleep(self.sleep_sec)
-            self.slept = True
+            self.sleeped = True
         return idx
 
     def __len__(self):
@@ -771,8 +734,7 @@ class WorkerSpecificIterableDataset(IterableDataset):
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
-        if worker_info is None:
-            raise AssertionError("Expected worker_info to be available")
+        assert worker_info is not None
         return iter(range(self.sizes_for_all_workers[worker_info.id]))
 
     def __len__(self):
@@ -785,11 +747,7 @@ class WorkerSpecificIterableDataset(IterableDataset):
 # This can be used to ensure that each worker at least processes one data.
 class SynchronizedDataset(Dataset):
     def __init__(self, size, batch_size, num_workers):
-        if size < num_workers * batch_size:
-            raise AssertionError(
-                f"Expected size >= num_workers * batch_size, got size={size}, "
-                f"num_workers={num_workers}, batch_size={batch_size}"
-            )
+        assert size >= num_workers * batch_size
         self.count = mp.Value("i", 0, lock=True)
         self.barrier = mp.Semaphore(0)
         self.num_workers = num_workers
@@ -867,8 +825,7 @@ def _test_large_sampler_indices(persistent_workers):
     it = iter(dataloader)
 
     for x in it:
-        if x.numel() != 0:
-            raise AssertionError(f"Expected empty tensor, got numel={x.numel()}")
+        assert x.numel() == 0
         raise RuntimeError("My Error")
 
 
@@ -973,8 +930,7 @@ def _test_proper_exit(
     num_workers = 2 if use_workers else 0
 
     if exit_method == "worker_error" or exit_method == "worker_kill":
-        if use_workers is not True:
-            raise AssertionError("Expected use_workers=True for worker exit methods")
+        assert use_workers is True
 
     if exit_method == "worker_error":
         worker_error_event = mp.Event()
@@ -1002,22 +958,14 @@ def _test_proper_exit(
         # 2 is the magical per-worker prefetch number...
         # FIXME: change this after the number becomes configurable.
         if is_iterable_dataset:
-            if len(ds) * num_workers <= (error_it + 2 + 1):
-                raise AssertionError(
-                    "Expected iterable dataset size to exceed error threshold"
-                )
+            assert len(ds) * num_workers > (error_it + 2 + 1)
         else:
-            if len(loader) <= (error_it + 2 + 1) * num_workers:
-                raise AssertionError("Expected loader length to exceed error threshold")
+            assert len(loader) > (error_it + 2 + 1) * num_workers
     else:
         if is_iterable_dataset:
-            if len(ds) <= error_it + 1:
-                raise AssertionError(
-                    "Expected iterable dataset length to exceed error threshold"
-                )
+            assert len(ds) > error_it + 1
         else:
-            if len(loader) <= error_it + 1:
-                raise AssertionError("Expected loader length to exceed error threshold")
+            assert len(loader) > error_it + 1
 
     it = iter(loader)
     if use_workers:
@@ -1027,8 +975,7 @@ def _test_proper_exit(
         psutil_p = psutil.Process(pid)
         psutil_p.kill()
         psutil_p.wait(JOIN_TIMEOUT)
-        if psutil_p.is_running():
-            raise AssertionError("Expected process to be terminated")
+        assert not psutil_p.is_running()
 
     for i, _ in enumerate(it):
         if i == 0:
@@ -1040,8 +987,7 @@ def _test_proper_exit(
             # ensure that the workers are still alive
             if use_workers:
                 for w in workers:
-                    if not w.is_alive():
-                        raise AssertionError("Expected worker process to be alive")
+                    assert w.is_alive()
             if worker_error_event is not None:
                 worker_error_event.set()
 
@@ -1071,29 +1017,37 @@ class TestWorkerInfoDataset(SynchronizedDataset):
 # See _test_get_worker_info below for usage.
 def _test_worker_info_init_fn(worker_id):
     worker_info = torch.utils.data.get_worker_info()
-    if worker_id != worker_info.id:
-        raise AssertionError("worker_init_fn and worker_info should have consistent id")
-    if worker_id >= worker_info.num_workers:
-        raise AssertionError("worker_init_fn and worker_info should have valid id")
-    if worker_info.seed != torch.initial_seed():
-        raise AssertionError(
-            "worker_init_fn and worker_info should have consistent seed"
-        )
+    assert (
+        worker_id == worker_info.id
+    ), "worker_init_fn and worker_info should have consistent id"
+    assert (
+        worker_id < worker_info.num_workers
+    ), "worker_init_fn and worker_info should have valid id"
+    assert (
+        worker_info.seed == torch.initial_seed()
+    ), "worker_init_fn and worker_info should have consistent seed"
     dataset = worker_info.dataset
-    if not isinstance(dataset, TestWorkerInfoDataset):
-        raise AssertionError("worker_info should have correct dataset copy")
-    if hasattr(dataset, "value"):
-        raise AssertionError("worker_info should have correct dataset copy")
-    for k in ["id", "num_workers", "seed", "dataset", "rng"]:
-        if f"{k}=" not in repr(worker_info):
-            raise AssertionError(f"Expected {k} in worker_info repr")
+    assert isinstance(
+        dataset, TestWorkerInfoDataset
+    ), "worker_info should have correct dataset copy"
+    assert not hasattr(dataset, "value"), "worker_info should have correct dataset copy"
+    # test that WorkerInfo attributes are read-only
+    try:
+        worker_info.id = 3999
+    except RuntimeError as e:
+        assert str(e) == "Cannot assign attributes to WorkerInfo objects"
+    try:
+        worker_info.a = 3
+    except RuntimeError as e:
+        assert str(e) == "Cannot assign attributes to WorkerInfo objects"
+    for k in ["id", "num_workers", "seed", "dataset"]:
+        assert f"{k}=" in repr(worker_info)
     dataset.value = [worker_id, os.getpid()]
 
 
 def _test_get_worker_info():
     # get_worker_info returns None in main proc
-    if torch.utils.data.get_worker_info() is not None:
-        raise AssertionError("Expected get_worker_info() to return None in main proc")
+    assert torch.utils.data.get_worker_info() is None
     num_workers = 2
     batch_size = 2
     dataset = TestWorkerInfoDataset(6, batch_size, num_workers)
@@ -1112,16 +1066,11 @@ def _test_get_worker_info():
     for d in data:
         # each `d` is a [worker_id, worker_pid] pair, which is set in
         # _test_worker_info_init_fn
-        if d[1] != worker_pids[d[0]]:
-            raise AssertionError(f"Expected worker pid {worker_pids[d[0]]}, got {d[1]}")
+        assert d[1] == worker_pids[d[0]]
     # get_worker_info returns None in main proc after data loading
-    if torch.utils.data.get_worker_info() is not None:
-        raise AssertionError(
-            "Expected get_worker_info() to return None after data loading"
-        )
+    assert torch.utils.data.get_worker_info() is None
     # main proc dataset was never assigned this attribute
-    if hasattr(dataset, "value"):
-        raise AssertionError("Expected main dataset to not have 'value' attribute")
+    assert not hasattr(dataset, "value")
     try:
         _ = dataset[0]
     except AttributeError:
@@ -1150,10 +1099,7 @@ class BulkLoadingDataset(Dataset):
         self.length = length
 
     def __getitem__(self, indices):
-        if not isinstance(indices, (list, tuple)):
-            raise AssertionError(
-                f"Expected indices to be list or tuple, got {type(indices)}"
-            )
+        assert isinstance(indices, (list, tuple))
         return torch.as_tensor(indices)
 
     def __len__(self):
@@ -1179,10 +1125,9 @@ class TestMultiEpochDataset(IterableDataset):
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
-        if worker_info is None:
-            raise AssertionError("Expected worker_info to be available")
+        assert worker_info is not None
         worker_id = worker_info.id
-        for _ in range(self.length // worker_info.num_workers):
+        for idx in range(self.length // worker_info.num_workers):
             yield worker_id
 
     def __len__(self):
@@ -1303,12 +1248,14 @@ class TestDataLoader(TestCase):
             list(iter(loader))
 
     def test_typing(self):
+        from typing import List
+
         # Make sure there is no TypeError
 
-        class SomeDatasetClass(Dataset[list[torch.Tensor]]):
+        class SomeDatasetClass(Dataset[List[torch.Tensor]]):
             pass
 
-        def _create_dataloader(is_train: bool) -> DataLoader[list[torch.Tensor]]:
+        def _create_dataloader(is_train: bool) -> DataLoader[List[torch.Tensor]]:
             pass
 
     @unittest.skipIf(IS_SANDCASTLE, "subprocess doesn't work in FB internal CI")
@@ -1405,7 +1352,7 @@ except RuntimeError as e:
             self.assertTrue(input.is_pinned())
             self.assertTrue(target.is_pinned())
 
-    @unittest.skipIf(not TEST_CUDA_IPC, "CUDA IPC not available")
+    @unittest.skipIf(IS_JETSON, "Not working on Jetson")
     def test_multiple_dataloaders(self):
         for multiprocessing_context in supported_multiprocessing_contexts:
             loader1_it = iter(self._get_data_loader(self.dataset, num_workers=1))
@@ -1425,16 +1372,7 @@ except RuntimeError as e:
             del loader1_it
             del loader2_it
 
-    @skipIfXpu
-    @unittest.skipIf(IS_S390X, "Unexpectedly succeeds on s390x")
-    # Test that DataLoader properly handles worker segfaults
-    # Note: This test has inconsistent behavior across Linux distributions:
-    # - Passes on RHEL 9.6 (segfault triggers correctly)
-    # - Fails on Ubuntu (process may not terminate as expected)
-    # Skipping on Linux due to kernel/distribution-dependent segfault behavior.
-    @unittest.skipIf(
-        IS_LINUX, "Segfault behavior is inconsistent across Linux distributions"
-    )
+    @unittest.skipIf(True, "This test is disabled in pytorch/pytorch")
     def test_segfault(self):
         p = ErrorTrackingProcess(target=_test_segfault)
         p.start()
@@ -1477,7 +1415,7 @@ except RuntimeError as e:
             p.terminate()
 
     def test_timeout(self):
-        if TEST_CUDA:
+        if TEST_CUDA and not NO_MULTIPROCESSING_SPAWN:
             # This test runs in a subprocess, which can only initialize CUDA with spawn.
             # _test_timeout_pin_memory with pin_memory=True initializes CUDA when the iterator is
             # constructed.
@@ -1672,8 +1610,7 @@ except RuntimeError as e:
                 # auto-batching
                 # this IterableDataset isn't configured for each worker, so for
                 # the equality test below to be valid, we cannot have more than 1 workers.
-                if num_workers not in [0, 1]:
-                    raise AssertionError("invalid test")
+                assert num_workers in [0, 1], "invalid test"
                 fetched = coll_ty(
                     self._get_data_loader(
                         dataset, batch_size=2, num_workers=num_workers
@@ -1704,8 +1641,7 @@ except RuntimeError as e:
                 operator.iadd, (list(range(s)) for s in sizes_for_all_workers), []
             )
         )
-        if len(sizes_for_all_workers) != num_workers:
-            raise AssertionError("invalid test case")
+        assert len(sizes_for_all_workers) == num_workers, "invalid test case"
         for prefetch_factor in [2, 3, 4]:
             dataset = WorkerSpecificIterableDataset(sizes_for_all_workers)
             dataloader = self._get_data_loader(
@@ -1780,8 +1716,7 @@ except RuntimeError as e:
                 operator.iadd, (list(range(s)) for s in sizes_for_all_workers), []
             )
         )
-        if len(sizes_for_all_workers) != num_workers:
-            raise AssertionError("invalid test case")
+        assert len(sizes_for_all_workers) == num_workers, "invalid test case"
         for prefetch_factor in [2, 3, 4]:
             dataset = WorkerSpecificIterableDataset(sizes_for_all_workers)
             # worker 0 should return 0 batches
@@ -1834,8 +1769,7 @@ except RuntimeError as e:
                 operator.iadd, (list(range(s)) for s in sizes_for_all_workers), []
             )
         )
-        if len(sizes_for_all_workers) != num_workers:
-            raise AssertionError("invalid test case")
+        assert len(sizes_for_all_workers) == num_workers, "invalid test case"
         for prefetch_factor in [2, 3, 4]:
             dataset = WorkerSpecificIterableDataset(sizes_for_all_workers)
             # worker 0 should return 0 batches
@@ -1896,7 +1830,9 @@ except RuntimeError as e:
         ):
             list(iter(ChainDataset([dataset1, self.dataset])))
 
-    @unittest.skipIf(not TEST_CUDA_IPC, "CUDA IPC not available")
+    @unittest.skipIf(IS_MACOS, "Not working on macos")
+    @unittest.skipIf(IS_MACOS or IS_JETSON, "Not working on macos or Jetson")
+    @skipIfRocm  # https://github.com/pytorch/pytorch/issues/90940
     def test_multiprocessing_contexts(self):
         reference = [
             torch.arange(3),
@@ -1984,13 +1920,13 @@ except RuntimeError as e:
                 )
 
     @skipIfNoNumpy
-    @unittest.skipIf(not TEST_CUDA_IPC, "CUDA IPC not available")
+    @unittest.skipIf(IS_JETSON, "Not working on Jetson")
     def test_multiprocessing_iterdatapipe(self):
         self._test_multiprocessing_iterdatapipe(with_dill=False)
 
     @unittest.expectedFailure
     @skipIfNoNumpy
-    @unittest.skipIf(not TEST_CUDA_IPC, "CUDA IPC not available")
+    @unittest.skipIf(IS_JETSON, "Not working on Jetson")
     @skipIfNoDill
     def test_multiprocessing_iterdatapipe_with_dill(self):
         self._test_multiprocessing_iterdatapipe(with_dill=True)
@@ -2033,7 +1969,7 @@ except RuntimeError as e:
             dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
 
-        for _ in range(num_epochs):
+        for ind in range(num_epochs):
             for batch_idx, sample in enumerate(dataloader):
                 self.assertEqual(
                     sample.tolist(), [batch_idx % num_workers] * batch_size
@@ -2047,26 +1983,6 @@ except RuntimeError as e:
         for batch in dataloader:
             self.assertEqual(12345, batch[0])
             self.assertEqual(12345, batch[1])
-
-    @unittest.skipIf(
-        IS_WINDOWS or IS_MACOS,
-        "`ValueError: cannot find context for 'forkserver'` in Windows",
-    )
-    def test_worker_init_fn_forkserver(self):
-        def local_init_fn(worker_id):
-            torch.manual_seed(12345)
-
-        import multiprocessing as py_mp
-
-        py_mp.set_start_method("forkserver", force=True)
-
-        dataset = SeedDataset(4)
-        dataloader = self._get_data_loader(
-            dataset, batch_size=2, num_workers=2, worker_init_fn=local_init_fn
-        )
-        with self.assertWarnsRegex(UserWarning, "Got pickle error when"):
-            with self.assertRaises(Exception):
-                next(iter(dataloader))
 
     def test_get_worker_info(self):
         p = ErrorTrackingProcess(target=_test_get_worker_info)
@@ -2383,7 +2299,8 @@ except RuntimeError as e:
     def test_sampler(self):
         self._test_sampler()
         self._test_sampler(num_workers=4)
-        self._test_batch_sampler(num_workers=4, multiprocessing_context="spawn")
+        if not NO_MULTIPROCESSING_SPAWN:
+            self._test_batch_sampler(num_workers=4, multiprocessing_context="spawn")
 
     def _test_batch_sampler(self, **kwargs):
         # [(0, 1), (2, 3, 4), (5, 6), (7, 8, 9), ...]
@@ -2407,7 +2324,8 @@ except RuntimeError as e:
     def test_batch_sampler(self):
         self._test_batch_sampler()
         self._test_batch_sampler(num_workers=4)
-        self._test_batch_sampler(num_workers=4, multiprocessing_context="spawn")
+        if not NO_MULTIPROCESSING_SPAWN:
+            self._test_batch_sampler(num_workers=4, multiprocessing_context="spawn")
 
     @unittest.skipIf(not TEST_CUDA, "CUDA unavailable")
     def test_shuffle_pin_memory(self):
@@ -2511,113 +2429,6 @@ except RuntimeError as e:
             )
         )
 
-    def test_subset_custom_getitem(self):
-        """
-        Regression test for issue #163184 where DataLoader ignores custom
-        transformations in Subset subclasses that override __getitem__.
-        """
-
-        class SimpleDataset(Dataset):
-            def __init__(self):
-                self.data = torch.arange(20)
-
-            def __len__(self):
-                return 20
-
-            def __getitem__(self, idx):
-                return self.data[idx]
-
-        class TransformSubset(Subset):
-            def __getitem__(self, idx):
-                # transform: multiply by 2
-                original_idx = self.indices[idx]
-                value = self.dataset[original_idx]
-                return value * 2
-
-            def __getitems__(self, indices):
-                return [self.__getitem__(idx) for idx in indices]
-
-        dataset = SimpleDataset()
-        subset = TransformSubset(dataset, [0, 1, 2, 3])
-
-        self.assertEqual(subset[0].item(), 0)
-        self.assertEqual(subset[1].item(), 2)
-        self.assertEqual(subset[2].item(), 4)
-
-        loader = self._get_data_loader(subset, batch_size=2, shuffle=False)
-        batches = list(loader)
-
-        self.assertTrue(torch.equal(batches[0], torch.tensor([0, 2])))
-        self.assertTrue(torch.equal(batches[1], torch.tensor([4, 6])))
-
-    def test_subset_custom_getitem_with_tuple_data(self):
-        """Test Subset custom __getitem__ with tuple data (like the original issue)."""
-
-        class TupleDataset(Dataset):
-            def __init__(self):
-                self.a = torch.arange(10)
-                self.b = torch.arange(100, 110)
-
-            def __len__(self):
-                return 10
-
-            def __getitem__(self, idx):
-                return self.a[idx], self.b[idx]
-
-        class SumSubset(Subset):
-            """Subset that returns sum instead of tuple"""
-
-            def __getitem__(self, idx):
-                original_idx = self.indices[idx]
-                a, b = self.dataset[original_idx]
-                return a + b
-
-            def __getitems__(self, indices):
-                return [self.__getitem__(idx) for idx in indices]
-
-        dataset = TupleDataset()
-        subset = SumSubset(dataset, [0, 1, 2, 3])
-
-        self.assertEqual(subset[0].item(), 100)
-        self.assertEqual(subset[1].item(), 102)
-
-        loader = self._get_data_loader(subset, batch_size=2, shuffle=False)
-        batches = list(loader)
-
-        self.assertTrue(torch.equal(batches[0], torch.tensor([100, 102])))
-        self.assertTrue(torch.equal(batches[1], torch.tensor([104, 106])))
-
-    def test_subset_override_getitem_requires_getitems(self):
-        """
-        Test that subclassing Subset and overriding only __getitem__ without
-        __getitems__ raises a NotImplementedError at instantiation time.
-        """
-
-        class SimpleDataset(Dataset):
-            def __init__(self):
-                self.data = torch.arange(10)
-
-            def __len__(self):
-                return 10
-
-            def __getitem__(self, idx):
-                return self.data[idx]
-
-        class IncompleteSubset(Subset):
-            def __getitem__(self, idx):
-                original_idx = self.indices[idx]
-                return self.dataset[original_idx] * 2
-
-        dataset = SimpleDataset()
-
-        with self.assertRaises(NotImplementedError) as cm:
-            subset = IncompleteSubset(dataset, [0, 1, 2, 3])
-
-        error_message = str(cm.exception)
-        self.assertIn("IncompleteSubset", error_message)
-        self.assertIn("__getitem__", error_message)
-        self.assertIn("__getitems__", error_message)
-
     @unittest.skipIf(IS_WINDOWS, "FIXME: stuck test")
     def test_partial_workers(self):
         r"""Check that workers exit even if the iterator is not exhausted."""
@@ -2638,8 +2449,7 @@ except RuntimeError as e:
             for i, _ in enumerate(loader):
                 if i == 10:
                     break
-            if i != 10:
-                raise AssertionError(f"Expected to stop at i=10, got i={i}")
+            assert i == 10
             del loader
             for w in workers:
                 w.join(JOIN_TIMEOUT)
@@ -2649,11 +2459,14 @@ except RuntimeError as e:
                 self.assertFalse(pin_memory_thread.is_alive())
 
     # Takes 2.5min to finish, see https://github.com/pytorch/pytorch/issues/46065
+    @skipIfRocm
     @unittest.skipIf(not HAS_PSUTIL, "psutil not found")
     @slowTest
     def test_proper_exit(self):
-        """There might be ConnectionResetError or leaked semaphore warning
-        (due to dirty process exit), but they are all safe to ignore"""
+        (
+            r"""There might be ConnectionResetError or leaked semaphore warning """
+            r"""(due to dirty process exit), but they are all safe to ignore"""
+        )
 
         # TODO: test the case where the pin_memory_thread triggers an
         #       error/fatal signal. I haven't found out how to properly do that.
@@ -2671,7 +2484,7 @@ except RuntimeError as e:
             # not be called before process end. It is important to see that the
             # processes still exit in both cases.
 
-            if pin_memory and (not TEST_CUDA or IS_WINDOWS):
+            if pin_memory and (not TEST_CUDA or NO_MULTIPROCESSING_SPAWN or IS_WINDOWS):
                 # This test runs in a subprocess, which can only initialize CUDA with spawn.
                 # DataLoader with pin_memory=True initializes CUDA when its iterator is constructed.
                 # For windows, pin_memory sometimes causes CUDA oom.
@@ -2930,51 +2743,51 @@ except RuntimeError as e:
 
     def test_default_convert_mapping_keep_type(self):
         data = CustomDict({"a": 1, "b": 2})
-        converted = dataloader.default_convert(data)
+        converted = _utils.collate.default_convert(data)
 
         self.assertEqual(converted, data)
 
     def test_default_convert_sequence_keep_type(self):
         data = CustomList([1, 2, 3])
-        converted = dataloader.default_convert(data)
+        converted = _utils.collate.default_convert(data)
 
         self.assertEqual(converted, data)
 
     def test_default_convert_sequence_dont_keep_type(self):
         data = range(2)
-        converted = dataloader.default_convert(data)
+        converted = _utils.collate.default_convert(data)
 
         self.assertEqual(converted, [0, 1])
 
     def test_default_collate_dtype(self):
         arr = [1, 2, -1]
-        collated = dataloader.default_collate(arr)
+        collated = _utils.collate.default_collate(arr)
         self.assertEqual(collated, torch.tensor(arr))
         self.assertEqual(collated.dtype, torch.int64)
 
         arr = [1.1, 2.3, -0.9]
-        collated = dataloader.default_collate(arr)
+        collated = _utils.collate.default_collate(arr)
         self.assertEqual(collated, torch.tensor(arr, dtype=torch.float64))
 
         arr = [True, False]
-        collated = dataloader.default_collate(arr)
+        collated = _utils.collate.default_collate(arr)
         self.assertEqual(collated, torch.tensor(arr))
         self.assertEqual(collated.dtype, torch.bool)
 
         # Should be a no-op
         arr = ["a", "b", "c"]
-        self.assertEqual(arr, dataloader.default_collate(arr))
+        self.assertEqual(arr, _utils.collate.default_collate(arr))
 
     def test_default_collate_mapping_keep_type(self):
         batch = [CustomDict({"a": 1, "b": 2}), CustomDict({"a": 3, "b": 4})]
-        collated = dataloader.default_collate(batch)
+        collated = _utils.collate.default_collate(batch)
 
         expected = CustomDict({"a": torch.tensor([1, 3]), "b": torch.tensor([2, 4])})
         self.assertEqual(collated, expected)
 
     def test_default_collate_sequence_keep_type(self):
         batch = [CustomList([1, 2, 3]), CustomList([4, 5, 6])]
-        collated = dataloader.default_collate(batch)
+        collated = _utils.collate.default_collate(batch)
 
         expected = CustomList(
             [
@@ -2987,7 +2800,7 @@ except RuntimeError as e:
 
     def test_default_collate_sequence_dont_keep_type(self):
         batch = [range(2), range(2)]
-        collated = dataloader.default_collate(batch)
+        collated = _utils.collate.default_collate(batch)
 
         self.assertEqual(collated, [torch.tensor([0, 0]), torch.tensor([1, 1])])
 
@@ -2997,16 +2810,16 @@ except RuntimeError as e:
 
         # Should be a no-op
         arr = np.array(["a", "b", "c"])
-        self.assertEqual(arr, dataloader.default_collate(arr))
+        self.assertEqual(arr, _utils.collate.default_collate(arr))
 
         arr = np.array([[["a", "b", "c"]]])
-        self.assertRaises(TypeError, lambda: dataloader.default_collate(arr))
+        self.assertRaises(TypeError, lambda: _utils.collate.default_collate(arr))
 
         arr = np.array([object(), object(), object()])
-        self.assertRaises(TypeError, lambda: dataloader.default_collate(arr))
+        self.assertRaises(TypeError, lambda: _utils.collate.default_collate(arr))
 
         arr = np.array([[[object(), object(), object()]]])
-        self.assertRaises(TypeError, lambda: dataloader.default_collate(arr))
+        self.assertRaises(TypeError, lambda: _utils.collate.default_collate(arr))
 
     @unittest.skipIf(not TEST_NUMPY, "numpy unavailable")
     def test_default_collate_numpy_memmap(self):
@@ -3017,7 +2830,7 @@ except RuntimeError as e:
             arr_memmap = np.memmap(f, dtype=arr.dtype, mode="w+", shape=arr.shape)
             arr_memmap[:] = arr[:]
             arr_new = np.memmap(f, dtype=arr.dtype, mode="r", shape=arr.shape)
-            tensor = dataloader.default_collate(list(arr_new))
+            tensor = _utils.collate.default_collate(list(arr_new))
 
         self.assertTrue(
             (tensor == tensor.new_tensor([[0, 1], [2, 3], [4, 5], [6, 7]])).all().item()
@@ -3025,8 +2838,10 @@ except RuntimeError as e:
 
     def test_default_collate_bad_sequence_type(self):
         batch = [["X"], ["X", "X"]]
-        self.assertRaises(RuntimeError, lambda: dataloader.default_collate(batch))
-        self.assertRaises(RuntimeError, lambda: dataloader.default_collate(batch[::-1]))
+        self.assertRaises(RuntimeError, lambda: _utils.collate.default_collate(batch))
+        self.assertRaises(
+            RuntimeError, lambda: _utils.collate.default_collate(batch[::-1])
+        )
 
     @unittest.skipIf(not TEST_NUMPY, "numpy unavailable")
     def test_default_collate_shared_tensor(self):
@@ -3037,8 +2852,8 @@ except RuntimeError as e:
 
         self.assertEqual(t_in.is_shared(), False)
 
-        self.assertEqual(dataloader.default_collate([t_in]).is_shared(), False)
-        self.assertEqual(dataloader.default_collate([n_in]).is_shared(), False)
+        self.assertEqual(_utils.collate.default_collate([t_in]).is_shared(), False)
+        self.assertEqual(_utils.collate.default_collate([n_in]).is_shared(), False)
 
         # FIXME: fix the following hack that makes `default_collate` believe
         #        that it is in a worker process (since it tests
@@ -3046,8 +2861,8 @@ except RuntimeError as e:
         old = _utils.worker._worker_info
         try:
             _utils.worker._worker_info = "x"
-            self.assertEqual(dataloader.default_collate([t_in]).is_shared(), True)
-            self.assertEqual(dataloader.default_collate([n_in]).is_shared(), True)
+            self.assertEqual(_utils.collate.default_collate([t_in]).is_shared(), True)
+            self.assertEqual(_utils.collate.default_collate([n_in]).is_shared(), True)
         finally:
             _utils.worker._worker_info = old
 
@@ -3064,13 +2879,11 @@ class TestDataLoaderDeviceType(TestCase):
         "context",
         [ctx for ctx in supported_multiprocessing_contexts if ctx is not None],
     )
-    @unittest.skipIf(not TEST_CUDA_IPC, "CUDA IPC not available")
     def test_nested_tensor_multiprocessing(self, device, context):
         # The 'fork' multiprocessing context doesn't work for CUDA so skip it
         if "cuda" in device and context == "fork":
-            self.skipTest(
-                f"{context} multiprocessing context not supported for {device}"
-            )
+            # TODO: Skip this better in a better way when the test framework allows
+            return
 
         dataset = [
             torch.nested.nested_tensor([torch.randn(5)], device=device)
@@ -3107,37 +2920,6 @@ class TestDataLoaderDeviceType(TestCase):
             )
 
             next(iter(loader))
-
-    @parametrize(
-        "context",
-        [ctx for ctx in supported_multiprocessing_contexts if ctx is not None],
-    )
-    @unittest.skipIf(not TEST_CUDA_IPC, "CUDA IPC not available")
-    def test_sparse_tensor_multiprocessing(self, device, context):
-        # The 'fork' multiprocessing context doesn't work for CUDA so skip it
-        if "cuda" in device and context == "fork":
-            self.skipTest(
-                f"{context} multiprocessing context not supported for {device}"
-            )
-
-        dataset = [torch.randn(5, 5).to_sparse().to(device) for _ in range(10)]
-
-        pin_memory_settings = [False]
-        if device == "cpu" and torch.cuda.is_available():
-            pin_memory_settings.append(True)
-
-        for pin_memory in pin_memory_settings:
-            loader = torch.utils.data.DataLoader(
-                dataset,
-                batch_size=1,
-                num_workers=4,
-                collate_fn=_sparse_coo_collate,
-                pin_memory=pin_memory,
-                multiprocessing_context=context,
-            )
-
-            for i, batch in enumerate(loader):
-                self.assertEqual(batch[0], dataset[i])
 
 
 class IntegrationTestDataLoaderDataPipe(TestCase):
@@ -3179,7 +2961,7 @@ class IntegrationTestDataLoaderDataPipe(TestCase):
 
                 # Same seeds
                 dl_res = []
-                for _epoch in range(2):
+                for epoch in range(2):
                     torch.manual_seed(123)
                     dl_res.append(list(dl))
                 self.assertEqual(dl_res[0], dl_res[1])
@@ -3200,7 +2982,7 @@ class IntegrationTestDataLoaderDataPipe(TestCase):
 
 
 class StringDataset(Dataset):
-    def __init__(self) -> None:
+    def __init__(self):
         self.s = "12345"
 
     def __len__(self):
@@ -3237,7 +3019,9 @@ class DictDataset(Dataset):
     def __getitem__(self, ndx):
         return {
             "a_tensor": torch.empty(4, 2).fill_(ndx),
-            "another_dict": {"a_number": ndx},
+            "another_dict": {
+                "a_number": ndx,
+            },
         }
 
 
@@ -3291,33 +3075,27 @@ class TestDictDataLoader(TestCase):
             self.assertTrue(sample["a_tensor"].is_pinned())
             self.assertTrue(sample["another_dict"]["a_number"].is_pinned())
 
-    @skipIfXpu
-    @unittest.skipIf(TEST_CUDA, "Test for when CUDA is not available")
-    def test_pin_memory_no_cuda(self):
-        loader = DataLoader(self.dataset, batch_size=2, pin_memory=True)
-        for sample in loader:
-            self.assertFalse(sample["a_tensor"].is_pinned())
-            self.assertFalse(sample["another_dict"]["a_number"].is_pinned())
-
     @unittest.skipIf(not TEST_CUDA, "CUDA unavailable")
     def test_pin_memory_device(self):
         loader = DataLoader(
             self.dataset, batch_size=2, pin_memory=True, pin_memory_device="cuda"
         )
         for sample in loader:
-            self.assertTrue(sample["a_tensor"].is_pinned())
-            self.assertTrue(sample["another_dict"]["a_number"].is_pinned())
+            self.assertTrue(sample["a_tensor"].is_pinned(device="cuda"))
+            self.assertTrue(sample["another_dict"]["a_number"].is_pinned(device="cuda"))
 
     @unittest.skipIf(not TEST_CUDA, "CUDA unavailable")
     def test_pin_memory_with_only_device(self):
         loader = DataLoader(self.dataset, batch_size=2, pin_memory_device="cuda")
         for sample in loader:
-            self.assertFalse(sample["a_tensor"].is_pinned())
-            self.assertFalse(sample["another_dict"]["a_number"].is_pinned())
+            self.assertFalse(sample["a_tensor"].is_pinned(device="cuda"))
+            self.assertFalse(
+                sample["another_dict"]["a_number"].is_pinned(device="cuda")
+            )
 
 
 class DummyDataset(torch.utils.data.Dataset):
-    def __init__(self) -> None:
+    def __init__(self):
         self.data = list(range(10))
 
     def __len__(self):
@@ -3330,8 +3108,7 @@ class DummyDataset(torch.utils.data.Dataset):
         # dataset through the dataloader lifetime
         # so the attributes will remain the same as the
         # first time the workers where spawned (dataloader iteration)
-        if self.start != 0:
-            raise AssertionError(f"Expected start=0, got {self.start}")
+        assert self.start == 0
         return self.data[idx]
 
 
@@ -3339,6 +3116,10 @@ class DummyDataset(torch.utils.data.Dataset):
     TEST_WITH_TSAN,
     "Fails with TSAN with the following error: starting new threads after multi-threaded "
     "fork is not supported. Dying (set die_after_fork=0 to override)",
+)
+@unittest.skipIf(
+    TEST_WITH_ASAN,
+    "DataLoader tests hang in ASAN, see: https://github.com/pytorch/pytorch/issues/66223",
 )
 class TestDataLoaderPersistentWorkers(TestDataLoader):
     def setUp(self):
@@ -3400,7 +3181,7 @@ except RuntimeError as e:
             )
             dataset.start = 0
             for i in range(10):
-                for _ in dataloader:
+                for x in dataloader:
                     pass
                 # Changing the start value here doesn't have any effect in the dataset
                 # cached by the workers. since they are not recreated between epochs
@@ -3611,6 +3392,10 @@ class TestWorkerQueueDataset(Dataset):
     "Fails with TSAN with the following error: starting new threads after multi-threaded "
     "fork is not supported. Dying (set die_after_fork=0 to override)",
 )
+@unittest.skipIf(
+    TEST_WITH_ASAN,
+    "Flaky with ASAN, see https://github.com/pytorch/pytorch/issues/65727",
+)
 class TestIndividualWorkerQueue(TestCase):
     def setUp(self):
         super().setUp()
@@ -3622,7 +3407,7 @@ class TestIndividualWorkerQueue(TestCase):
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
-            timeout=JOIN_TIMEOUT,
+            timeout=5,
             worker_init_fn=self.dataset.worker_init_fn,
         )
         current_worker_idx = 0
@@ -3635,36 +3420,34 @@ class TestIndividualWorkerQueue(TestCase):
             if current_worker_idx == num_workers:
                 current_worker_idx = 0
 
-    @unittest.skipIf(
-        IS_WINDOWS or IS_MACOS,
-        "Flaky on Windows and MacOS https://github.com/pytorch/pytorch/issues/68643",
-    )
     def test_ind_worker_queue(self):
-        for batch_size in (8, 32, 64):
-            for num_workers in range(1, 6):
+        max_num_workers = None
+        if hasattr(os, "sched_getaffinity"):
+            try:
+                max_num_workers = len(os.sched_getaffinity(0))
+            except Exception:
+                pass
+        if max_num_workers is None:
+            cpu_count = os.cpu_count()
+            if cpu_count is not None:
+                # Use half number of CPUs
+                max_num_workers = cpu_count // 2
+
+        if max_num_workers is None:
+            max_num_workers = 1
+
+        for batch_size in (8, 16, 32, 64):
+            for num_workers in range(0, min(6, max_num_workers)):
                 self._run_ind_worker_queue_test(
-                    batch_size=batch_size, num_workers=num_workers
+                    batch_size=batch_size, num_workers=num_workers + 1
                 )
 
 
 class SetAffinityDataset(IterableDataset):
-    def __init__(self, expected_affinity=None):
-        self.expected_affinity = expected_affinity
-
     def __iter__(self):
-        affinity_mask = os.sched_getaffinity(0)
-        return iter(affinity_mask)
-
-
-def _worker_set_affinity_init(worker_id):
-    worker_info = torch.utils.data.get_worker_info()
-    if worker_info is not None:
-        dataset = worker_info.dataset
-        if (
-            isinstance(dataset, SetAffinityDataset)
-            and dataset.expected_affinity is not None
-        ):
-            os.sched_setaffinity(0, [dataset.expected_affinity])
+        torch.randperm(1)
+        after = os.sched_getaffinity(0)
+        return iter(after)
 
 
 @unittest.skipIf(
@@ -3679,20 +3462,20 @@ class TestSetAffinity(TestCase):
         # Choose any
         expected_affinity = list(old_affinity)[-1]
 
-        # Pass expected affinity through the dataset
-        dataset = SetAffinityDataset(expected_affinity=expected_affinity)
-        dataloader = torch.utils.data.DataLoader(
-            dataset,
-            num_workers=2,
-            worker_init_fn=_worker_set_affinity_init,
-        )
+        def worker_set_affinity(_):
+            os.sched_setaffinity(0, [expected_affinity])
 
+        dataset = SetAffinityDataset()
+
+        dataloader = torch.utils.data.DataLoader(
+            dataset, num_workers=2, worker_init_fn=worker_set_affinity
+        )
         for sample in dataloader:
             self.assertEqual(sample, [expected_affinity])
 
 
 class ConvDataset(Dataset):
-    def __init__(self) -> None:
+    def __init__(self):
         self.x = torch.ones(1, 1, 24000)
         # Call convolution on parent process
         self[0]
@@ -3705,132 +3488,16 @@ class ConvDataset(Dataset):
 
 
 @unittest.skipIf(IS_WINDOWS, "Needs fork")
+@unittest.skipIf(
+    TEST_WITH_ASAN,
+    "This test hangs when running with ASAN, see https://github.com/pytorch/pytorch/issues/75492",
+)
 class TestConvAfterFork(TestCase):
     # Tests crash reported in https://github.com/pytorch/pytorch/issues/53565
     def test_conv_after_fork(self):
         loader = DataLoader(ConvDataset(), num_workers=1)
         for x in loader:
             self.assertEqual(x.shape, (1, 1, 1, 23999))
-
-
-class TestSlowIndexDataset(Dataset):
-    def __init__(self, end: int, slow_index: int):
-        self.end = end
-        self.slow_index = slow_index
-        self._worker_id = None
-
-    def __getitem__(self, idx):
-        if not self._worker_id:
-            worker_info = torch.utils.data.get_worker_info()
-            self._worker_id = worker_info.id
-        if idx == self.slow_index:
-            time.sleep(1.0)
-        return (self._worker_id, idx)
-
-    def __len__(self):
-        return self.end
-
-
-class TestSlowIterableDataset(IterableDataset):
-    def __init__(self, start: int, end: int):
-        self.start = start
-        self.end = end
-        self.mid = math.ceil((self.end - self.start) / 2)
-
-    def give_data(self, worker_id, iter_start, iter_end):
-        for i in range(iter_start, iter_end):
-            if i == self.mid:
-                time.sleep(1.0)
-            yield (worker_id, i)
-
-    def __iter__(self):
-        worker_info = torch.utils.data.get_worker_info()
-        per_worker = int(
-            math.ceil((self.end - self.start) / float(worker_info.num_workers))
-        )
-        worker_id = worker_info.id
-        iter_start = self.start + worker_id * per_worker
-        iter_end = min(iter_start + per_worker, self.end)
-        return self.give_data(worker_id, iter_start, iter_end)
-
-
-class TestOutOfOrderDataLoader(TestCase):
-    def test_in_order_index_ds(self):
-        dataset = TestSlowIndexDataset(end=10, slow_index=0)
-
-        dataloader = torch.utils.data.DataLoader(
-            dataset,
-            num_workers=2,
-            in_order=True,
-        )
-
-        expected_worker_ids = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
-        expected_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        outputs = list(dataloader)
-        worker_ids = [o[0] for o in outputs]
-        data = [o[1] for o in outputs]
-        self.assertEqual(expected_worker_ids, worker_ids)
-        self.assertEqual(expected_data, data)
-
-    def test_out_of_order_index_ds(self):
-        dataset = TestSlowIndexDataset(end=10, slow_index=0)
-
-        dataloader = torch.utils.data.DataLoader(
-            dataset,
-            num_workers=2,
-            prefetch_factor=2,
-            in_order=False,
-        )
-
-        # worker_id = 0 gets 'stuck' on 0 and also has 2 in it's queue
-        # due to prefetch_factor being 2
-        # this makes the test more deterministic as [0, 2] will be the last elements
-        expected_worker_ids = [1, 1, 1, 1, 1, 1, 1, 1, 0, 0]
-        expected_data = [1, 3, 4, 5, 6, 7, 8, 9, 0, 2]
-        outputs = list(dataloader)
-        worker_ids = [o[0].item() for o in outputs]
-        data = [o[1].item() for o in outputs]
-        self.assertEqual(expected_worker_ids, worker_ids)
-        self.assertNotEqual(data, list(range(10)))
-        self.assertEqual(expected_data, data)
-
-    def test_in_order_iterable_ds(self):
-        dataset = TestSlowIterableDataset(start=0, end=10)
-
-        dataloader = torch.utils.data.DataLoader(
-            dataset,
-            num_workers=2,
-            in_order=True,
-        )
-
-        expected_worker_ids = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
-        expected_data = [0, 5, 1, 6, 2, 7, 3, 8, 4, 9]
-        outputs = list(dataloader)
-        worker_ids = [o[0] for o in outputs]
-        data = [o[1] for o in outputs]
-        self.assertEqual(expected_worker_ids, worker_ids)
-        self.assertEqual(expected_data, data)
-
-    def test_out_of_order_iterable_ds(self):
-        dataset = TestSlowIterableDataset(start=0, end=10)
-
-        dataloader = torch.utils.data.DataLoader(
-            dataset,
-            num_workers=2,
-            in_order=False,
-        )
-
-        # worker 0 has [0, 1, 2, 3, 4], worker 1 has [5, 6, 7, 8, 9]
-        # index 5 is slow, so expect all of worker 0 before worker 1
-        expected_worker_ids = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
-        expected_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        outputs = list(dataloader)
-        worker_ids = [o[0] for o in outputs]
-        data = [o[1] for o in outputs]
-        self.assertEqual(expected_worker_ids, worker_ids)
-        self.assertEqual(sum(worker_ids), 5)
-        self.assertNotEqual(data, [0, 5, 1, 6, 2, 7, 3, 8, 4, 9])
-        self.assertEqual(expected_data, data)
 
 
 instantiate_device_type_tests(TestDataLoaderDeviceType, globals())

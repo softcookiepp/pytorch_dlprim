@@ -3,19 +3,19 @@ from torch._inductor.scheduler import BaseScheduling
 from torch._inductor.virtualized import V
 
 
-class ExtensionWrapperCodegen(wrapper.PythonWrapperCodegen):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class ExtensionWrapperCodegen(wrapper.WrapperCodeGen):
+    def __init__(self):
+        super().__init__()
 
 
 class ExtensionCppWrapperCodegen(cpp_wrapper_cpu.CppWrapperCpu):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self):
+        super().__init__()
 
 
 class ExtensionScheduling(BaseScheduling):
     def __init__(self, scheduler):
-        super().__init__(scheduler)
+        self.scheduler = scheduler
         self._scheduling = cpp.CppScheduling(scheduler)
 
     def can_fuse_vertical(self, node1, node2):

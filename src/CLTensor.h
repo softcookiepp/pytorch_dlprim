@@ -11,6 +11,7 @@
 #include <mutex>
 #include <cstdint>
 #include <list>
+#include <set>
 
 #define PTD_TIMER_GUARD(function_name) tart::TimerGuard _TG_(function_name, gProfiler)
 
@@ -49,7 +50,6 @@ extern tart::profiler_ptr gProfiler;
         CLMemAllocation(CLMemAllocation &&) = default;
         CLMemAllocation &operator=(CLMemAllocation &&) = default;
         ~CLMemAllocation() {}
-#if VULKAN_API
 		CLMemAllocation(int id, tart::device_ptr& ctx, std::int64_t length, std::int64_t os) :
             device_id(id),
             size(length),
@@ -58,23 +58,10 @@ extern tart::profiler_ptr gProfiler;
 			buffer = ctx->allocateBuffer(length);
 
         }
-#else
-        CLMemAllocation(int id,cl::Context &ctx,std::int64_t length,std::int64_t os) :
-            device_id(id),
-            size(length),
-            orig_size(os),
-            buffer(ctx,CL_MEM_READ_WRITE,length)
-        {
-        }
-#endif
         int device_id;
         std::int64_t size;
         std::int64_t orig_size;
-#if VULKAN_API
 		tart::buffer_ptr buffer = nullptr;
-#else
-        cl::Buffer buffer;
-#endif
     };
 
     class CLCache {
@@ -107,120 +94,34 @@ extern tart::profiler_ptr gProfiler;
     };
     
 
-    class CLContextManager {
+    class CLContextManager
+    {
+		static std::set<tart::buffer_ptr> sAllocations;
     public: 
-        static CLContextManager &instance()
-        {
-            static std::once_flag once;
-            static std::unique_ptr<CLContextManager> inst;
-            std::call_once(once,init,inst);
-            return *inst;
-        }
-        ~CLContextManager()
-        {
-            {
-                for(auto &data:data_)
-                    data->cache.clear();
-            }
-            no_cache_ = true;
-        }
-        static unsigned count()
-        {
-            return instance().data_.size();
-        }
-        static dlprim::Context getContext(int id)
-        {
-            return instance().data(id).ctx;
-        }
-        static dlprim::ExecutionContext getCommandQueue(int id)
-        {
-            return instance().data(id).queue;
-        }
-        static std::unique_ptr<CLMemAllocation> alloc(int id,int64_t size)
-        {
-            auto &d = instance().data(id);
-            tart::device_ptr device = d.ctx.device();
-            return d.cache.allocate(id, device, size);
-        }
-        static void release(std::unique_ptr<CLMemAllocation> &&mem)
-        {
-            auto &inst = instance();
-            if(inst.no_cache_) {
-                mem.reset();
-                return;
-            }
-            auto &d = instance().data(mem->device_id);
-            d.cache.release(std::move(mem));
-        }
-        static at::DataPtr allocate(c10::Device const &dev,size_t n)
-        {
-            std::unique_ptr<CLMemAllocation> ptr=alloc(dev.index(),n);
-#if VULKAN_API
-            tart::buffer_ptr* buffer = &(ptr->buffer);
-#else
-            cl_mem buffer = ptr->buffer();
-#endif
-            return at::DataPtr(buffer,ptr.release(),&CLContextManager::free_ptr,dev);
-        }
+        static CLContextManager &instance();
+        ~CLContextManager();
+        static unsigned count();
+        static dlprim::Context getContext(int id);
+        static dlprim::ExecutionContext getCommandQueue(int id);
+        static std::unique_ptr<CLMemAllocation> alloc(int id,int64_t size);
+        static void release(std::unique_ptr<CLMemAllocation> &&mem);
+        static at::DataPtr allocate(c10::Device const &dev,size_t n);
 
-        static void sync_if_needed(int index)
-        {
-            auto &inst = instance();
-            if(inst.no_cache_) {
-                inst.data(index).queue.finish();
-            }
-        }
+        static void sync_if_needed(int index);
 
-        static void free_ptr(void *ctx)
-        {
-            if(ctx == nullptr)
-                return;
-            std::unique_ptr<CLMemAllocation> ptr(static_cast<CLMemAllocation *>(ctx));
-            release(std::move(ptr));
-        }
+        static void free_ptr(void *ctx);
 
-        static dlprim::RandomState &rng_state(int index)
-        {
-            return instance().data_.at(index)->rng;
-        }
-        static bool is_ready(int index)
-        {
-            auto &data = instance().data_;
-            if(index < 0 || index >= int(data.size()) || !data[index])
-                return false;
-            return data[index]->ready;
-        }
+        static dlprim::RandomState &rng_state(int index);
+        static bool is_ready(int index);
 
-        static bool fp64(int index)
-        {
-            return instance().data(index).fp64;
-        }
+        static bool fp64(int index);
 
-        static bool enable_profiling(int device)
-        {
-            if(is_ready(device))
-                return false;
-            if(unsigned(device) >= count())
-                return false;
-            instance().data_.at(device)->enable_profiling = true;
-            return true;
-        }
+        static bool enable_profiling(int device);
         static void start_profiling(int device);
         static void stop_profiling(int device,std::string const &output);
-        static void clear(int index)
-        {
-            auto &data = instance().data_;
-            if(index < 0 || index >= int(data.size()) || !data[index] || !data[index]->ready)
-                return;
-            getCommandQueue(index).finish();
-            data[index]->cache.clear();
-        }
+        static void clear(int index);
         
-        static bool bad_fork()
-        {
-            instance();
-            return bad_fork_;
-        }
+        static bool bad_fork();
 
     private:
 
@@ -238,80 +139,16 @@ extern tart::profiler_ptr gProfiler;
 
 
 
-        static void init(std::unique_ptr<CLContextManager> &self)
-        {
-            self.reset(new CLContextManager());
-            self->allocate();
-        }
-#ifndef WIN32
-        // Called in the forked child if cuda has already been initialized
-        static void forked_child() {
-            bad_fork_ = true;
-        }
-#endif
-        static void poison_fork() {
-#ifndef WIN32
-            static c10::once_flag flag;
-            c10::call_once(flag, [] { pthread_atfork(nullptr, nullptr, forked_child); });
-#endif
-        }
-        void allocate()
-        {
-            poison_fork();
-            char *no_cache=getenv("OPENCL_NO_MEM_CACHE");
-            no_cache_ = no_cache && atoi(no_cache);
-            
-#if VULKAN_API
-			tart::Instance& tartInstance = dlprim::Context::getInstance();
-			for(size_t j=0; j < tartInstance.getNumDevices(); j++) {
-				std::unique_ptr<DevData> d(new DevData());
-				data_.push_back(std::move(d));
-				data_.back()->name = "0:" + std::to_string(j);
-			}
-#else
-            std::vector<cl::Platform> platforms;
-            try {
-                cl::Platform::get(&platforms);
-            }
-            catch(cl::Error &) {
-                return;
-            }
-            for(size_t i=0;i<platforms.size();i++)
-            {
-                std::vector<cl::Device> devices;
-                try{
-                    platforms[i].getDevices(CL_DEVICE_TYPE_ALL, &devices);
-                }
-                catch(cl::Error &)
-                {
-                    continue;
-                }
-                for(size_t j=0;j<devices.size();j++) {
-                    std::unique_ptr<DevData> d(new DevData());
-                    data_.push_back(std::move(d));
-                    data_.back()->name = std::to_string(i) + ":" + std::to_string(j);
-                }
-            }
-#endif
-        }
+        static void init(std::unique_ptr<CLContextManager> &self);
 
-        DevData &data(int i)
-        {
-            if(i < 0)
-                i = 0;
-            if(i >= int(data_.size()))
-                throw std::runtime_error("Invalid Device #" + std::to_string(i));
-            DevData &res = *data_[i];
-            if(res.ready)
-                return res;
-            res.ctx = dlprim::Context(res.name);
-            res.fp64 = res.ctx.device()->getMetadata().double_;
-            res.queue = res.ctx.make_execution_context(0);
-            res.cache.prepare(res.ctx);
-            res.ready = true;
-            std::cout << "Accessing device #" << i << ":" << res.ctx.name() << std::endl;
-            return res;
-        }
+        // Called in the forked child if cuda has already been initialized
+        static void forked_child();
+
+        static void poison_fork();
+        
+        void allocate();
+
+        DevData &data(int i);
         
         std::vector<std::unique_ptr<DevData> > data_;
         bool no_cache_;

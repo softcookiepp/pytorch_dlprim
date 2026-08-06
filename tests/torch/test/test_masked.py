@@ -5,7 +5,7 @@
 
 import itertools
 import torch
-from typing import Any
+from typing import List, Any
 from functools import wraps
 import unittest
 from torch.testing._internal.common_utils import skipIfTorchDynamo
@@ -57,7 +57,7 @@ def apply_masked_reduction_along_dim(op, input, *args, **kwargs):
        [[op([1, 2], *args0, **kwargs, dim=None, keepdim=False)]
         [op([3, 4, 5], *args0, **kwargs, dim=None, keepdim=False)]]
 
-      where args0 is args where dim value is replaced with None if
+      where args0 is args where dim value is replased with None if
       present.
 
       Using the same example data, if the op is called with dim=(0, 1)
@@ -89,8 +89,7 @@ def apply_masked_reduction_along_dim(op, input, *args, **kwargs):
     # element:
     if dim_pos < len(args):
         # dim is specified in args
-        if 'dim' in kwargs:
-            raise AssertionError(f"'dim' should not be in kwargs: {(args, kwargs)}")
+        assert 'dim' not in kwargs, (args, kwargs)
         dim = args[dim_pos]
         args0 = args[:dim_pos] + (None,) + args[dim_pos + 1:]
     else:
@@ -101,7 +100,7 @@ def apply_masked_reduction_along_dim(op, input, *args, **kwargs):
     # dimensions along which the reduction operation is applied:
     dim_ = torch.masked._canonical_dim(dim, input.ndim)
     # slices in product(*ranges) define all elementary slices:
-    ranges: list[Any] = []
+    ranges: List[Any] = []
     # shape of output for the keepdim=True case:
     shape = []
     for i in range(input.ndim):
@@ -303,8 +302,7 @@ class TestMasked(TestCase):
             t_inp, t_args, t_kwargs = sample.input, sample.args, sample.kwargs
             actual = op.op(t_inp, *t_args, **t_kwargs)
 
-            if actual.layout != layout:
-                raise AssertionError(f"actual.layout should be {layout}, got {actual.layout}")
+            assert actual.layout == layout
 
             # check masked invariance:
             #  op(inp, mask).to_dense() == op(inp.to_dense(), mask.to_dense()) at outmask
@@ -351,7 +349,7 @@ class TestMasked(TestCase):
                 sparse.values()[index] = value
 
         else:
-            raise AssertionError(f"unexpected sparse_kind: {sparse_kind}")
+            assert 0, sparse_kind
 
         mask = torch.tensor([[1, 0, 1, 0, 0],
                              [1, 1, 1, 1, 0],
@@ -419,7 +417,7 @@ class TestMasked(TestCase):
                                               sparse.values().new_full(sparse.values().shape, 1).to(dtype=bool),
                                               sparse.shape)
         else:
-            raise AssertionError("unexpected sparse layout")
+            assert 0
 
         self.assertEqual(sparse, expected_sparse)
 

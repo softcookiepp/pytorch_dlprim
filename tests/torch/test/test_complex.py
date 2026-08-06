@@ -10,7 +10,6 @@ from torch.testing._internal.common_device_type import (
 from torch.testing._internal.common_dtype import complex_types
 from torch.testing._internal.common_utils import run_tests, set_default_dtype, TestCase
 
-
 devices = (torch.device("cpu"), torch.device("cuda:0"))
 
 
@@ -48,7 +47,6 @@ class TestComplexTensor(TestCase):
     def test_all(self, device, dtype):
         # issue: https://github.com/pytorch/pytorch/issues/120875
         x = torch.tensor([1 + 2j, 3 - 4j, 5j, 6], device=device, dtype=dtype)
-
         self.assertTrue(torch.all(x))
 
     @dtypes(*complex_types())
@@ -57,7 +55,6 @@ class TestComplexTensor(TestCase):
         x = torch.tensor(
             [0, 0j, -0 + 0j, -0 - 0j, 0 + 0j, 0 - 0j], device=device, dtype=dtype
         )
-
         self.assertFalse(torch.any(x))
 
     @onlyCPU

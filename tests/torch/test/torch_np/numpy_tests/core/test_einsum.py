@@ -2,6 +2,7 @@
 
 import functools
 import itertools
+
 from unittest import expectedFailure as xfail, skipIf as skipif, SkipTest
 
 from pytest import raises as assert_raises
@@ -21,7 +22,6 @@ from torch.testing._internal.common_utils import (
     run_tests,
     TestCase,
 )
-
 
 skip = functools.partial(skipif, True)
 
@@ -439,7 +439,9 @@ class TestEinsum(TestCase):
             assert_equal(np.einsum(a, [0], b, [1], optimize=do_opt), np.outer(a, b))
 
         # Suppress the complex warnings for the 'as f8' tests
-        with suppress_warnings():
+        with suppress_warnings() as sup:
+            #         sup.filter(np.ComplexWarning)
+
             # matvec(a,b) / a.dot(b) where a is matrix, b is vector
             for n in range(1, 17):
                 a = np.arange(4 * n, dtype=dtype).reshape(4, n)
@@ -922,7 +924,7 @@ class TestEinsum(TestCase):
         tp = np.tensordot(A, B, axes=(0, 0))
         assert_equal(es, tp)
         # The following is the original test case from the bug report,
-        # made repeatable by changing random arrays to aranges.  # codespell:ignore aranges
+        # made repeatable by changing random arrays to aranges.
         A = np.arange(3 * 3).reshape(3, 3).astype(np.float64)
         B = np.arange(3 * 3 * 64 * 64).reshape(3, 3, 64, 64).astype(np.float32)
         es = np.einsum("cl, cpxy->lpxy", A, B)
@@ -976,7 +978,7 @@ class TestEinsum(TestCase):
         # Test originally added to cover broken float16 path: gh-20305
         # Likely most are covered elsewhere, at least partially.
         dtype = np.dtype(dtype)
-        # Simple test, designed to exercise most specialized code paths,
+        # Simple test, designed to excersize most specialized code paths,
         # note the +0.5 for floats.  This makes sure we use a float value
         # where the results must be exact.
         arr = (np.arange(7) + 0.5).astype(dtype)
@@ -984,8 +986,7 @@ class TestEinsum(TestCase):
 
         # contig -> scalar:
         res = np.einsum("i->", arr)
-        if res != arr.sum():
-            raise AssertionError(f"Expected res == arr.sum(), got {res} vs {arr.sum()}")
+        assert res == arr.sum()
         # contig, contig -> contig:
         res = np.einsum("i,i->i", arr, arr)
         assert_array_equal(res, arr * arr)
@@ -993,12 +994,7 @@ class TestEinsum(TestCase):
         res = np.einsum("i,i->i", arr.repeat(2)[::2], arr.repeat(2)[::2])
         assert_array_equal(res, arr * arr)
         # contig + contig -> scalar
-        einsum_result = np.einsum("i,i->", arr, arr)
-        expected = (arr * arr).sum()
-        if einsum_result != expected:
-            raise AssertionError(
-                f"Expected einsum result == {expected}, got {einsum_result}"
-            )
+        assert np.einsum("i,i->", arr, arr) == (arr * arr).sum()
         # contig + scalar -> contig (with out)
         out = np.ones(7, dtype=dtype)
         res = np.einsum("i,->i", arr, dtype.type(2), out=out)
@@ -1009,15 +1005,11 @@ class TestEinsum(TestCase):
         # scalar + contig -> scalar
         res = np.einsum(",i->", scalar, arr)
         # Use einsum to compare to not have difference due to sum round-offs:
-        expected = np.einsum("i->", scalar * arr)
-        if res != expected:
-            raise AssertionError(f"Expected res == {expected}, got {res}")
+        assert res == np.einsum("i->", scalar * arr)
         # contig + scalar -> scalar
         res = np.einsum("i,->", arr, scalar)
         # Use einsum to compare to not have difference due to sum round-offs:
-        expected = np.einsum("i->", scalar * arr)
-        if res != expected:
-            raise AssertionError(f"Expected res == {expected}, got {res}")
+        assert res == np.einsum("i->", scalar * arr)
         # contig + contig + contig -> scalar
 
         if dtype in ["e", "B", "b"]:
@@ -1044,8 +1036,7 @@ class TestEinsum(TestCase):
     def test_out_is_res(self):
         a = np.arange(9).reshape(3, 3)
         res = np.einsum("...ij,...jk->...ik", a, a, out=a)
-        if res is not a:
-            raise AssertionError("Expected res is a")
+        assert res is a
 
     def optimize_compare(self, subscripts, operands=None):
         # Tests all paths of the optimization function against
@@ -1103,7 +1094,7 @@ class TestEinsum(TestCase):
         self.optimize_compare("ab,cd,de->abcde")
         self.optimize_compare("ab,cd,de->be")
         self.optimize_compare("ab,bcd,cd->abcd")
-        self.optimize_compare("ab,bcd,cd->abd")  # codespell:ignore
+        self.optimize_compare("ab,bcd,cd->abd")
 
     def test_edge_cases(self):
         # Difficult edge cases for optimization
@@ -1116,7 +1107,7 @@ class TestEinsum(TestCase):
         self.optimize_compare("ed,fcd,ff,bcf->be")
         self.optimize_compare("baa,dcf,af,cde->be")
         self.optimize_compare("bd,db,eac->ace")
-        self.optimize_compare("fff,fae,bef,def->abd")  # codespell:ignore
+        self.optimize_compare("fff,fae,bef,def->abd")
         self.optimize_compare("efc,dbc,acf,fd->abe")
         self.optimize_compare("ba,ac,da->bcd")
 
@@ -1171,7 +1162,7 @@ class TestEinsum(TestCase):
     @xfail  # (reason="order='F' not supported")
     def test_output_order(self):
         # Ensure output order is respected for optimize cases, the below
-        # contraction should yield a reshaped tensor view
+        # conraction should yield a reshaped tensor view
         # gh-16415
 
         a = np.ones((2, 3, 5), order="F")

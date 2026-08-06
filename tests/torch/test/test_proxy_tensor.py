@@ -1,5 +1,4 @@
 # Owner(s): ["module: ProxyTensor"]
-# ruff: noqa: F841
 
 from torch.testing._internal.common_utils import TestCase, run_tests
 import torch
@@ -32,7 +31,6 @@ import re
 
 import functools
 import itertools
-from pathlib import Path
 
 aten = torch.ops.aten
 
@@ -61,7 +59,9 @@ def process_failures():
 
     and processes them into a list of opinfo xfails
     """
-    failures = [i.strip() for i in Path('pytest_failures').read_text().splitlines()]
+    f = open('pytest_failures')
+    failures = f.readlines()
+    failures = [i.strip() for i in failures]
 
     def process_failure_string(s, matcher):
         out = re.search(matcher, s)
@@ -191,8 +191,8 @@ def forward(self, a_1):
             torch.set_grad_enabled(True)
             return b + c.sin()
         a1 = torch.randn(4, requires_grad=True)
-        a2 = a1.detach().clone().requires_grad_(True)
-        a_tmp = a1.detach().clone().requires_grad_(True)
+        a2 = a1.clone().detach().requires_grad_(True)
+        a_tmp = a1.clone().detach().requires_grad_(True)
         fx_g = make_fx(f, pre_dispatch=True)(a_tmp)
         out1 = f(a1)
         out2 = fx_g(a2)
@@ -430,8 +430,7 @@ def forward(self, x_1):
         def f(x):
             x = x.clone()
             x.unsqueeze_(-1)
-            if x.shape[-1] != 1:
-                raise AssertionError(f"expected x.shape[-1] == 1, got {x.shape[-1]}")
+            assert x.shape[-1] == 1
             return x
 
         self._test(f, [torch.randn(5)])
@@ -451,7 +450,7 @@ def forward(self, x_1):
 
     def test_pre_dispatch_functionalization(self):
         def f(x):
-            a = FunctionalTensorMode(pre_dispatch=True, export=True)
+            a = FunctionalTensorMode(pre_dispatch=True)
             with a:
                 x_unwrapped = FunctionalTensor.to_functional(x)
                 y = torch.matmul(x_unwrapped, x_unwrapped)
@@ -476,7 +475,7 @@ def forward(self, x_1):
 
     def test_pre_dispatch_functionalization_view_op(self):
         def f(x):
-            a = FunctionalTensorMode(pre_dispatch=True, export=True)
+            a = FunctionalTensorMode(pre_dispatch=True)
             with a:
                 x_unwrapped = FunctionalTensor.to_functional(x)
                 y = torch.matmul(x_unwrapped, x_unwrapped)
@@ -618,7 +617,7 @@ def forward(self, x_1):
 
     def test_make_fx_model_fwd_bwd(self):
         class Foo(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.linear = torch.nn.Linear(5, 5)
 
@@ -671,7 +670,7 @@ def forward(self, x_1):
 
     def test_make_fx_model_fwd_bwd_wgtupdate(self):
         class Foo(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.linear = torch.nn.Linear(5, 5)
 
@@ -797,27 +796,6 @@ def forward(self, x_1):
 
         self._test(f, [torch.randn(1, 10), torch.zeros(1, dtype=torch.long)])
 
-    @unittest.skipIf(not HAS_CUDA, 'CUDA-only test')
-    def test_T244632748(self):
-        class TestModule(torch.nn.Module):
-            def forward(self, x):
-                return x + (x.shape[0] * 2)
-
-        mod = TestModule()
-        sample = torch.randn((5, 5)).to("cuda")
-        dim0 = torch.export.Dim.DYNAMIC(max=100)
-        dynamic_shapes = {"x": (dim0, torch.export.Dim.STATIC)}
-        ep = torch.export.export(mod, (sample,), dynamic_shapes=dynamic_shapes)
-        gm = ep.module()
-        symint = list(gm.graph.nodes)[3].meta["val"]
-        list(gm.graph.nodes)[3].replace_all_uses_with(symint)
-        gm.graph.eliminate_dead_code()
-
-        inductor_fx = torch._inductor.aot_compile(
-            gm, (sample,), options={"fx_wrapper": True, "compile_threads": 1}
-        )
-
-
 class TestGenericProxyTensorReal(TestGenericProxyTensor):
     tracing_mode = "real"
 
@@ -838,39 +816,13 @@ class TestRealProxyTensor(TestCase):
         def f():
             x = torch.randn([])
             y = torch.randn([])
-            if not torch.allclose(x * y, y * x):
-                raise AssertionError("x * y should equal y * x")
+            assert torch.allclose(x * y, y * x)
             z = float(x)
             z2 = float(y)
 
         # Smoke tests
         make_fx(f, _error_on_data_dependent_ops=False)()
         make_fx(f, pre_dispatch=True, _error_on_data_dependent_ops=False)()
-
-    def test_disable_torch_fn_metadata_mode(self):
-        class MyModule(nn.Module):
-            def forward(self, x):
-                return torch.sin(x) + torch.cos(x)
-
-        mod = MyModule()
-
-        def fn(x):
-            return mod(x)
-        fn._orig_mod = mod
-
-        # With TorchFunctionMetadataMode enabled (default), torch_fn should be present
-        gm_with = make_fx(fn, record_module_stack=True)(torch.randn(3))
-        torch_fn_present = any(
-            "torch_fn" in n.meta for n in gm_with.graph.nodes if n.op == "call_function"
-        )
-        self.assertTrue(torch_fn_present, "torch_fn metadata should be present by default")
-
-        # With TorchFunctionMetadataMode disabled, torch_fn should be absent
-        gm_without = make_fx(fn, record_module_stack=True, _disable_torch_fn_metadata_mode=True)(torch.randn(3))
-        torch_fn_absent = all(
-            "torch_fn" not in n.meta for n in gm_without.graph.nodes if n.op == "call_function"
-        )
-        self.assertTrue(torch_fn_absent, "torch_fn metadata should be absent when mode is disabled")
 
 class TestFakeProxyTensor(TestCase):
     def test_issue82547(self):
@@ -971,20 +923,6 @@ def forward(self, x_1):
                 continue
             self.assertTrue('val' in n.meta)
 
-    def test_fake_tensor_mode(self):
-        def f(a):
-            d = a.cos()
-            return d
-
-        from torch._guards import detect_fake_mode
-
-        existing_fake_mode = FakeTensorMode()
-        with existing_fake_mode:
-            out = make_fx(f, tracing_mode="real")(torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1]]))
-
-        fake_mode = detect_fake_mode([node.meta.get('val', None) for node in out.graph.nodes])
-        self.assertEqual(fake_mode, existing_fake_mode)
-
 def _get_node(fx_g, cond):
     for n in fx_g.graph.nodes:
         if cond(n):
@@ -992,7 +930,7 @@ def _get_node(fx_g, cond):
     raise AssertionError
 
 def _get_free_symbols(shape_env):
-    vars = tuple(shape_env.backed_var_to_val.keys())
+    vars = tuple(shape_env.var_to_val.keys())
     return len([var for var in vars if var not in shape_env.replacements])
 
 def _trace(f, *args):
@@ -1070,7 +1008,7 @@ def forward(self, x_1, y_1):
         self.assertExpectedInline(r, """\
 def forward(self, x_1, y_1):
     sym_size_int = torch.ops.aten.sym_size.int(y_1, 0);  y_1 = None
-    resize_ = torch.ops.aten.resize_.default(x_1, [sym_size_int]);  x_1 = sym_size_int = resize_ = None
+    resize_ = torch.ops.aten.resize_.default(x_1, [sym_size_int]);  x_1 = sym_size_int = None
     return None""")
 
     def test_broadcast_shapes(self):
@@ -1118,21 +1056,20 @@ def forward(self, s0_1, s1_1, x_1, y_1):
             self.assertExpectedInline(r, """\
 def forward(self, x_1, y_1):
     sym_size_int = torch.ops.aten.sym_size.int(x_1, 0);  x_1 = None
-    sym_size_int_1 = torch.ops.aten.sym_size.int(y_1, 0);  y_1 = None
     empty = torch.ops.aten.empty.memory_format([sym_size_int], device = device(type='cpu'), pin_memory = False)
+    sym_size_int_1 = torch.ops.aten.sym_size.int(y_1, 0);  y_1 = None
     return ((sym_size_int, sym_size_int_1), empty)""")
 
     def test_unary(self):
         def f(x):
-            if x.shape[0] >= 20:
-                raise AssertionError(f"expected x.shape[0] < 20, got {x.shape[0]}")
+            assert x.shape[0] < 20
             return x.cos()
         test_inputs = []
         test_inputs.append([(2, 5)])
         test_inputs.append([(6, 8)])
         gm = self._test_dynamic(f, [(3, 4)], test_inputs)
         self.assertTrue(eval_guards(gm, torch.randn(4, 5)))
-        self.assertEqual(repr(bind_symbols(gm, torch.randn(4, 5))), "{s75: 4, s96: 5}")
+        self.assertEqual(repr(bind_symbols(gm, torch.randn(4, 5))), "{s0: 4, s1: 5}")
         self.assertFalse(eval_guards(gm, torch.randn(25, 5)))
         self.assertExpectedInline(show_guards(gm), """L['x'].size()[0] <= 19""")
 
@@ -1176,6 +1113,9 @@ def forward(self, y_1, x_1):
             a = _a.item()
             b = _b.item()
             stride = _stride.item()
+            torch._check_is_size(a)
+            torch._check_is_size(b)
+            torch._check_is_size(stride)
             ta = torch.randn(a * stride)
             tb = torch.randn(b * stride)
             r = torch.cat([ta, tb])
@@ -1261,8 +1201,6 @@ def forward(self, x_1):
         batch_size = 4
         src_tokens = torch.randint(1, vocab_size, (batch_size, prompt_size))
         gm = make_fx(f, tracing_mode="symbolic")(src_tokens)
-        # Guards to rule out batch_size == sys.maxsize (wobbling between 2 and
-        # 1 ok)
         self.assertEqual(len(gm.shape_env.guards), 0)
 
     @unittest.skipIf(not HAS_CUDA, 'CUDA-only test')
@@ -1291,8 +1229,7 @@ def forward(self, a_1, b_1):
         test_inputs.append([(1, 5), (3, 1)])
         test_inputs.append([(1, 4), (4, 1)])
         shape_env = self._test_dynamic(f, [(1, 2), (3, 1)], test_inputs).shape_env
-        if len(shape_env.guards) != 0:
-            raise AssertionError(f"expected no guards, got {len(shape_env.guards)}")
+        assert len(shape_env.guards) == 0
 
     def test_multiply_shape(self):
         def f(a):
@@ -1321,8 +1258,7 @@ def forward(self, a_1):
     def test_tensor_symfloat(self):
         def f(a):
             r = torch.tensor(a.size(0) ** 2.0)
-            if r.dtype is not torch.float:
-                raise AssertionError(f"expected dtype torch.float, got {r.dtype}")
+            assert r.dtype is torch.float
             return r
 
         gm = make_fx(f, tracing_mode="symbolic")(torch.randn(2))
@@ -1365,7 +1301,7 @@ def forward(self, x_1):
     sym_size_int = torch.ops.aten.sym_size.int(x_1, 0)
     scalar_tensor = torch.ops.aten.scalar_tensor.default(sym_size_int, dtype = torch.float32, layout = torch.strided, device = device(type='cpu'));  sym_size_int = None
     select = torch.ops.aten.select.int(x_1, 0, 0)
-    copy_ = torch.ops.aten.copy_.default(select, scalar_tensor);  select = scalar_tensor = copy_ = None
+    copy_ = torch.ops.aten.copy_.default(select, scalar_tensor);  select = scalar_tensor = None
     return x_1"""  # noqa: B950
         )
 
@@ -1383,7 +1319,7 @@ def forward(self, gravity_1, mask_1):
     index = torch.ops.aten.index.Tensor(select, [mask_1]);  select = None
     mul = torch.ops.aten.mul.Tensor(index, -1);  index = None
     select_1 = torch.ops.aten.select.int(gravity_1, 1, 0);  gravity_1 = None
-    index_put_ = torch.ops.aten.index_put_.default(select_1, [mask_1], mul);  select_1 = mask_1 = mul = index_put_ = None
+    index_put_ = torch.ops.aten.index_put_.default(select_1, [mask_1], mul);  select_1 = mask_1 = mul = None
     return None""")
 
     def test_reflect_r_over_x(self):
@@ -1407,7 +1343,7 @@ def forward(self, crop_camera_1, mask_1):
     lift_fresh_copy = torch.ops.aten.lift_fresh_copy.default(_tensor_constant0);  _tensor_constant0 = None
     select = torch.ops.aten.select.int(eye, 0, 0)
     select_1 = torch.ops.aten.select.int(select, 0, 0);  select = None
-    copy_ = torch.ops.aten.copy_.default(select_1, lift_fresh_copy);  select_1 = lift_fresh_copy = copy_ = None
+    copy_ = torch.ops.aten.copy_.default(select_1, lift_fresh_copy);  select_1 = lift_fresh_copy = None
     sym_size_int = torch.ops.aten.sym_size.int(index, 0)
     expand = torch.ops.aten.expand.default(eye, [sym_size_int, 3, 3])
     view = torch.ops.aten.view.default(expand, [sym_size_int, 3, 3]);  expand = None
@@ -1417,11 +1353,11 @@ def forward(self, crop_camera_1, mask_1):
     view_1 = torch.ops.aten.view.default(expand_1, [sym_size_int, sym_size_int_1, sym_size_int_2]);  expand_1 = sym_size_int_1 = sym_size_int_2 = None
     bmm = torch.ops.aten.bmm.default(view, view_1);  view = view_1 = None
     view_2 = torch.ops.aten.view.default(bmm, [sym_size_int, 3, 3]);  bmm = None
-    mul_9 = sym_size_int * 3
-    view_3 = torch.ops.aten.view.default(view_2, [mul_9, 3]);  view_2 = mul_9 = None
+    mul = sym_size_int * 3
+    view_3 = torch.ops.aten.view.default(view_2, [mul, 3]);  view_2 = mul = None
     mm = torch.ops.aten.mm.default(view_3, eye);  view_3 = eye = None
-    _unsafe_view = torch.ops.aten._unsafe_view.default(mm, [sym_size_int, 3, 3]);  mm = sym_size_int = None
-    index_put_ = torch.ops.aten.index_put_.default(crop_camera_1, [mask_1], _unsafe_view);  crop_camera_1 = mask_1 = _unsafe_view = index_put_ = None
+    view_4 = torch.ops.aten.view.default(mm, [sym_size_int, 3, 3]);  mm = sym_size_int = None
+    index_put_ = torch.ops.aten.index_put_.default(crop_camera_1, [mask_1], view_4);  crop_camera_1 = mask_1 = view_4 = None
     return None""")  # noqa: B950
 
     def test_unbacked_slice(self):
@@ -1474,7 +1410,7 @@ def forward(self, images_1, handedness_1, valid_1):
     eq = torch.ops.aten.eq.Scalar(index_1, 1);  index_1 = None
     index_2 = torch.ops.aten.index.Tensor(index, [eq])
     flip = torch.ops.aten.flip.default(index_2, [-1]);  index_2 = None
-    index_put_ = torch.ops.aten.index_put_.default(index, [eq], flip);  index = eq = flip = index_put_ = None
+    index_put_ = torch.ops.aten.index_put_.default(index, [eq], flip);  index = eq = flip = None
     return None""")
 
     def test_neg_shape(self):
@@ -1523,9 +1459,9 @@ def forward(self, x_1, y_1):
         # See https://github.com/pytorch/pytorch/issues/123651
         def f(x):
             i0 = x.item()
+            torch._check_is_size(i0)
             # To trigger the original issue, the max bound has to
             # be chosen such that 448 / 447 < 2 (which it is.)
-            torch._check(i0 > 0)
             torch._check(i0 <= 448)
             return torch.zeros(256 * i0).view(-1, 447)
         make_fx(f, tracing_mode="symbolic")(torch.tensor(256 * 447, device="cuda"))
@@ -1543,7 +1479,7 @@ def forward(self, x_1, y_1):
         self.assertExpectedInline(r, """\
 def forward(self, x_1, y_1):
     _local_scalar_dense = torch.ops.aten._local_scalar_dense.default(x_1);  x_1 = None
-    zeros = torch.ops.aten.zeros.default([_local_scalar_dense], device = device(type='cpu'), pin_memory = False);  _local_scalar_dense = zeros = None
+    zeros = torch.ops.aten.zeros.default([_local_scalar_dense], device = device(type='cpu'), pin_memory = False);  _local_scalar_dense = None
     add = torch.ops.aten.add.Tensor(y_1, 2);  y_1 = None
     return add""")  # noqa: B950
 
@@ -1581,6 +1517,11 @@ def forward(self, x_1, y_1):
             z3 = x3.item()
             torch._check(z1 == z2 + z3)
             return y * 2
+            if z2 + z3 == z1:
+                return y * 2
+            else:
+                return y + 3
+
         # NB: inputs are done as CUDA to ensure they aren't queried to be
         # backed
 
@@ -1606,6 +1547,9 @@ def forward(self, x_1, y_1):
         def f(lengths, values):
             # tolist not directly supported atm
             sizes = [lengths[i].item() for i in range(lengths.size(0))]
+            for s in sizes:
+                # TODO(avik): no assertion generated with torch._check_is_size?
+                torch._constrain_as_size(s)
             return torch.split(values, sizes)
 
         r = str(make_fx(f, tracing_mode="symbolic")(
@@ -1620,6 +1564,9 @@ def forward(self, lengths_1, values_1):
     _local_scalar_dense_1 = torch.ops.aten._local_scalar_dense.default(select_1);  select_1 = None
     select_2 = torch.ops.aten.select.int(lengths_1, 0, 2);  lengths_1 = None
     _local_scalar_dense_2 = torch.ops.aten._local_scalar_dense.default(select_2);  select_2 = None
+    sym_constrain_range_for_size = torch.ops.aten.sym_constrain_range_for_size.default(_local_scalar_dense)
+    sym_constrain_range_for_size_1 = torch.ops.aten.sym_constrain_range_for_size.default(_local_scalar_dense_1)
+    sym_constrain_range_for_size_2 = torch.ops.aten.sym_constrain_range_for_size.default(_local_scalar_dense_2)
     split_with_sizes = torch.ops.aten.split_with_sizes.default(values_1, [_local_scalar_dense, _local_scalar_dense_1, _local_scalar_dense_2]);  values_1 = _local_scalar_dense = _local_scalar_dense_1 = _local_scalar_dense_2 = None
     getitem = split_with_sizes[0]
     getitem_1 = split_with_sizes[1]
@@ -1635,8 +1582,7 @@ def forward(self, lengths_1, values_1):
             x = b.nonzero()
             x1 = b.nonzero()
             x2 = b.nonzero()
-            if x1.shape[0] != x2.shape[0]:
-                raise AssertionError("x1.shape[0] should equal x2.shape[0]")
+            assert x1.shape[0] == x2.shape[0]
             ok = True
             b.normal_()
             y = b.nonzero()
@@ -1655,14 +1601,12 @@ def forward(self, lengths_1, values_1):
             x = b.nonzero()
             x1 = b.nonzero()
             x2 = b.nonzero()
-            if x1.shape[0] != x2.shape[0]:
-                raise AssertionError("x1.shape[0] should equal x2.shape[0]")
+            assert x1.shape[0] == x2.shape[0]
             b.normal_()
             y = b.nonzero()
             # Because you're not actually going to generate exactly zero with
             # normal_ lol
-            if x1.shape[0] != y.shape[0]:
-                raise AssertionError("x1.shape[0] should equal y.shape[0]")
+            assert x1.shape[0] == y.shape[0]
 
         make_fx(f, tracing_mode="symbolic")(torch.randn(4))
 
@@ -1682,14 +1626,14 @@ def forward(self, a_1):
     def test_make_fx_with_custom_tracer_preserving_nn_module_stack(self):
 
         class Bar(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
 
             def forward(self, x):
                 return x + 1
 
         class Foo(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.bar = Bar()
 
@@ -1761,7 +1705,7 @@ def forward(self, a_1):
         gm = self._test_dynamic(f, [(1, 6), (8, 1)], test_inputs)
         self.assertTrue(eval_guards(gm, torch.randn(1, 10), torch.randn(6, 1)))
         self.assertFalse(eval_guards(gm, torch.randn(1, 2), torch.randn(4, 1)))
-        self.assertExpectedInline(show_guards(gm), """2*L['b'].size()[0]*L['a'].size()[1] > 20""")
+        self.assertExpectedInline(show_guards(gm), """2*L['a'].size()[1]*L['b'].size()[0] > 20""")
 
     def test_new_empty(self):
         def f(a, b):
@@ -1814,8 +1758,7 @@ def forward(self, x_1):
 
     def test_metadata_fresh(self):
         def f(x):
-            if x.shape[0] != 3:
-                raise AssertionError(f"expected x.shape[0] == 3, got {x.shape[0]}")
+            assert x.shape[0] == 3
             return x.cos()
 
         fx_g = make_fx(f, tracing_mode="symbolic")(torch.randn(3))
@@ -1864,8 +1807,7 @@ def forward(self, x_1):
 
     def test_mega_guard(self):
         def f(a, b):
-            if a.shape[0] != b.shape[0] * 2:
-                raise AssertionError("a.shape[0] should equal b.shape[0] * 2")
+            assert a.shape[0] == b.shape[0] * 2
             return a.cos()
         fx_g = make_fx(f, tracing_mode="symbolic")(torch.randn(16), torch.randn(8))
         from torch._dynamo.source import LocalSource
@@ -1880,26 +1822,22 @@ def forward(self, x_1):
 
     def test_guard_upperbound_range_refinement(self):
         def f(a):
-            if not (a.shape[0] > 5 and a.shape[0] > 12):
-                raise AssertionError("a.shape[0] should be > 12")
+            assert a.shape[0] > 5 and a.shape[0] > 12
             return a.cos()
         tensor = make_fx(f, tracing_mode="symbolic")(torch.randn(15))
         self.assertExpectedInline(show_guards(tensor), """13 <= L['a'].size()[0]""")
 
     def test_guard_lowerbound_range_refinement(self):
         def f(a):
-            if not (a.shape[0] < 20 and a.shape[0] < 30):
-                raise AssertionError("a.shape[0] should be < 20")
+            assert a.shape[0] < 20 and a.shape[0] < 30
             return a.cos()
         tensor = make_fx(f, tracing_mode="symbolic")(torch.randn(15))
         self.assertExpectedInline(show_guards(tensor), """L['a'].size()[0] <= 19""")
 
     def test_guard_upperbound_range_refinement_multivariate(self):
         def f(a):
-            if not (a.shape[0] > 5 and a.shape[0] > 12):
-                raise AssertionError("a.shape[0] should be > 12")
-            if not (a.shape[1] > 5 and a.shape[1] > a.shape[0]):
-                raise AssertionError("a.shape[1] should be > a.shape[0]")
+            assert a.shape[0] > 5 and a.shape[0] > 12
+            assert a.shape[1] > 5 and a.shape[1] > a.shape[0]
             return a.cos()
         tensor = make_fx(f, tracing_mode="symbolic")(torch.randn((15, 20)))
         self.assertExpectedInline(show_guards(tensor), """\
@@ -1909,17 +1847,15 @@ L['a'].size()[1] > L['a'].size()[0]
 
     def test_guard_lowerbound_range_refinement_multivariate(self):
         def f(a):
-            if not (a.shape[0] < 20 and a.shape[0] < 30):
-                raise AssertionError("a.shape[0] should be < 20")
-            if not (a.shape[1] < 30 and a.shape[1] < a.shape[0]):
-                raise AssertionError("a.shape[1] should be < a.shape[0]")
+            assert a.shape[0] < 20 and a.shape[0] < 30
+            assert a.shape[1] < 30 and a.shape[1] < a.shape[0]
             return a.cos()
         tensor = make_fx(f, tracing_mode="symbolic")(torch.randn((15, 5)))
         self.assertExpectedInline(
             show_guards(tensor),
             """\
 L['a'].size()[1] < L['a'].size()[0]
-3 <= L['a'].size()[0] and L['a'].size()[0] <= 19
+L['a'].size()[0] <= 19
 L['a'].size()[1] <= 18""")
 
     def test_sym_storage_offset(self):
@@ -1932,10 +1868,8 @@ L['a'].size()[1] <= 18""")
         self.assertEqual(fx_g(*inp), f(*inp))
 
     def _assert_no_guards(self, fx_g, free_symbols):
-        if _get_free_symbols(fx_g.shape_env) != free_symbols:
-            raise AssertionError(f"free symbols mismatch: {fx_g.shape_env.backed_var_to_val}")
-        if len(fx_g.shape_env.get_nontrivial_guards()) != 0:
-            raise AssertionError(f"expected no guards: {fx_g.shape_env.format_guards()}")
+        assert _get_free_symbols(fx_g.shape_env) == free_symbols, fx_g.shape_env.var_to_val
+        assert len(fx_g.shape_env.get_nontrivial_guards()) == 0, fx_g.shape_env.format_guards()
 
     def test_guards_equal(self):
         def f(a, b):
@@ -2000,8 +1934,7 @@ L['a'].size()[1] <= 18""")
     @torch.fx.experimental._config.patch(translation_validation=True)
     def test_constant_specialization(self):
         def f(t):
-            if t.shape[0] != 10:
-                raise AssertionError(f"expected t.shape[0] == 10, got {t.shape[0]}")
+            assert t.shape[0] == 10
             return t
 
         tensor = make_fx(f, tracing_mode="symbolic")(torch.randn(10))
@@ -2028,7 +1961,10 @@ make_fx_failures = {
     skip('item'),
     xfail('cov'),
     xfail('nn.functional.gaussian_nll_loss'),
+    xfail('tensor_split'),
     xfail('corrcoef'),
+    xfail('quantile'),
+    xfail('nanquantile'),
 
     # Seems like it's creating a sparse tensor that isn't captured by tensor.is_sparse
     xfail('sparse.sampled_addmm'),
@@ -2045,25 +1981,49 @@ make_fx_failures = {
 
 only_real_tensor_failures = {
     xfail('narrow'),
-    xfail('tensor_split'),
 }
 
 only_fake_tensor_failures = {
-    xfail('tensor_split'),
+    xfail('narrow'),
 }
 
-fake_tensor_failures = set()
+fake_tensor_failures = {
+    # ASAN failures due to divide by 0
+    skip('nn.functional.nll_loss'),
+}
 
 symbolic_tensor_failures = {
     xfail('combinations', ''),
     xfail('geqrf', ''),  # aten.geqrf.default - couldn't find symbolic meta function/decomposition
     xfail('histogram', ''),  # Could not run 'aten::histogram.bin_ct' with arguments from the 'Meta' backend. This c...
     xfail('histogramdd', ''),  # aten._histogramdd_bin_edges.default - couldn't find symbolic meta function/decomposition
+    xfail('kthvalue', ''),  # aten.kthvalue.default - couldn't find symbolic meta function/decomposition
+    xfail('nanquantile', ''),  # Could not run 'aten::equal' with arguments from the 'Meta' backend.
     xfail('nn.functional.binary_cross_entropy', ''),  # aten.new_empty.default - couldn't find symbolic meta function/decom...
     xfail('nn.functional.cross_entropy', ''),  # aten.size.default - couldn't find symbolic meta function/decomposition
     xfail('nn.functional.ctc_loss'),  # aten._ctc_loss.Tensor - couldn't find symbolic meta function/decomposition
+    xfail('quantile', ''),  # Could not run 'aten::equal' with arguments from the 'Meta' backend.
+    xfail('unique_consecutive', ''),  # aten.unique_consecutive.default - couldn't find symbolic meta function/decomposition
 
     xfail('max_pool2d_with_indices_backward', ''),  # Expected a value of type 'List[int]' for argument 'kernel_size' but...
+
+    # many complex operators incorrect striding, metadata
+    xfail('fft.fft', ''),
+    xfail('fft.hfft2', ''),
+    xfail('fft.hfft', ''),
+    xfail('fft.hfftn', ''),
+    xfail('fft.ifft', ''),
+    xfail('fft.ihfft2', ''),
+    xfail('fft.ihfft', ''),
+    xfail('fft.ihfftn', ''),
+    xfail('fft.ihfft2', ''),
+    xfail('fft.irfft2', ''),
+    xfail('fft.irfft', ''),
+    xfail('fft.irfftn', ''),
+    xfail('fft.rfft2', ''),
+    xfail('fft.rfft', ''),
+    xfail('fft.rfftn', ''),
+    xfail('stft', '')
 }
 symbolic_tensor_segfaults = {
     skip('nn.functional.batch_norm')  # Segfault??
@@ -2090,15 +2050,24 @@ out_symbolic_tensor_failures = {
     xfail('angle', ''),
     xfail('argmax', ''),
     xfail('argmin', ''),
+    xfail('fft.fft2', ''),
+    xfail('fft.fftn', ''),
+    xfail('fft.ifft2', ''),
+    xfail('fft.ifftn', ''),
     xfail('gather', ''),
     xfail('linalg.pinv', ''),
     xfail('linalg.pinv', 'hermitian'),
+    xfail('lu', ''),
     xfail('scatter_add', ''),
     xfail('scatter', ''),
     xfail('take_along_dim', ''),
+    xfail('triangular_solve', ''),
+    xfail('view_copy', ''),
 
     # SymIntArrayRef expected to contain only concrete
+    xfail('ones', ''),
     xfail('randn', ''),
+    xfail('zeros', ''),
 
     # RuntimeError: Cannot call numel() on tensor with symbolic sizes/strides
     xfail('index_reduce', 'prod'),

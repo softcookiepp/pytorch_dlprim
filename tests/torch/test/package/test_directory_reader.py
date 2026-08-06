@@ -16,7 +16,6 @@ from torch.testing._internal.common_utils import (
     run_tests,
 )
 
-
 try:
     from torchvision.models import resnet18
 
@@ -33,7 +32,6 @@ except ImportError:
     from common import PackageTestCase
 
 from pathlib import Path
-
 
 packaging_directory = Path(__file__).parent
 
@@ -106,6 +104,7 @@ class DirectoryReaderTest(PackageTestCase):
             self.assertTrue(dir_importer.zip_reader.has_record("package_a/__init__.py"))
             self.assertFalse(dir_importer.zip_reader.has_record("package_a"))
 
+    @skipIf(version_info < (3, 7), "ResourceReader API introduced in Python 3.7")
     def test_resource_reader(self):
         """Tests DirectoryReader as the base for get_resource_reader."""
         filename = self.temp()
@@ -176,7 +175,7 @@ class DirectoryReaderTest(PackageTestCase):
 
             self.assertIsNone(importer.get_resource_reader("nonexistent_package"))
 
-    @skipIf(version_info >= (3, 13), "https://github.com/python/cpython/issues/127012")
+    @skipIf(version_info < (3, 7), "ResourceReader API introduced in Python 3.7")
     def test_package_resource_access(self):
         """Packaged modules should be able to use the importlib.resources API to access
         resources saved in the package.
@@ -205,6 +204,7 @@ class DirectoryReaderTest(PackageTestCase):
                 "my sekrit plays",
             )
 
+    @skipIf(version_info < (3, 7), "ResourceReader API introduced in Python 3.7")
     def test_importer_access(self):
         filename = self.temp()
         with PackageExporter(filename) as he:
@@ -230,6 +230,7 @@ class DirectoryReaderTest(PackageTestCase):
             self.assertEqual(m.t, "my string")
             self.assertEqual(m.b, b"my string")
 
+    @skipIf(version_info < (3, 7), "ResourceReader API introduced in Python 3.7")
     def test_resource_access_by_path(self):
         """
         Tests that packaged code can used importlib.resources.path.
@@ -280,7 +281,7 @@ class DirectoryReaderTest(PackageTestCase):
             with TemporaryDirectory() as temp_dir:
                 zip_file.extractall(path=temp_dir)
                 dir_importer = PackageImporter(Path(temp_dir) / Path(filename).name)
-                dir_importer.load_pickle("res", "mod.pkl")
+                dir_mod = dir_importer.load_pickle("res", "mod.pkl")
 
 
 if __name__ == "__main__":

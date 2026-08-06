@@ -5,6 +5,7 @@ import pytest
 
 import torch
 import torch._export as export
+
 from torch.testing._internal.common_quantization import skip_if_no_torchvision
 from torch.testing._internal.common_utils import TestCase
 
@@ -18,7 +19,7 @@ def _get_ops_list(m: torch.fx.GraphModule):
 
 
 class TestQuantizePT2EModels(TestCase):
-    @pytest.mark.xfail
+    @pytest.mark.xfail()
     @skip_if_no_torchvision
     def test_vit_aten_export(self):
         from torchvision.models import vit_b_16  # @manual
@@ -27,7 +28,7 @@ class TestQuantizePT2EModels(TestCase):
         m = m.eval()
         input_shape = (1, 3, 224, 224)
         example_inputs = (torch.randn(input_shape),)
-        m = torch.export.export(m, copy.deepcopy(example_inputs), strict=True).module()
+        m = export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
         m(*example_inputs)
         m = export.export(m, copy.deepcopy(example_inputs))
         ops = _get_ops_list(m.graph_module)

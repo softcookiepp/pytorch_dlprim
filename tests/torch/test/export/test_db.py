@@ -4,8 +4,7 @@ import copy
 import unittest
 
 import torch._dynamo as torchdynamo
-from torch._export import config
-from torch._export.db.case import ExportCase, SupportLevel
+from torch._export.db.case import ExportCase, normalize_inputs, SupportLevel
 from torch._export.db.examples import (
     filter_examples_by_support_level,
     get_rewrite_cases,
@@ -32,31 +31,26 @@ class ExampleTests(TestCase):
     def test_exportdb_supported(self, name: str, case: ExportCase) -> None:
         model = case.model
 
-        args_export = case.example_args
-        kwargs_export = case.example_kwargs
-        args_model = copy.deepcopy(args_export)
-        kwargs_model = copy.deepcopy(kwargs_export)
-        with config.patch(use_new_tracer_experimental=True):
-            exported_program = export(
-                model,
-                case.example_args,
-                case.example_kwargs,
-                dynamic_shapes=case.dynamic_shapes,
-                strict=True,
-            )
+        inputs_export = normalize_inputs(case.example_inputs)
+        inputs_model = copy.deepcopy(inputs_export)
+        exported_program = export(
+            model,
+            inputs_export.args,
+            inputs_export.kwargs,
+            dynamic_shapes=case.dynamic_shapes,
+        )
         exported_program.graph_module.print_readable()
 
         self.assertEqual(
-            exported_program.module()(*args_export, **kwargs_export),
-            model(*args_model, **kwargs_model),
+            exported_program.module()(*inputs_export.args, **inputs_export.kwargs),
+            model(*inputs_model.args, **inputs_model.kwargs),
         )
 
-        if case.extra_args is not None:
-            args = case.extra_args
-            args_model = copy.deepcopy(args)
+        if case.extra_inputs is not None:
+            inputs = normalize_inputs(case.extra_inputs)
             self.assertEqual(
-                exported_program.module()(*args),
-                model(*args_model),
+                exported_program.module()(*inputs.args, **inputs.kwargs),
+                model(*inputs.args, **inputs.kwargs),
             )
 
     @parametrize(
@@ -70,14 +64,13 @@ class ExampleTests(TestCase):
         with self.assertRaises(
             (torchdynamo.exc.Unsupported, AssertionError, RuntimeError)
         ):
-            with config.patch(use_new_tracer_experimental=True):
-                _ = export(
-                    model,
-                    case.example_args,
-                    case.example_kwargs,
-                    dynamic_shapes=case.dynamic_shapes,
-                    strict=True,
-                )
+            inputs = normalize_inputs(case.example_inputs)
+            exported_model = export(
+                model,
+                inputs.args,
+                inputs.kwargs,
+                dynamic_shapes=case.dynamic_shapes,
+            )
 
     exportdb_not_supported_rewrite_cases = [
         (name, rewrite_case)
@@ -97,12 +90,12 @@ class ExampleTests(TestCase):
             self, name: str, rewrite_case: ExportCase
         ) -> None:
             # pyre-ignore
-            export(
+            inputs = normalize_inputs(rewrite_case.example_inputs)
+            exported_model = export(
                 rewrite_case.model,
-                rewrite_case.example_args,
-                rewrite_case.example_kwargs,
+                inputs.args,
+                inputs.kwargs,
                 dynamic_shapes=rewrite_case.dynamic_shapes,
-                strict=True,
             )
 
 

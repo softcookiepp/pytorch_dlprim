@@ -298,8 +298,7 @@ inline void expectThrows(Functor&& functor, const char* expectMessageContains) {
   } catch (const Exception& e) {
     if (std::string(e.what()).find(expectMessageContains) ==
         std::string::npos) {
-      TORCH_CHECK(
-          false,
+      AT_ERROR(
           "Expected error message to contain \"",
           expectMessageContains,
           "\" but error message was: ",
@@ -307,8 +306,7 @@ inline void expectThrows(Functor&& functor, const char* expectMessageContains) {
     }
     return;
   }
-  TORCH_CHECK(
-      false,
+  AT_ERROR(
       "Expected to throw exception containing \"",
       expectMessageContains,
       "\" but didn't throw");
@@ -1033,8 +1031,9 @@ TEST(ContainerAliasingTest, MovesAcrossContainedWrites) {
   auto ops = torch::RegisterOperators().op(
       "uses::list",
       torch::RegisterOperators::options()
-          .catchAllKernel(
-              [](torch::List<at::Tensor> in) { return torch::rand({2, 3}); })
+          .catchAllKernel([](torch::List<at::Tensor> in) {
+            return torch::rand({2, 3});
+          })
           .aliasAnalysis(AliasAnalysisKind::PURE_FUNCTION));
   // Write to the inside of a list. Check that we can't reorder a
   // print across it.
@@ -1072,8 +1071,9 @@ TEST(ContainerAliasingTest, MovesAcrossContainedWritesNested) {
   auto ops = torch::RegisterOperators().op(
       "uses::list",
       torch::RegisterOperators::options()
-          .catchAllKernel(
-              [](torch::List<at::Tensor> in) { return torch::rand({2, 3}); })
+          .catchAllKernel([](torch::List<at::Tensor> in) {
+            return torch::rand({2, 3});
+          })
           .aliasAnalysis(AliasAnalysisKind::PURE_FUNCTION));
   // Write to the inside of a list. Check that we can't reorder a
   // print across it.
@@ -1255,8 +1255,9 @@ TEST(AliasRegistrationTest, ConservativeWithInferredSchema) {
   auto registry = torch::RegisterOperators().op(
       "foo::rand1",
       torch::RegisterOperators::options()
-          .catchAllKernel(
-              [](at::Tensor) -> at::Tensor { return at::rand({2, 2}); })
+          .catchAllKernel([](at::Tensor) -> at::Tensor {
+            return at::rand({2, 2});
+          })
           .aliasAnalysis(AliasAnalysisKind::CONSERVATIVE));
   const auto rand_op = Symbol::fromQualString("foo::rand1");
   auto graph = std::make_shared<Graph>();
@@ -1271,8 +1272,9 @@ TEST(AliasRegistrationTest, ConservativeWithSpecifiedSchema) {
   auto registry = torch::RegisterOperators().op(
       "foo::rand2(Tensor arg1) -> Tensor",
       torch::RegisterOperators::options()
-          .catchAllKernel(
-              [](at::Tensor) -> at::Tensor { return at::rand({2, 2}); })
+          .catchAllKernel([](at::Tensor) -> at::Tensor {
+            return at::rand({2, 2});
+          })
           .aliasAnalysis(AliasAnalysisKind::CONSERVATIVE));
   const auto rand_op = Symbol::fromQualString("foo::rand2");
   auto graph = std::make_shared<Graph>();
@@ -1287,8 +1289,9 @@ TEST(AliasRegistrationTest, ConservativeWithAliasingAnnotationsShouldError) {
   auto registry = torch::RegisterOperators().op(
       "foo::rand3(Tensor(a) arg1) -> Tensor(b)",
       torch::RegisterOperators::options()
-          .catchAllKernel(
-              [](at::Tensor) -> at::Tensor { return at::rand({2, 2}); })
+          .catchAllKernel([](at::Tensor) -> at::Tensor {
+            return at::rand({2, 2});
+          })
           .aliasAnalysis(AliasAnalysisKind::CONSERVATIVE));
 
   const auto rand_op = Symbol::fromQualString("foo::rand3");
@@ -1307,8 +1310,9 @@ TEST(AliasRegistrationTest, ConservativeWithAliasingAnnotationsShouldError2) {
   auto registry = torch::RegisterOperators().op(
       "foo::rand4(Tensor(a) arg1) -> Tensor(a)",
       torch::RegisterOperators::options()
-          .catchAllKernel(
-              [](at::Tensor) -> at::Tensor { return at::rand({2, 2}); })
+          .catchAllKernel([](at::Tensor) -> at::Tensor {
+            return at::rand({2, 2});
+          })
           .aliasAnalysis(AliasAnalysisKind::CONSERVATIVE));
   const auto rand_op = Symbol::fromQualString("foo::rand4");
   auto graph = std::make_shared<Graph>();
@@ -1328,8 +1332,9 @@ TEST(AliasRegistrationTest, FromSchemaWithInferredSchemaShouldError) {
         torch::RegisterOperators().op(
             "foo::rand5",
             torch::RegisterOperators::options()
-                .catchAllKernel(
-                    [](at::Tensor) -> at::Tensor { return at::rand({2, 2}); })
+                .catchAllKernel([](at::Tensor) -> at::Tensor {
+                  return at::rand({2, 2});
+                })
                 .aliasAnalysis(AliasAnalysisKind::FROM_SCHEMA));
       },
       "Tried to register operator foo::rand5(Tensor _0) -> Tensor _0 with AliasAnalysisKind::FROM_SCHEMA, but the schema is inferred");
@@ -1339,8 +1344,9 @@ TEST(AliasRegistrationTest, FromSchemaInferredPure) {
   auto registry = torch::RegisterOperators().op(
       "foo::rand6(Tensor arg1) -> Tensor",
       torch::RegisterOperators::options()
-          .catchAllKernel(
-              [](at::Tensor) -> at::Tensor { return at::rand({2, 2}); })
+          .catchAllKernel([](at::Tensor) -> at::Tensor {
+            return at::rand({2, 2});
+          })
           .aliasAnalysis(AliasAnalysisKind::FROM_SCHEMA));
   const auto rand_op = Symbol::fromQualString("foo::rand6");
   auto graph = std::make_shared<Graph>();
@@ -1387,8 +1393,9 @@ TEST(AliasRegistrationTest, PureNoSchema) {
   auto registry = torch::RegisterOperators().op(
       "foo::rand9",
       torch::RegisterOperators::options()
-          .catchAllKernel(
-              [](at::Tensor) -> at::Tensor { return at::rand({2, 2}); })
+          .catchAllKernel([](at::Tensor) -> at::Tensor {
+            return at::rand({2, 2});
+          })
           .aliasAnalysis(AliasAnalysisKind::PURE_FUNCTION));
   const auto rand_op = Symbol::fromQualString("foo::rand9");
   auto graph = std::make_shared<Graph>();
@@ -1403,8 +1410,9 @@ TEST(AliasRegistrationTest, PureWithSchema) {
   auto registry = torch::RegisterOperators().op(
       "foo::rand10(Tensor arg1) -> Tensor",
       torch::RegisterOperators::options()
-          .catchAllKernel(
-              [](at::Tensor) -> at::Tensor { return at::rand({2, 2}); })
+          .catchAllKernel([](at::Tensor) -> at::Tensor {
+            return at::rand({2, 2});
+          })
           .aliasAnalysis(AliasAnalysisKind::PURE_FUNCTION));
   const auto rand_op = Symbol::fromQualString("foo::rand10");
   auto graph = std::make_shared<Graph>();
@@ -1669,18 +1677,12 @@ TEST(NonDeterminismBackwardsCompatibility, BackwardsCompatibility) {
       "aten::rrelu_with_noise(Tensor self, Tensor noise, Scalar lower, Scalar upper, bool training, Generator? generator) -> Tensor",
       "aten::rand(int[] size, *, int? dtype, int? layout, Device? device, bool? pin_memory) -> Tensor",
       "aten::rand_like(Tensor self, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
-      "aten::rand_like.generator(Tensor self, *, Generator? generator, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
       "aten::randint(int high, int[] size, *, int? dtype, int? layout, Device? device, bool? pin_memory) -> Tensor",
       "aten::randint(int low, int high, int[] size, *, int? dtype, int? layout, Device? device, bool? pin_memory) -> Tensor",
       "aten::randint_like(Tensor self, int high, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
-      "aten::randint_like.generator(Tensor self, int high, *, Generator? generator, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
-      "aten::randint_like.Tensor(Tensor self, Tensor high, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
-      "aten::randint_like.Tensor_generator(Tensor self, Tensor high, *, Generator? generator, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
-      "aten::randint_like.low_dtype(Tensor self, int low, int high, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
-      "aten::randint_like.low_generator_dtype(Tensor self, int low, int high, *, Generator? generator, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
+      "aten::randint_like(Tensor self, int low, int high, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
       "aten::randn(int[] size, *, int? dtype, int? layout, Device? device, bool? pin_memory) -> Tensor",
       "aten::randn_like(Tensor self, *, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
-      "aten::randn_like.generator(Tensor self, *, Generator? generator, int? dtype=None, int? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor",
       "aten::randperm(int n, *, int? dtype, int? layout, Device? device, bool? pin_memory) -> Tensor"};
   for (const std::string& op : nondeterministic_ops) {
     const c10::FunctionSchema& schema = torch::jit::parseSchema(op);

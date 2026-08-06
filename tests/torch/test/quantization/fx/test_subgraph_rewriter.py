@@ -287,10 +287,10 @@ class TestSubgraphRewriter(JitTestCase):
     def test_subgraph_rewriter_internal_pattern_nodes_cannot_have_users_that_are_not_matched(self):
         class M(torch.nn.Module):
             def forward(self, x, w1, w2, b1, b2):
-                m0 = torch.cat([w1, w2])  # noqa: F841
+                m0 = torch.cat([w1, w2])
                 m1 = torch.cat([w1, w2])
                 m2 = torch.cat([x, b2])
-                t0 = torch.addmm(b1, m1, m2.t())  # noqa: F841
+                t0 = torch.addmm(b1, m1, m2.t())
                 t1 = torch.sum(w1, 1)
                 t2 = torch.addmm(b1, m1, m2.t())
                 return torch.sum(t1), torch.sum(t2)
@@ -339,7 +339,7 @@ class TestSubgraphRewriter(JitTestCase):
         Credit to Jerry Zhang (GitHub: jerryzh168) for this test case
         """
         class M(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.dtype = torch.float16
 
@@ -378,7 +378,7 @@ class TestSubgraphRewriter(JitTestCase):
 
     def test_subgraph_rewriter_replaces_referenced_submodules(self):
         class M(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.sigmoid = torch.nn.Sigmoid()
                 self.submod = torch.nn.ReLU()
@@ -388,7 +388,7 @@ class TestSubgraphRewriter(JitTestCase):
                 return self.submod(self.sigmoid(x))
 
         class Pattern(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.sigmoid = torch.nn.Sigmoid()
                 self.submod = torch.nn.ReLU()
@@ -397,7 +397,7 @@ class TestSubgraphRewriter(JitTestCase):
                 return self.submod(self.sigmoid(x))
 
         class Replacement(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.id = torch.nn.Identity()
                 self.submod = torch.nn.ReLU()
@@ -406,7 +406,7 @@ class TestSubgraphRewriter(JitTestCase):
                 return self.submod(self.id(x))
 
         class Comparison(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.id = torch.nn.Identity()
                 self.submod = torch.nn.ReLU()
@@ -454,10 +454,8 @@ class TestSubgraphRewriter(JitTestCase):
         symbolic_traced: torch.fx.GraphModule = symbolic_trace(module)
         for n, m in zip(symbolic_traced.graph.nodes, graph.nodes):
             if n.op == 'placeholder':
-                if n.type is not int:
-                    raise AssertionError(f"Expected n.type to be int, got {n.type}")
-                if m.type is not int:
-                    raise AssertionError(f"Expected m.type to be int, got {m.type}")
+                assert n.type == int
+                assert m.type == int
 
     def test_subgraph_writer_replace_consecutive_submodules(self):
 

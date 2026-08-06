@@ -2,22 +2,18 @@
 
 import copy
 import functools
+from typing import Optional, Union
 
 import torch
 import torch.nn as nn
 from torch.distributed._composable import replicate
+from torch.distributed._composable.fsdp import fully_shard
+from torch.distributed._tensor import Shard
+from torch.distributed._tensor.debug import CommDebugMode
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
-from torch.distributed.fsdp import fully_shard
-from torch.distributed.tensor.debug import CommDebugMode
 from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
-from torch.testing._internal.common_fsdp import FSDPTest, get_devtype, MLPStack
-from torch.testing._internal.common_utils import (
-    MI350_ARCH,
-    run_tests,
-    skipIfRocmArch,
-    TEST_XPU,
-    xfailIf,
-)
+from torch.testing._internal.common_fsdp import FSDPTest, MLPStack
+from torch.testing._internal.common_utils import run_tests
 from torch.testing._internal.distributed._tensor.common_dtensor import (
     ModelArgs,
     Transformer,
@@ -25,25 +21,22 @@ from torch.testing._internal.distributed._tensor.common_dtensor import (
 )
 
 
-device_type = torch.device(get_devtype())
-
-
 class _TestClipGradNormBase(FSDPTest):
     def _test_clip_grad_norm(
         self,
-        max_norm: float | int,
-        norm_type: float | int,
+        max_norm: Union[float, int],
+        norm_type: Union[float, int],
         ref_model: nn.Module,
         ref_optim: torch.optim.Optimizer,
         model: nn.Module,
         optim: torch.optim.Optimizer,
         inp: torch.Tensor,
-        dp_mesh: DeviceMesh | None = None,
+        dp_mesh: Optional[DeviceMesh] = None,
     ):
         vector_norm_fn = functools.partial(torch.linalg.vector_norm, ord=norm_type)
-        dp_mesh = dp_mesh or init_device_mesh(device_type.type, (self.world_size,))
+        dp_mesh = dp_mesh or init_device_mesh("cuda", (self.world_size,))
         torch.manual_seed(42 + dp_mesh.get_local_rank() + 1)
-        for _ in range(10):
+        for iter_idx in range(10):
             ref_optim.zero_grad()
             ref_model(inp).sum().backward()
             optim.zero_grad()
@@ -54,6 +47,10 @@ class _TestClipGradNormBase(FSDPTest):
                 p.grad.to_local().detach().clone() for p in model.parameters()
             ]
             for ref_grad, param in zip(ref_grads, model.parameters()):
+                # TODO: Skip the check for the parameters since FSDP needs
+                # strided sharding for it to work with `full_tensor`
+                if tuple(param.placements) == (Shard(0), Shard(0)):
+                    continue
                 self.assertEqual(ref_grad, param.grad.full_tensor())
 
             # Check that at least one gradient has norm greater than the max
@@ -99,7 +96,7 @@ class _TestClipGradNormBase(FSDPTest):
 class TestClipGradNormWorldSize2(_TestClipGradNormBase):
     @property
     def world_size(self) -> int:
-        return min(torch.get_device_module(device_type).device_count(), 2)
+        return min(torch.cuda.device_count(), 2)
 
     @skip_if_lt_x_gpu(2)
     def test_clip_grad_norm_1d(self):
@@ -107,16 +104,14 @@ class TestClipGradNormWorldSize2(_TestClipGradNormBase):
             torch.manual_seed(42)
             model_args = ModelArgs(dropout_p=0.0)
             model = Transformer(model_args)
-            ref_model = replicate(copy.deepcopy(model).to(device_type))
+            ref_model = replicate(copy.deepcopy(model).cuda())
             ref_optim = torch.optim.Adam(ref_model.parameters(), lr=1e-2)
             for module in model.modules():
                 if isinstance(module, TransformerBlock):
                     fully_shard(module)
             fully_shard(model)
             optim = torch.optim.Adam(model.parameters(), lr=1e-2)
-            inp = torch.randint(
-                0, model.model_args.vocab_size, (3, 16), device=device_type
-            )
+            inp = torch.randint(0, model.model_args.vocab_size, (3, 16), device="cuda")
             self._test_clip_grad_norm(
                 1, norm_type, ref_model, ref_optim, model, optim, inp
             )
@@ -125,16 +120,14 @@ class TestClipGradNormWorldSize2(_TestClipGradNormBase):
 class TestClipGradNormWorldSize4(_TestClipGradNormBase):
     @property
     def world_size(self) -> int:
-        return min(torch.get_device_module(device_type).device_count(), 4)
+        return min(torch.cuda.device_count(), 4)
 
     @skip_if_lt_x_gpu(4)
-    @xfailIf(TEST_XPU)  # https://github.com/intel/torch-xpu-ops/issues/1661
-    @skipIfRocmArch(MI350_ARCH)
     def test_clip_grad_norm_2d(self):
         for norm_type in (2, 1, 3, float("inf")):
             dp_size = 2
             global_mesh = init_device_mesh(
-                device_type.type,
+                "cuda",
                 (dp_size, self.world_size // dp_size),
                 mesh_dim_names=("dp", "tp"),
             )
@@ -144,7 +137,7 @@ class TestClipGradNormWorldSize4(_TestClipGradNormBase):
             # has some more significant numeric differences from the TP
             model = MLPStack(16, with_seq_parallel=True)
             ref_model = replicate(
-                copy.deepcopy(model).to(device_type), process_group=dp_mesh.get_group()
+                copy.deepcopy(model).cuda(), process_group=dp_mesh.get_group()
             )
             ref_optim = torch.optim.Adam(ref_model.parameters(), lr=1e-2)
             model.parallelize(
@@ -154,7 +147,7 @@ class TestClipGradNormWorldSize4(_TestClipGradNormBase):
                 reshard_after_forward=True,
             )
             optim = torch.optim.Adam(model.parameters(), lr=1e-2)
-            inp = torch.randn(2, 16, device=device_type)
+            inp = torch.randn(2, 16, device="cuda")
             self._test_clip_grad_norm(
                 0.5, norm_type, ref_model, ref_optim, model, optim, inp, dp_mesh
             )

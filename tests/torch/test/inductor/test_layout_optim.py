@@ -9,9 +9,7 @@ from torch._dynamo.utils import same
 from torch._inductor import config
 from torch._inductor.test_case import run_tests, TestCase
 from torch.testing._internal.common_cuda import tf32_off
-from torch.testing._internal.common_utils import skipIfXpu
-from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_GPU
-
+from torch.testing._internal.inductor_utils import HAS_CUDA
 
 USE_DDP_WRAPPER = os.environ.get("USE_DDP_WRAPPER", "1") == "1"
 
@@ -34,7 +32,6 @@ class Model2Conv(nn.Module):
         return (torch.rand(2, 3, 16, 16),)
 
 
-@skipIfXpu(msg="ccl doesn't currently work on the XPU stack")
 class TestLayoutOptim(TestCase):
     @classmethod
     def setUpClass(cls):
@@ -47,12 +44,8 @@ class TestLayoutOptim(TestCase):
         for retry_no in range(tot_retry):
             try:
                 port = random.randint(10000, 60000)
-                if GPU_TYPE == "cuda":
-                    backend = "nccl"
-                elif GPU_TYPE == "xpu":
-                    backend = "ccl"
                 dist.init_process_group(
-                    backend=backend,
+                    backend="nccl",
                     init_method=f"tcp://localhost:{port}",
                     world_size=1,
                     rank=0,
@@ -79,7 +72,7 @@ class TestLayoutOptim(TestCase):
                     x.sum().backward()
 
                     grads = []
-                    for _, param in m.named_parameters():
+                    for name, param in m.named_parameters():
                         grad = param.grad
                         if param.grad is None:
                             grad = torch.zeros_like(param)
@@ -91,8 +84,8 @@ class TestLayoutOptim(TestCase):
                 return m
 
         manual_graph_break = not use_ddp_wrapper
-        mod = model_class(manual_graph_break=manual_graph_break).to(GPU_TYPE)
-        inp = [t.to(GPU_TYPE) for t in mod.get_example_inputs()]
+        mod = model_class(manual_graph_break=manual_graph_break).cuda()
+        inp = [t.cuda() for t in mod.get_example_inputs()]
         expected_out = wrap_mod(mod)(*inp)
 
         fp64_mod = copy.deepcopy(mod).to(torch.float64)
@@ -160,7 +153,7 @@ class TestLayoutOptim(TestCase):
     @torch.no_grad()
     def test_keep_output_layout_infer(self):
         class Model(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.conv = nn.Conv2d(
                     3, 128, kernel_size=3, padding=1, stride=1, bias=False
@@ -173,8 +166,8 @@ class TestLayoutOptim(TestCase):
             def get_example_inputs(self):
                 return (torch.randn(2, 3, 5, 5),)
 
-        mod = Model().to(GPU_TYPE)
-        inp = [t.to(GPU_TYPE) for t in mod.get_example_inputs()]
+        mod = Model().cuda()
+        inp = [t.cuda() for t in mod.get_example_inputs()]
         out = mod(*inp)
 
         opt_mod = torch.compile(mod)
@@ -212,9 +205,9 @@ class TestLayoutOptim(TestCase):
             y = x.view(3, 2)
             y.mul_(2)
 
-        x = torch.ones(2, 3).to(GPU_TYPE)
+        x = torch.ones(2, 3).cuda()
         f(x)
-        self.assertTrue(torch.equal(x, torch.ones(2, 3).to(GPU_TYPE) * 2))
+        self.assertTrue(torch.equal(x, torch.ones(2, 3).cuda() * 2))
 
     def test_mutate_base(self):
         """
@@ -231,9 +224,9 @@ class TestLayoutOptim(TestCase):
             x.mul_(2)
             return y
 
-        x = torch.ones(2, 3).to(GPU_TYPE)
+        x = torch.ones(2, 3).cuda()
         y = f(x)
-        self.assertTrue(torch.equal(y, torch.ones(3, 2).to(GPU_TYPE) * 2))
+        self.assertTrue(torch.equal(y, torch.ones(3, 2).cuda() * 2))
 
     @tf32_off()
     def test_mutate_base_for_conv_output(self):
@@ -285,8 +278,8 @@ class TestLayoutOptim(TestCase):
             return z
 
         for size in [4, 8, 16]:
-            a = torch.randn(2, size, requires_grad=True).to(GPU_TYPE)
-            b = torch.randn(2, size).to(GPU_TYPE)
+            a = torch.randn(2, size, requires_grad=True).cuda()
+            b = torch.randn(2, size).cuda()
             actual = torch.compile(f, dynamic=True)(a, b)
             self.assertTrue(torch.allclose(f(a, b), actual))
 
@@ -300,7 +293,7 @@ class TestLayoutOptim(TestCase):
         The CUDA implementation of aten.nll_loss2d_backward.default requires
         the self tensor (whose layout will be used to create grad_input)
         to be contiguous. Layout optimization may change the self tensor's layout
-        and cause failure. We fix that by adding layout constraints to the
+        and cause failure. We fix that by adding layout constaints to the
         fallback of aten.nll_loss2d_backward.default .
         """
 
@@ -318,7 +311,7 @@ class TestLayoutOptim(TestCase):
                 loss = torch.nn.functional.cross_entropy(logits, targets)
                 return loss
 
-        device = GPU_TYPE
+        device = "cuda"
         batch_size = 48
         seq_len = 144
         input_dim = 39
@@ -327,7 +320,7 @@ class TestLayoutOptim(TestCase):
         model = MyModel(input_dim, num_classes)
         model.to(device)
 
-        opt_model = torch.compile(model)  # noqa: F841
+        opt_model = torch.compile(model)
 
         x = torch.ones((batch_size, 1, seq_len, input_dim), device=device)
         targets = torch.randint(
@@ -342,5 +335,5 @@ class TestLayoutOptim(TestCase):
 
 
 if __name__ == "__main__":
-    if HAS_GPU:
+    if HAS_CUDA:
         run_tests()

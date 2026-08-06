@@ -10,6 +10,7 @@ import unittest
 
 import torch
 import torch.nn as nn
+
 from torch.distributed.optim import _NamedOptimizer
 
 
@@ -26,7 +27,7 @@ def _run_model_training(model_optim_lists):
 
 
 class TestDummyModel(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         torch.manual_seed(0)
         self.net1 = nn.Sequential(nn.Linear(8, 16), nn.ReLU())

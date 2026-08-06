@@ -22,9 +22,7 @@ from torch.distributed.elastic.utils.distributed import (
 from torch.testing._internal.common_utils import (
     IS_MACOS,
     IS_WINDOWS,
-    MI200_ARCH,
     run_tests,
-    skipIfRocmArch,
     TEST_WITH_TSAN,
     TestCase,
 )
@@ -133,7 +131,6 @@ class DistributedUtilTest(TestCase):
         wait_for_workers = False
         localhost = socket.gethostname()
 
-        os.environ["USE_LIBUV"] = "0"
         store = create_c10d_store(
             is_server=True,
             server_addr=localhost,
@@ -141,13 +138,10 @@ class DistributedUtilTest(TestCase):
             timeout=2,
             world_size=world_size,
             wait_for_workers=wait_for_workers,
+            use_libuv=False,
         )
         self.assertFalse(store.libuvBackend)
-        del os.environ["USE_LIBUV"]
-        if "USE_LIBUV" in os.environ:
-            raise AssertionError("Expected USE_LIBUV to be removed from os.environ")
 
-        # libuv backend is enabled by default
         store = create_c10d_store(
             is_server=True,
             server_addr=localhost,
@@ -155,6 +149,7 @@ class DistributedUtilTest(TestCase):
             timeout=2,
             world_size=world_size,
             wait_for_workers=wait_for_workers,
+            use_libuv=True,
         )
         self.assertTrue(store.libuvBackend)
 
@@ -171,12 +166,11 @@ class DistributedUtilTest(TestCase):
             server_port=pick_free_port,
             timeout=1,
         )
-        with self.assertRaises(DistNetworkError):
+        with self.assertRaises(RuntimeError):
             create_c10d_store(
                 is_server=True, server_addr=server_addr, server_port=store1.port
             )
 
-    @skipIfRocmArch(MI200_ARCH)
     def test_port_already_in_use_on_worker(self):
         sock = get_socket_with_port()
         with closing(sock):

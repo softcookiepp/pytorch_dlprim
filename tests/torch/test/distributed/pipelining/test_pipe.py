@@ -20,7 +20,7 @@ torch.manual_seed(0)
 
 # Basic example
 class ExampleCode(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.mm_param1 = torch.nn.Parameter(torch.randn(d_hid, d_hid))
         self.mm_param2 = torch.nn.Parameter(torch.randn(d_hid, d_hid))
@@ -46,7 +46,7 @@ class ExampleCode(torch.nn.Module):
 
 
 class MultiMLP(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.mlp0 = MLPModule(d_hid)
         self.mlp1 = MLPModule(d_hid)
@@ -89,10 +89,9 @@ class PipeTests(TestCase):
             mb_args=(x, y),
         )
 
-        if pipe.num_stages != EXPECTED_N_STAGES[ModelClass]:
-            raise AssertionError(
-                f"nstages = {pipe.num_stages}, expect {EXPECTED_N_STAGES[ModelClass]}"
-            )
+        assert (
+            pipe.num_stages == EXPECTED_N_STAGES[ModelClass]
+        ), f"nstages = {pipe.num_stages}, expect {EXPECTED_N_STAGES[ModelClass]}"
 
         ref_out = mod(x, y)
         out = pipe(x, y)[0]
@@ -106,18 +105,16 @@ class PipeTests(TestCase):
         for idx in range(pipe.num_stages):
             stage_mod = pipe.get_stage_module(idx)
             stage_fqns = set(stage_mod.state_dict().keys())
-            if not stage_fqns.issubset(old_names):
-                raise AssertionError(
-                    f"stage_fqns {stage_fqns} is not a subset of old_names {old_names}"
-                )
+            assert stage_fqns.issubset(old_names)
             new_names.update(stage_fqns)
 
         if CHECK_FQN_SET_EQUALITY:
-            if old_names != new_names:
-                raise AssertionError(f"""
+            assert (
+                old_names == new_names
+            ), f"""
             old names {old_names}
             new names {new_names}
-            """)
+            """
         print("Qualname check passed")
 
 

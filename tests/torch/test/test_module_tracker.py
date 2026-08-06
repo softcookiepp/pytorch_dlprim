@@ -4,12 +4,7 @@ from copy import copy
 
 import torch
 from torch import nn
-from torch.testing._internal.common_utils import (
-    run_tests,
-    skipIfTorchDynamo,
-    TestCase,
-    xfailIfTorchDynamo,
-)
+from torch.testing._internal.common_utils import run_tests, TestCase, xfailIfTorchDynamo
 from torch.utils.checkpoint import checkpoint
 from torch.utils.module_tracker import ModuleTracker
 
@@ -75,7 +70,6 @@ class TestModuleTracker(TestCase):
             ],
         )
 
-    @skipIfTorchDynamo("unexplained 3.13+ recursion error")
     def test_confused_hierarchy(self):
         class MyMod(nn.Module):
             def __init__(self):
@@ -95,12 +89,12 @@ class TestModuleTracker(TestCase):
         inp = torch.rand(1, 2, requires_grad=True)
 
         # Should not fail
-        with ModuleTracker():
+        with ModuleTracker() as tracker:
             res = mod(inp)
             res.sum().backward()
 
         # Should not fail
-        with ModuleTracker():
+        with ModuleTracker() as tracker:
             res = checkpoint(lambda inp: mod(inp), inp)
             res.sum().backward()
 

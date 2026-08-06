@@ -9,12 +9,17 @@ from typing import Union
 import torch
 from torch.testing import FileCheck
 
-
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(pytorch_test_dir)
-from torch.testing._internal.common_utils import raise_on_run_directly
 from torch.testing._internal.jit_utils import JitTestCase
+
+if __name__ == "__main__":
+    raise RuntimeError(
+        "This test file is not meant to be run directly, use:\n\n"
+        "\tpython test/test_jit.py TESTNAME\n\n"
+        "instead."
+    )
 
 
 class TestUpgraders(JitTestCase):
@@ -151,7 +156,7 @@ class TestUpgraders(JitTestCase):
         version = self._load_model_version(loaded_func)
         self.assertTrue(version == 5)
 
-        # make sure we preserve old behaviour
+        # make sure we preserve old behaviou
         torch._C._calculate_package_version_based_on_upgraders(current_flag_value)
 
     def test_aten_linspace(self):
@@ -339,7 +344,3 @@ class TestUpgraders(JitTestCase):
         FileCheck().check_count("aten::full", 5).run(loaded_model.graph)
         version = self._load_model_version(loaded_model)
         self.assertTrue(version == 5)
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

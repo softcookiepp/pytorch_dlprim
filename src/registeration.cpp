@@ -1,6 +1,7 @@
 #include "CLTensor.h"
 #include "utils.h"
 #include <torch/version.h>
+#include <iostream>
 
 #if TORCH_VERSION_MAJOR <= 1
     #define DLPRIM_NO_HOOKS_INTERFACE
@@ -81,9 +82,35 @@ private:
 thread_local Device OCLDevImpl::dt_ = Device(OpenCLDeviceType,0);
 thread_local Stream OCLDevImpl::s_  = Stream(c10::Stream::UNSAFE,Device(OpenCLDeviceType,0),0);
 
+#if 0
+	typedef struct Allocation
+	{
+		tart::device_ptr device = nullptr;
+		tart::buffer_ptr buf = nullptr;
+		Allocation(const tart::device_ptr& device, size_t size)
+		{
+			
+		}
+	} Allocation;
+#endif
 
-class OCLAllocator : public at::Allocator {
+class OCLAllocator : public at::Allocator
+{
+	
+	static std::set<tart::buffer_ptr> sAllocations;
+
 public:
+	static void deallocate(void* ptr)
+	{
+		for (const tart::buffer_ptr& buf : sAllocations)
+		{
+			if (buf.get() == ptr)
+			{
+				sAllocations.erase(buf);
+			}
+		}
+	}
+
     at::Device current_device() const
     {
         return ocl_impl_instance.getDevice();
@@ -92,24 +119,23 @@ public:
     at::DataPtr allocate(size_t nbytes) override
     {
         at::Device device = current_device();
-        return CLContextManager::allocate(device,nbytes);
+        std::cout << "	DEVICE INDEX: " << device.index() << std::endl;
+        #if 0
+			tart::device_ptr tdev = device.
+			tart::buffer_ptr buf = 
+			at::DataPtr ptr(buffer,ptr.release(), &CLContextManager::free_ptr,dev);
+			return ptr;
+        #else
+			return CLContextManager::allocate(device,nbytes);
+		#endif
     }
     virtual void copy_data(void* dest, const void* src, std::size_t count) const override
     {
         GUARD;
-        at::Device device = current_device();
-#if VULKAN_API
 		// well this is less-than-ideal
 		tart::buffer_ptr buf_dst = *( (tart::buffer_ptr*)dest );
 		tart::buffer_ptr buf_src = *( (tart::buffer_ptr*)src  );
         buf_src->copyTo(buf_dst, 0, 0, count);
-#else
-        cl::Buffer buf_dst((cl_mem)dest,true);
-        cl::Buffer buf_src((cl_mem)src, true);
-        auto q = getExecutionContext(device);
-        q.queue().enqueueCopyBuffer(buf_src,buf_dst,0,0,count,q.events(),q.event("copy_data"));
-        sync_if_needed(device);
-#endif
     }
 } ocl_allocator_instance;
 

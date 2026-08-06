@@ -29,7 +29,12 @@ from nn_ops import (
     NNUtilsModule,
     NNVisionModule,
 )
-from quantization_ops import FusedQuantModule, GeneralQuantModule, StaticQuantModule
+from quantization_ops import (
+    FusedQuantModule,
+    GeneralQuantModule,
+    # DynamicQuantModule,
+    StaticQuantModule,
+)
 from sampling_ops import SamplingOpsModule
 from tensor_ops import (
     TensorCreationOpsModule,
@@ -46,7 +51,6 @@ from torchvision_models import (
 
 import torch
 from torch.jit.mobile import _load_for_lite_interpreter
-
 
 test_path_ios = "ios/TestApp/models/"
 test_path_android = "android/pytorch_android/src/androidTest/assets/"
@@ -92,7 +96,7 @@ all_modules = {
     # "dynamic_quant_ops": DynamicQuantModule(),
     "static_quant_ops": StaticQuantModule(),
     "fused_quant_ops": FusedQuantModule(),
-    # TorchScript builtin ops
+    # TorchScript buildin ops
     "torchscript_builtin_ops": TSBuiltinOpsModule(),
     "torchscript_collection_ops": TSCollectionOpsModule(),
     # vision
@@ -118,16 +122,16 @@ def calcOpsCoverage(ops):
     uncovered_ops = production_ops - covered_ops
     coverage = round(100 * len(covered_ops) / len(production_ops), 2)
 
-    # weighted coverage (take op occurrences into account)
-    total_occurrences = sum(production_ops_dict["root_operators"].values())
+    # weighted coverage (take op occurances into account)
+    total_occurances = sum(production_ops_dict["root_operators"].values())
     covered_ops_dict = {
         op: production_ops_dict["root_operators"][op] for op in covered_ops
     }
     uncovered_ops_dict = {
         op: production_ops_dict["root_operators"][op] for op in uncovered_ops
     }
-    covered_occurrences = sum(covered_ops_dict.values())
-    occurrences_coverage = round(100 * covered_occurrences / total_occurrences, 2)
+    covered_occurances = sum(covered_ops_dict.values())
+    occurances_coverage = round(100 * covered_occurances / total_occurances, 2)
 
     print(f"\n{len(uncovered_ops)} uncovered ops: {uncovered_ops}\n")
     print(f"Generated {len(all_generated_ops)} ops")
@@ -135,7 +139,7 @@ def calcOpsCoverage(ops):
         f"Covered {len(covered_ops)}/{len(production_ops)} ({coverage}%) production ops"
     )
     print(
-        f"Covered {covered_occurrences}/{total_occurrences} ({occurrences_coverage}%) occurrences"
+        f"Covered {covered_occurances}/{total_occurances} ({occurances_coverage}%) occurances"
     )
     print(f"pytorch ver {torch.__version__}\n")
 
@@ -163,6 +167,8 @@ def getModuleFromName(model_name):
     module = all_modules[model_name]
     if not isinstance(module, torch.nn.Module):
         module = module.getModule()
+
+    has_bundled_inputs = False  # module.find_method("get_all_bundled_inputs")
 
     if model_name in models_need_trace:
         module = torch.jit.trace(module, [])
@@ -206,7 +212,7 @@ def generateAllModels(folder, on_the_fly=False):
 
 # generate/update a given model for storage
 def generateModel(name):
-    module, _ = getModuleFromName(name)
+    module, ops = getModuleFromName(name)
     if module is None:
         return
     path_ios = test_path_ios + name + ".ptl"

@@ -1,12 +1,17 @@
 # Owner(s): ["module: dynamo"]
 
-"""Test functions for limits module."""
+""" Test functions for limits module.
 
+"""
 import functools
 import warnings
+
+# from numpy.core.getlimits import _discovered_machar, _float_ma
+
 from unittest import expectedFailure as xfail, skipIf
 
 import numpy
+
 from pytest import raises as assert_raises
 
 from torch.testing._internal.common_utils import (
@@ -16,9 +21,8 @@ from torch.testing._internal.common_utils import (
     subtest,
     TEST_WITH_TORCHDYNAMO,
     TestCase,
-    xpassIfTorchDynamo_np,
+    xpassIfTorchDynamo,
 )
-
 
 if TEST_WITH_TORCHDYNAMO:
     import numpy as np
@@ -134,9 +138,9 @@ class TestIinfo(TestCase):
         [
             np.uint8,
             # xfail: unsupported add (uint[16,32,64])
-            subtest(np.uint16, decorators=[] if TEST_WITH_TORCHDYNAMO else [xfail]),
-            subtest(np.uint32, decorators=[] if TEST_WITH_TORCHDYNAMO else [xfail]),
-            subtest(np.uint64, decorators=[] if TEST_WITH_TORCHDYNAMO else [xfail]),
+            subtest(np.uint16, decorators=[xfail]),
+            subtest(np.uint32, decorators=[xfail]),
+            subtest(np.uint64, decorators=[xfail]),
         ],
     )
     def test_unsigned_max(self, T):
@@ -152,14 +156,8 @@ class TestRepr(TestCase):
     @skipIf(TEST_WITH_TORCHDYNAMO, reason="repr differs")
     def test_finfo_repr(self):
         repr_f32 = repr(np.finfo(np.float32))
-        if "finfo(resolution=1e-06, min=-3.40282e+38," not in repr_f32:
-            raise AssertionError(
-                f"Expected finfo repr to contain expected prefix, got: {repr_f32}"
-            )
-        if "dtype=float32" not in repr_f32:
-            raise AssertionError(
-                f"Expected finfo repr to contain 'dtype=float32', got: {repr_f32}"
-            )
+        assert "finfo(resolution=1e-06, min=-3.40282e+38," in repr_f32
+        assert "dtype=float32" in repr_f32
 
 
 def assert_ma_equal(discovered, ma_like):
@@ -206,32 +204,21 @@ class TestMisc(TestCase):
             if (ld_ma.it, ld_ma.maxexp) == (63, 16384) and bytes in (12, 16):
                 # 80-bit extended precision
                 ld_ma.smallest_subnormal
-                if len(w) != 0:
-                    raise AssertionError(f"Expected no warnings, got {len(w)}")
+                assert len(w) == 0
             elif (ld_ma.it, ld_ma.maxexp) == (112, 16384) and bytes == 16:
                 # IEE 754 128-bit
                 ld_ma.smallest_subnormal
-                if len(w) != 0:
-                    raise AssertionError(f"Expected no warnings, got {len(w)}")
+                assert len(w) == 0
             else:
                 # Double double
                 ld_ma.smallest_subnormal
                 # This test may fail on some platforms
-                if len(w) != 0:
-                    raise AssertionError(f"Expected no warnings, got {len(w)}")
+                assert len(w) == 0
 
-    @xpassIfTorchDynamo_np  # (reason="None of nmant, minexp, maxexp is implemented.")
+    @xpassIfTorchDynamo  # (reason="None of nmant, minexp, maxexp is implemented.")
     def test_plausible_finfo(self):
         # Assert that finfo returns reasonable results for all types
-        for ftype in (
-            [np.float16, np.float32, np.float64, np.longdouble]
-            + [
-                np.complex64,
-                np.complex128,
-            ]
-            # no complex256 in torch._numpy
-            + ([np.clongdouble] if hasattr(np, "clongdouble") else [])
-        ):
+        for ftype in np.sctypes["float"] + np.sctypes["complex"]:
             info = np.finfo(ftype)
             assert_(info.nmant > 1)
             assert_(info.minexp < -1)

@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 # Owner(s): ["oncall: r2p"]
 
-import functools
-
 # Copyright (c) Facebook, Inc. and its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory  of this source tree.
-import json
-import os
+# LICENSE file in the root directory of this source tree.
+
+
 import signal
 import unittest
 import uuid
 from multiprocessing.pool import ThreadPool
-from typing import Any
-from unittest.mock import call, MagicMock, patch
+from typing import Any, Dict, List
+from unittest.mock import call, patch
 
 import torch.distributed as dist
+
 import torch.distributed.elastic.rendezvous.registry as rdzv_registry
 from torch.distributed.elastic.agent.server.api import (
     _get_fq_hostname,
@@ -29,12 +28,12 @@ from torch.distributed.elastic.agent.server.api import (
     WorkerSpec,
     WorkerState,
 )
-from torch.distributed.elastic.events import EventSource
 from torch.distributed.elastic.multiprocessing import SignalException
 from torch.distributed.elastic.multiprocessing.errors import ProcessFailure
 from torch.distributed.elastic.rendezvous import RendezvousHandler, RendezvousParameters
 from torch.distributed.elastic.rendezvous.api import RendezvousGracefulExitError
 from torch.distributed.elastic.utils.distributed import get_free_port
+from torch.testing._internal.common_utils import run_tests
 
 
 def do_nothing():
@@ -127,13 +126,15 @@ class TestAgent(SimpleElasticAgent):
         self.stop_workers_call_count = 0
         self.start_workers_call_count = 0
 
-    def _stop_workers(self, worker_group: WorkerGroup) -> None:
+    def _stop_workers(
+        self, worker_group: WorkerGroup, is_restart: bool = False
+    ) -> None:
         # workers are fake, nothing to stop; just clear the rdzv info
         worker_group.group_rank = None
         worker_group.group_world_size = None
         self.stop_workers_call_count += 1
 
-    def _start_workers(self, worker_group: WorkerGroup) -> dict[int, Any]:
+    def _start_workers(self, worker_group: WorkerGroup) -> Dict[int, Any]:
         # crate fake workers; make worker id equal to global rank
         ids = {}
         for worker in worker_group.workers:
@@ -158,246 +159,6 @@ def monres(state: WorkerState):
         return RunResult(state=state)
 
 
-class RecordWorkerEventsTest(unittest.TestCase):
-    def setUp(self):
-        self.spec = MagicMock()
-        self.spec.role = "test_role"
-        self.spec.get_entrypoint_name.return_value = "test_entrypoint"
-        self.spec.rdzv_handler.get_run_id.return_value = "test_run_id"
-        self.spec.rdzv_handler.get_backend.return_value = "test_backend"
-        self.spec.max_restarts = 3
-
-        self.agent = TestAgent(self.spec)
-
-        # Create a mock worker spec and agent
-        self.agent._worker_group = MagicMock()
-        self.agent._worker_group.spec = MagicMock()
-        self.agent._worker_group.spec.event_log_handler = "test_handler"
-
-        # Setup worker group
-        self.worker_group = WorkerGroup(self.spec)
-        self.worker_group.group_world_size = 2
-        self.worker_group.group_rank = 1
-        self.agent._worker_group = self.worker_group
-
-        # Create a test worker
-
-        self.workers = [
-            Worker(
-                local_rank=0,
-                global_rank=0,
-                role_rank=0,
-                world_size=2,
-                role_world_size=2,
-            ),
-            Worker(
-                local_rank=1,
-                global_rank=1,
-                role_rank=1,
-                world_size=2,
-                role_world_size=2,
-            ),
-        ]
-        self.workers[0].id = 0
-        self.workers[1].id = 1
-        self.agent._worker_group.workers = self.workers
-
-    @patch("torch.distributed.elastic.agent.server.api.record")
-    def test_record_worker_events_success(self, mock_record):
-        # Create a RunResult with successful workers
-        result = RunResult(
-            state=WorkerState.SUCCEEDED,
-            return_values={0: "result0", 1: "result1"},
-            failures={},
-        )
-
-        # Call the method under test
-        self.agent._record_worker_events(result)
-
-        # Verify record was called twice (once for each worker)
-        self.assertEqual(mock_record.call_count, 2)
-
-        # Check that both calls were for SUCCEEDED events
-        for call_args in mock_record.call_args_list:
-            event = call_args[0][0]
-
-            self.assertEqual(event.source, EventSource.WORKER)
-            self.assertEqual(event.metadata["state"], "SUCCEEDED")
-            self.assertIsNone(event.metadata["raw_error"])
-            md = json.loads(event.metadata["metadata"])
-            self.assertEqual(md["exit_code"], [None])
-            self.assertEqual(md["worker_pid"], [None])
-
-    @patch("torch.distributed.elastic.agent.server.api.record")
-    def test_record_worker_events_failure(self, mock_record):
-        # Create failures with error data
-        failure0 = ProcessFailure(
-            local_rank=0, pid=1000, exitcode=1, error_file="error0.json"
-        )
-
-        # Create a RunResult with one failed worker and one terminated worker
-        result = RunResult(
-            state=WorkerState.FAILED,
-            return_values={},
-            failures={0: failure0},  # Only worker 0 has a specific failure
-        )
-
-        # Call the method under test
-        self.agent._record_worker_events(result)
-
-        # Verify record was called twice (once for each worker)
-        self.assertEqual(mock_record.call_count, 2)
-
-        # Get the calls
-        calls = mock_record.call_args_list
-
-        # Check first call for the failed worker (global_rank=0)
-        failed_event = calls[0][0][0]
-        self.assertEqual(failed_event.source, EventSource.WORKER)
-        self.assertEqual(failed_event.metadata["state"], "FAILED")
-        self.assertEqual(failed_event.metadata["global_rank"], 0)
-        md = json.loads(failed_event.metadata["metadata"])
-        self.assertEqual(
-            failed_event.metadata["raw_error"],
-            '{"message": "<NONE>", "errorTraits": {"category": "system_terminated_error", "retryability": "False"}}',
-        )
-        self.assertEqual(md["exit_code"], [1])
-        self.assertEqual(md["worker_pid"], [1000])
-
-        # Check second call for the terminated worker (global_rank=1)
-        terminated_event = calls[1][0][0]
-        self.assertEqual(terminated_event.source, EventSource.WORKER)
-        self.assertEqual(terminated_event.metadata["state"], "TERMINATED")
-        self.assertEqual(terminated_event.metadata["global_rank"], 1)
-        self.assertIsNone(terminated_event.metadata["raw_error"])
-        md = json.loads(terminated_event.metadata["metadata"])
-        self.assertEqual(md["exit_code"], [None])
-        self.assertEqual(md["worker_pid"], [None])
-
-
-class ConstructEventTest(unittest.TestCase):
-    def setUp(self):
-        # Create minimal spec and agent for testing
-        self.spec = MagicMock()
-        self.spec.role = "test_role"
-        self.spec.get_entrypoint_name.return_value = "test_entrypoint"
-        self.spec.rdzv_handler.get_run_id.return_value = "test_run_id"
-        self.spec.rdzv_handler.get_backend.return_value = "test_backend"
-        self.spec.max_restarts = 3
-
-        self.agent = TestAgent(self.spec)
-        self.agent._remaining_restarts = 2
-        self.agent._total_execution_time = 42
-
-        # Setup worker group
-        self.worker_group = WorkerGroup(self.spec)
-        self.worker_group.group_world_size = 2
-        self.worker_group.group_rank = 1
-        self.agent._worker_group = self.worker_group
-
-        # Create a test worker
-        self.worker = Worker(
-            local_rank=0, global_rank=5, role_rank=3, world_size=8, role_world_size=4
-        )
-        self.worker.id = 12345
-
-    def test_construct_event_agent_success(self):
-        # Test constructing an agent success event
-        event = self.agent._construct_event(state="SUCCEEDED", source=EventSource.AGENT)
-
-        # Verify basic event properties
-        self.assertEqual(event.name, "torchelastic.worker.status.SUCCEEDED")
-        self.assertEqual(event.source, EventSource.AGENT)
-
-        # Verify metadata
-        metadata = event.metadata
-        self.assertEqual(metadata["run_id"], "test_run_id")
-        self.assertIsNone(metadata["global_rank"])
-        self.assertEqual(metadata["group_rank"], 1)
-        self.assertIsNone(metadata["worker_id"])
-        self.assertEqual(metadata["role"], "test_role")
-        self.assertEqual(metadata["state"], "SUCCEEDED")
-        self.assertEqual(metadata["total_run_time"], 42)
-        self.assertEqual(metadata["rdzv_backend"], "test_backend")
-        self.assertIsNone(metadata["raw_error"])
-        self.assertEqual(
-            metadata["agent_restarts"], 1
-        )  # max_restarts - remaining_restarts
-        self.assertIsNone(metadata["duration_ms"])
-
-        # Verify JSON metadata
-        md_dict = json.loads(metadata["metadata"])
-        self.assertEqual(md_dict["group_world_size"], 2)
-        self.assertEqual(md_dict["entry_point"], "test_entrypoint")
-
-    def test_construct_event_worker_failure(self):
-        # Test constructing a worker failure event with raw error
-        raw_error = json.dumps(
-            {"error_message": "Test error", "traceback": "stack trace"}
-        )
-        event = self.agent._construct_event(
-            state="FAILED",
-            source=EventSource.WORKER,
-            worker=self.worker,
-            raw_error=raw_error,
-            exit_code=1,
-        )
-
-        # Verify basic event properties
-        self.assertEqual(event.name, "torchelastic.worker.status.FAILED")
-        self.assertEqual(event.source, EventSource.WORKER)
-
-        # Verify metadata
-        metadata = event.metadata
-        self.assertEqual(metadata["run_id"], "test_run_id")
-        self.assertEqual(metadata["global_rank"], 5)
-        self.assertEqual(metadata["group_rank"], 1)
-        self.assertEqual(metadata["worker_id"], "12345")
-        self.assertEqual(metadata["role"], "test_role")
-        self.assertEqual(metadata["state"], "FAILED")
-        self.assertEqual(metadata["total_run_time"], 42)
-        self.assertEqual(metadata["rdzv_backend"], "test_backend")
-        self.assertEqual(metadata["raw_error"], raw_error)
-        self.assertEqual(metadata["agent_restarts"], 1)
-
-        # Verify worker-specific metadata
-        md_dict = json.loads(metadata["metadata"])
-        self.assertEqual(md_dict["local_rank"], [0])
-        self.assertEqual(md_dict["role_rank"], [3])
-        self.assertEqual(md_dict["role_world_size"], [4])
-        self.assertEqual(md_dict["exit_code"], [1])
-
-    def test_construct_event_with_duration(self):
-        # Test constructing an event with duration_ms
-        event = self.agent._construct_event(
-            state="RENDEZVOUS", source=EventSource.AGENT, duration_ms=123.45
-        )
-
-        # Verify duration is set correctly
-        self.assertEqual(event.metadata["duration_ms"], 123.45)
-
-    def test_construct_event_worker_no_error(self):
-        # Test constructing a worker event without error info
-        event = self.agent._construct_event(
-            state="HEALTHY", source=EventSource.WORKER, worker=self.worker
-        )
-
-        # Verify error fields are None
-        metadata = event.metadata
-        self.assertIsNone(metadata["raw_error"])
-
-        # Check worker info is set
-        self.assertEqual(metadata["global_rank"], 5)
-        self.assertEqual(metadata["worker_id"], "12345")
-
-        # Check metadata JSON
-        md_dict = json.loads(metadata["metadata"])
-        self.assertEqual(md_dict["local_rank"], [0])
-        self.assertEqual(md_dict["role_rank"], [3])
-        self.assertEqual(md_dict["role_world_size"], [4])
-        self.assertNotIn("exit_code", [None])
-
-
 class SimpleElasticAgentTest(unittest.TestCase):
     def _get_worker_spec(
         self,
@@ -406,7 +167,6 @@ class SimpleElasticAgentTest(unittest.TestCase):
         role="test_trainer",
         local_world_size=8,
         local_addr=None,
-        event_log_handler="null",
     ):
         run_id = str(uuid.uuid4().int)
         port = get_free_port()
@@ -433,7 +193,6 @@ class SimpleElasticAgentTest(unittest.TestCase):
             max_restarts=max_restarts,
             monitor_interval=monitor_interval,
             local_addr=local_addr,
-            event_log_handler=event_log_handler,
         )
         return spec
 
@@ -484,47 +243,6 @@ class SimpleElasticAgentTest(unittest.TestCase):
         record_metrics_mock.assert_called_once()
         record_events_mock.assert_called_once()
         shutdown_mock.assert_called_once()
-
-    def test_exit_barrier_sets_and_clears_flag(self):
-        """Verify _in_exit_barrier is set before barrier and cleared after."""
-        spec = self._get_worker_spec(max_restarts=0)
-        agent = TestAgent(spec)
-        agent._worker_group.state = WorkerState.SUCCEEDED
-        agent._worker_group.group_world_size = 1
-        agent._store = MagicMock()
-
-        flag_during_barrier = []
-
-        def mock_barrier(**kwargs):
-            flag_during_barrier.append(agent._in_exit_barrier)
-
-        with patch(
-            "torch.distributed.elastic.utils.store.barrier",
-            side_effect=mock_barrier,
-        ):
-            agent._exit_barrier()
-
-        # Flag was True during barrier call
-        self.assertTrue(flag_during_barrier[0])
-        # Flag is False after barrier completes
-        self.assertFalse(agent._in_exit_barrier)
-
-    def test_exit_barrier_clears_flag_on_timeout(self):
-        """Verify _in_exit_barrier is cleared even if barrier times out."""
-        spec = self._get_worker_spec(max_restarts=0)
-        agent = TestAgent(spec)
-        agent._worker_group.state = WorkerState.SUCCEEDED
-        agent._worker_group.group_world_size = 1
-        agent._store = MagicMock()
-
-        with patch(
-            "torch.distributed.elastic.utils.store.barrier",
-            side_effect=Exception("wait timeout"),
-        ):
-            agent._exit_barrier()
-
-        # Flag must be cleared even on timeout
-        self.assertFalse(agent._in_exit_barrier)
 
     @patch("torch.distributed.elastic.agent.server.api.put_metric")
     def test_record_metrics_success_no_retries(self, put_metric_mock):
@@ -631,9 +349,7 @@ class SimpleElasticAgentTest(unittest.TestCase):
         self.assertEqual(spec_local_addr, worker_group.master_addr)
         self.assertGreater(worker_group.master_port, 0)
 
-    @patch.object(TestAgent, "_construct_event")
-    @patch("torch.distributed.elastic.agent.server.api.record")
-    def test_initialize_workers(self, mock_record, mock_construct_event):
+    def test_initialize_workers(self):
         spec = self._get_worker_spec(max_restarts=1)
         agent = TestAgent(spec)
         worker_group = agent.get_worker_group()
@@ -644,40 +360,13 @@ class SimpleElasticAgentTest(unittest.TestCase):
             worker = worker_group.workers[i]
             self.assertEqual(worker.id, worker.global_rank)
 
-        mock_construct_event.assert_called()
-        self.assertEqual(mock_construct_event.call_count, 10)
-        mock_record.assert_called()
-        second_arg = mock_record.call_args_list[0][0][1]
-        self.assertEqual(second_arg, "null")
-
-    @patch.object(TestAgent, "_construct_event")
-    @patch("torch.distributed.elastic.agent.server.api.record")
-    def test_initialize_workers_with_new_spec(self, mock_record, mock_construct_event):
-        spec = self._get_worker_spec(
-            max_restarts=1, event_log_handler="framework_logger"
-        )
-        agent = TestAgent(spec)
-        worker_group = agent.get_worker_group()
-        agent._initialize_workers(worker_group)
-
-        self.assertEqual(WorkerState.HEALTHY, worker_group.state)
-        for i in range(spec.local_world_size):
-            worker = worker_group.workers[i]
-            self.assertEqual(worker.id, worker.global_rank)
-
-        mock_construct_event.assert_called()
-        self.assertEqual(mock_construct_event.call_count, 10)
-        mock_record.assert_called()
-        second_arg = mock_record.call_args_list[0][0][1]
-        self.assertEqual(second_arg, "framework_logger")
-
     def test_restart_workers(self):
         spec = self._get_worker_spec()
         agent = TestAgent(spec)
         worker_group = agent.get_worker_group()
 
         num_restarts = 3
-        for _ in range(num_restarts):
+        for _ in range(0, num_restarts):
             agent._restart_workers(worker_group)
             self.assertEqual(WorkerState.HEALTHY, worker_group.state)
 
@@ -787,29 +476,6 @@ class SimpleElasticAgentTest(unittest.TestCase):
         self.assertEqual(1, mock_monitor_workers.call_count)
         self.assertEqual(spec.max_restarts, agent._remaining_restarts)
 
-    def get_worker_assigned(self, store, role_infos_len, info) -> list[Worker]:
-        i, role_info = info
-        spec = self._get_worker_spec(
-            max_restarts=3,
-            monitor_interval=0.1,
-            role=role_info.role,
-            local_world_size=role_info.local_world_size,
-        )
-        agent = TestAgent(spec)
-        workers = agent._assign_worker_ranks(
-            store, role_info.rank, role_infos_len, spec
-        )
-        return [
-            (
-                w.local_rank,
-                w.role_rank,
-                w.global_rank,
-                w.world_size,
-                w.role_world_size,
-            )
-            for w in workers
-        ]
-
     def test_assign_worker_ranks(self):
         role_infos = [
             _RoleInstanceInfo("parameter_server", 0, 4),
@@ -820,7 +486,28 @@ class SimpleElasticAgentTest(unittest.TestCase):
         ]
         store = dist.HashStore()
 
-        f = functools.partial(self.get_worker_assigned, store, len(role_infos))
+        def f(info) -> List[Worker]:
+            i, role_info = info
+            spec = self._get_worker_spec(
+                max_restarts=3,
+                monitor_interval=0.1,
+                role=role_info.role,
+                local_world_size=role_info.local_world_size,
+            )
+            agent = TestAgent(spec)
+            workers = agent._assign_worker_ranks(
+                store, role_info.rank, len(role_infos), spec
+            )
+            return [
+                (
+                    w.local_rank,
+                    w.role_rank,
+                    w.global_rank,
+                    w.world_size,
+                    w.role_world_size,
+                )
+                for w in workers
+            ]
 
         with ThreadPool(len(role_infos)) as pool:
             out = pool.map(f, enumerate(role_infos))
@@ -855,59 +542,6 @@ class SimpleElasticAgentTest(unittest.TestCase):
                 ],
             ],
         )
-
-    def test_assign_worker_ranks_indentical(self):
-        os.environ["TORCH_ELASTIC_WORKER_IDENTICAL"] = "1"
-        role_infos = [
-            _RoleInstanceInfo("trainer", 0, 4),
-            _RoleInstanceInfo("trainer", 1, 4),
-            _RoleInstanceInfo("trainer", 2, 4),
-            _RoleInstanceInfo("trainer", 3, 4),
-            _RoleInstanceInfo("trainer", 4, 4),
-        ]
-        store = dist.HashStore()
-
-        f = functools.partial(self.get_worker_assigned, store, len(role_infos))
-
-        with ThreadPool(len(role_infos)) as pool:
-            out = pool.map(f, enumerate(role_infos))
-
-        self.assertListEqual(
-            out,
-            [
-                [
-                    (0, 0, 0, 20, 20),
-                    (1, 1, 1, 20, 20),
-                    (2, 2, 2, 20, 20),
-                    (3, 3, 3, 20, 20),
-                ],
-                [
-                    (0, 4, 4, 20, 20),
-                    (1, 5, 5, 20, 20),
-                    (2, 6, 6, 20, 20),
-                    (3, 7, 7, 20, 20),
-                ],
-                [
-                    (0, 8, 8, 20, 20),
-                    (1, 9, 9, 20, 20),
-                    (2, 10, 10, 20, 20),
-                    (3, 11, 11, 20, 20),
-                ],
-                [
-                    (0, 12, 12, 20, 20),
-                    (1, 13, 13, 20, 20),
-                    (2, 14, 14, 20, 20),
-                    (3, 15, 15, 20, 20),
-                ],
-                [
-                    (0, 16, 16, 20, 20),
-                    (1, 17, 17, 20, 20),
-                    (2, 18, 18, 20, 20),
-                    (3, 19, 19, 20, 20),
-                ],
-            ],
-        )
-        os.environ["TORCH_ELASTIC_WORKER_IDENTICAL"] = "0"
 
     def test_get_event(self):
         spec = self._get_worker_spec(max_restarts=1)
@@ -958,7 +592,4 @@ class SimpleElasticAgentTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    raise RuntimeError(
-        "This test is not currently used and should be "
-        "enabled in discover_tests.py if required."
-    )
+    run_tests()

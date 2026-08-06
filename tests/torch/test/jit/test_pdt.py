@@ -6,9 +6,8 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple  # noqa: F401
 
 import torch
 from torch.jit._monkeytype_config import _IS_MONKEYTYPE_INSTALLED
-from torch.testing._internal.common_utils import NoTest, raise_on_run_directly
+from torch.testing._internal.common_utils import NoTest
 from torch.testing._internal.jit_utils import JitTestCase, make_global
-
 
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -20,6 +19,13 @@ if not _IS_MONKEYTYPE_INSTALLED:
         file=sys.stderr,
     )
     JitTestCase = NoTest  # type: ignore[misc, assignment] # noqa: F811
+
+if __name__ == "__main__":
+    raise RuntimeError(
+        "This test file is not meant to be run directly, use:\n\n"
+        "\tpython test/test_jit.py TESTNAME\n\n"
+        "instead."
+    )
 
 
 class TestPDT(JitTestCase):
@@ -136,7 +142,7 @@ class TestPDT(JitTestCase):
         class TestModelWithExport(torch.nn.Module):
             @torch.jit.export
             def fn(self, x, y) -> Any:
-                assert not (isinstance(x, bool) and isinstance(y, bool))  # noqa: S101
+                assert not (isinstance(x, bool) and isinstance(y, bool))
                 if isinstance(x, int) and isinstance(y, int):
                     return x + y
                 elif isinstance(x, float) and isinstance(y, float):
@@ -276,7 +282,7 @@ class TestPDT(JitTestCase):
     def test_multiple_class_with_same_method(self):
         class PDTModelOne:
             def test_find(self, a, b):
-                return b in a
+                return b in a.keys()
 
         class PDTModelTwo:
             def test_find(self, a, b):
@@ -669,7 +675,7 @@ class TestPDT(JitTestCase):
 
     def test_any(self):
         def test_multiple_types(a):
-            assert not isinstance(a, bool)  # noqa: S101
+            assert not isinstance(a, bool)
             return a
 
         def test_multiple_type_refinement(a):
@@ -718,7 +724,7 @@ class TestPDT(JitTestCase):
     def test_class_as_profiled_types(self):
         class UserDefinedClass:
             def fn(self, b) -> Any:
-                assert b is not None  # noqa: S101
+                assert b is not None
                 if isinstance(b, int):
                     return b if b > 0 else -1
                 elif isinstance(b, float):
@@ -726,7 +732,7 @@ class TestPDT(JitTestCase):
                 return 0
 
         def test_model(a, m):
-            assert not isinstance(a, bool)  # noqa: S101
+            assert not isinstance(a, bool)
             return m.fn(a)
 
         make_global(UserDefinedClass, test_model)
@@ -772,7 +778,7 @@ class TestPDT(JitTestCase):
                     return -1
 
         def test_model_with_args(a, m):
-            assert not isinstance(a, bool)  # noqa: S101
+            assert not isinstance(a, bool)
             return m.fn(a)
 
         make_global(ClassWithArgs, test_model_with_args)
@@ -801,7 +807,7 @@ class TestPDT(JitTestCase):
 
     def test_nn_parameter_as_arg(self):
         class TestNNParameter(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.inp = torch.nn.Parameter(torch.ones(2, 3))
 
@@ -889,7 +895,3 @@ class TestPDT(JitTestCase):
                 torch.ones(1),
             ),
         )
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

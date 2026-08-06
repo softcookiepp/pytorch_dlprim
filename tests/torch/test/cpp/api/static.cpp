@@ -6,12 +6,11 @@
 #include <torch/torch.h>
 
 #include <string>
-#include <type_traits>
 #include <vector>
 
 template <
     typename T,
-    typename = std::enable_if_t<!torch::detail::is_module<T>::value>>
+    typename = torch::enable_if_t<!torch::detail::is_module<T>::value>>
 bool f(T&& m) {
   return false;
 }
@@ -19,6 +18,22 @@ bool f(T&& m) {
 template <typename T>
 torch::detail::enable_if_module_t<T, bool> f(T&& m) {
   return true;
+}
+
+TEST(TestStatic, AllOf) {
+  ASSERT_TRUE(torch::all_of<>::value);
+  ASSERT_TRUE(torch::all_of<true>::value);
+  ASSERT_TRUE((torch::all_of<true, true, true>::value));
+  ASSERT_FALSE(torch::all_of<false>::value);
+  ASSERT_FALSE((torch::all_of<false, false, false>::value));
+  ASSERT_FALSE((torch::all_of<true, true, false>::value));
+}
+
+TEST(TestStatic, AnyOf) {
+  ASSERT_FALSE(torch::any_of<>::value);
+  ASSERT_TRUE(bool((torch::any_of<true>::value)));
+  ASSERT_TRUE(bool((torch::any_of<true, true, true>::value)));
+  ASSERT_FALSE(bool((torch::any_of<false>::value)));
 }
 
 TEST(TestStatic, EnableIfModule) {
@@ -68,7 +83,8 @@ template <typename Module, typename ExpectedType, typename... Args>
 void assert_has_expected_type() {
   using ReturnType =
       typename torch::detail::return_type_of_forward<Module, Args...>::type;
-  constexpr bool is_expected_type = std::is_same_v<ReturnType, ExpectedType>;
+  constexpr bool is_expected_type =
+      std::is_same<ReturnType, ExpectedType>::value;
   ASSERT_TRUE(is_expected_type) << Module().name();
 }
 

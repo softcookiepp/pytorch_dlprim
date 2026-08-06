@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import time
 
-import torch
 from torch._dynamo import device_interface  # noqa: PLC2701 import-private-name
 
 
@@ -14,7 +13,9 @@ class DeviceProperties:
 
 
 class DeviceInterface(device_interface.DeviceInterface):
-    class Event(torch.Event):
+    class Event(
+        device_interface._EventBase
+    ):  # pyright: ignore [reportPrivateImportUsage]
         def __init__(
             self,
             enable_timing: bool = False,
@@ -27,15 +28,12 @@ class DeviceInterface(device_interface.DeviceInterface):
         def record(self, stream) -> None:
             if not self.enable_timing:
                 return
-            if self.recorded_time is not None:
-                raise AssertionError
+            assert self.recorded_time is None
             self.recorded_time = time.perf_counter_ns()
 
         def elapsed_time(self, end_event: DeviceInterface.Event) -> float:
-            if not self.recorded_time:
-                raise AssertionError
-            if not end_event.recorded_time:
-                raise AssertionError
+            assert self.recorded_time
+            assert end_event.recorded_time
             # convert to ms
             return (end_event.recorded_time - self.recorded_time) / 1000000
 
@@ -79,23 +77,29 @@ class DeviceInterface(device_interface.DeviceInterface):
 
     @staticmethod
     def device_count() -> int:
-        return 1
+        raise NotImplementedError
 
     @staticmethod
     def maybe_exchange_device(device: int) -> int:
-        if device != 0:
-            raise AssertionError(
-                f"Only device index 0 is supported, tried to set index to {device}"
-            )
+        assert (
+            device == 0
+        ), f"Only device index 0 is supported, tried to set index to {device}"
         return 0  # previous device is always 0
 
     @staticmethod
     def exchange_device(device: int) -> int:
-        if device != 0:
-            raise AssertionError(
-                f"Only device index 0 is supported, tried to set index to {device}"
-            )
+        assert (
+            device == 0
+        ), f"Only device index 0 is supported, tried to set index to {device}"
         return 0  # previous device is always 0
+
+    @staticmethod
+    def current_stream():
+        raise NotImplementedError
+
+    @staticmethod
+    def set_stream(stream) -> None:
+        raise NotImplementedError
 
     @staticmethod
     def get_raw_stream(device_index: int):
@@ -104,6 +108,10 @@ class DeviceInterface(device_interface.DeviceInterface):
     @staticmethod
     def synchronize(device) -> None:
         pass
+
+    @staticmethod
+    def get_device_properties(device) -> DeviceProperties:
+        raise NotImplementedError
 
     # Can be mock patched by @patch decorator.
     @staticmethod

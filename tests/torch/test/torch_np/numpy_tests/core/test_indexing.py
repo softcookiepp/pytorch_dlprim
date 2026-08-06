@@ -5,10 +5,13 @@ import operator
 import re
 import sys
 import warnings
+
 from itertools import product
+
 from unittest import expectedFailure as xfail, skipIf as skipif, SkipTest
 
 import pytest
+
 from pytest import raises as assert_raises
 
 from torch.testing._internal.common_utils import (
@@ -18,9 +21,8 @@ from torch.testing._internal.common_utils import (
     skipIfTorchDynamo,
     TEST_WITH_TORCHDYNAMO,
     TestCase,
-    xpassIfTorchDynamo_np,
+    xpassIfTorchDynamo,
 )
-
 
 if TEST_WITH_TORCHDYNAMO:
     import numpy as np
@@ -200,7 +202,7 @@ class TestIndexing(TestCase):
         b[(Ellipsis,)] = 2
         assert_equal(b, 2)
 
-    @xpassIfTorchDynamo_np  # 'torch_.np.array() does not have base attribute.
+    @xpassIfTorchDynamo  # 'torch_.np.array() does not have base attribute.
     def test_ellipsis_index_2(self):
         a = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
         assert_(a[...] is not a)
@@ -219,7 +221,7 @@ class TestIndexing(TestCase):
         assert_raises(IndexError, a.__getitem__, 1 << 30)
         # Index overflow produces IndexError
         # Note torch raises RuntimeError here
-        assert_raises((IndexError, ValueError), a.__getitem__, 1 << 64)
+        assert_raises((IndexError, RuntimeError), a.__getitem__, 1 << 64)
 
     def test_single_bool_index(self):
         # Single boolean index
@@ -375,7 +377,7 @@ class TestIndexing(TestCase):
         assert_array_equal(a[idx], idx)
 
         # this case must not go into the fast path, note that idx is
-        # a non-contiguous none 1D array here.
+        # a non-contiuguous none 1D array here.
         a[idx] = -1
         res = np.arange(6)
         res[0] = -1
@@ -413,7 +415,7 @@ class TestIndexing(TestCase):
 
         # A tuple subclass should also be an nd-index
         class TupleSubclass(tuple):
-            __slots__ = ()
+            pass
 
         index = ([1], [1])
         index = TupleSubclass(index)
@@ -421,7 +423,7 @@ class TestIndexing(TestCase):
         # Unlike the non nd-index:
         assert_(arr[index,].shape != (1,))
 
-    @xpassIfTorchDynamo_np  # (reason="XXX: low-prio behaviour to support")
+    @xpassIfTorchDynamo  # (reason="XXX: low-prio behaviour to support")
     def test_broken_sequence_not_nd_index(self):
         # See https://github.com/numpy/numpy/issues/5063
         # If we have an object which claims to be a sequence, but fails
@@ -464,8 +466,8 @@ class TestIndexing(TestCase):
     def test_indexing_array_negative_strides(self):
         # From gh-8264,
         # core dumps if negative strides are used in iteration
-        arro = np.zeros((4, 4))  # codespell:ignore
-        arr = arro[::-1, ::-1]  # codespell:ignore
+        arro = np.zeros((4, 4))
+        arr = arro[::-1, ::-1]
 
         slices = (slice(None), [0, 1, 2, 3])
         arr[slices] = 10
@@ -570,10 +572,7 @@ class TestBroadcastedAssignments(TestCase):
 
         shape = arr[index].shape
         r_inner_shape = "".join(f"{side}, ?" for side in shape[:-1]) + str(shape[-1])
-        if not re.search(rf"[\(\[]{r_inner_shape}[\]\)]$", str(e.value)):
-            raise AssertionError(
-                f"Expected error message to match pattern, got: {e.value}"
-            )
+        assert re.search(rf"[\(\[]{r_inner_shape}[\]\)]$", str(e.value))
 
     def test_index_is_larger(self):
         # Simple case of fancy index broadcasting of the index.
@@ -591,7 +590,7 @@ class TestBroadcastedAssignments(TestCase):
 
 
 class TestFancyIndexingCast(TestCase):
-    @xpassIfTorchDynamo_np  # (
+    @xpassIfTorchDynamo  # (
     #    reason="XXX: low-prio to support assigning complex values on floating arrays"
     # )
     def test_boolean_index_cast_assign(self):
@@ -605,21 +604,16 @@ class TestFancyIndexingCast(TestCase):
         zero_array[bool_index] = np.array([1])
         assert_equal(zero_array[0, 1], 1)
 
-        # np.ComplexWarning moved to np.exceptions in numpy>=2.0.0
-        # np.exceptions only available in numpy>=1.25.0
-        has_exceptions_ns = hasattr(np, "exceptions")
-        ComplexWarning = (
-            np.exceptions.ComplexWarning if has_exceptions_ns else np.ComplexWarning
-        )
-
         # Fancy indexing works, although we get a cast warning.
         assert_warns(
-            ComplexWarning, zero_array.__setitem__, ([0], [1]), np.array([2 + 1j])
+            np.ComplexWarning, zero_array.__setitem__, ([0], [1]), np.array([2 + 1j])
         )
         assert_equal(zero_array[0, 1], 2)  # No complex part
 
         # Cast complex to float, throwing away the imaginary portion.
-        assert_warns(ComplexWarning, zero_array.__setitem__, bool_index, np.array([1j]))
+        assert_warns(
+            np.ComplexWarning, zero_array.__setitem__, bool_index, np.array([1j])
+        )
         assert_equal(zero_array[0, 1], 0)
 
 
@@ -719,41 +713,41 @@ class TestMultiIndexingAutomated(TestCase):
         # check if this is fancy indexing (set no_copy).
         ndim = 0
         ellipsis_pos = None  # define here mostly to replace all but first.
-        for i, indx in enumerate(in_indices):  # codespell:ignore
-            if indx is None:  # codespell:ignore
+        for i, indx in enumerate(in_indices):
+            if indx is None:
                 continue
-            if isinstance(indx, np.ndarray) and indx.dtype == bool:  # codespell:ignore
+            if isinstance(indx, np.ndarray) and indx.dtype == bool:
                 no_copy = False
-                if indx.ndim == 0:  # codespell:ignore
+                if indx.ndim == 0:
                     raise IndexError
                 # boolean indices can have higher dimensions
-                ndim += indx.ndim  # codespell:ignore
-                fancy_dim += indx.ndim  # codespell:ignore
+                ndim += indx.ndim
+                fancy_dim += indx.ndim
                 continue
-            if indx is Ellipsis:  # codespell:ignore
+            if indx is Ellipsis:
                 if ellipsis_pos is None:
                     ellipsis_pos = i
                     continue  # do not increment ndim counter
                 raise IndexError
-            if isinstance(indx, slice):  # codespell:ignore
+            if isinstance(indx, slice):
                 ndim += 1
                 continue
-            if not isinstance(indx, np.ndarray):  # codespell:ignore
+            if not isinstance(indx, np.ndarray):
                 # This could be open for changes in numpy.
                 # numpy should maybe raise an error if casting to intp
                 # is not safe. It rejects np.array([1., 2.]) but not
                 # [1., 2.] as index (same for ie. np.take).
                 # (Note the importance of empty lists if changing this here)
                 try:
-                    indx = np.array(indx, dtype=np.intp)  # codespell:ignore
+                    indx = np.array(indx, dtype=np.intp)
                 except ValueError:
                     raise IndexError from None
-                in_indices[i] = indx  # codespell:ignore
-            elif indx.dtype.kind != "b" and indx.dtype.kind != "i":  # codespell:ignore
+                in_indices[i] = indx
+            elif indx.dtype.kind != "b" and indx.dtype.kind != "i":
                 raise IndexError(
                     "arrays used as indices must be of integer (or boolean) type"
                 )
-            if indx.ndim != 0:  # codespell:ignore
+            if indx.ndim != 0:
                 no_copy = False
             ndim += 1
             fancy_dim += 1
@@ -774,42 +768,37 @@ class TestMultiIndexingAutomated(TestCase):
                 arr.ndim - ndim
             )
 
-        for ax, indx in enumerate(in_indices):  # codespell:ignore
-            if isinstance(indx, slice):  # codespell:ignore
+        for ax, indx in enumerate(in_indices):
+            if isinstance(indx, slice):
                 # convert to an index array
-                indx = np.arange(*indx.indices(arr.shape[ax]))  # codespell:ignore
-                indices.append(["s", indx])  # codespell:ignore
+                indx = np.arange(*indx.indices(arr.shape[ax]))
+                indices.append(["s", indx])
                 continue
-            elif indx is None:  # codespell:ignore
+            elif indx is None:
                 # this is like taking a slice with one element from a new axis:
                 indices.append(["n", np.array([0], dtype=np.intp)])
                 arr = arr.reshape(arr.shape[:ax] + (1,) + arr.shape[ax:])
                 continue
-            if isinstance(indx, np.ndarray) and indx.dtype == bool:  # codespell:ignore
-                if indx.shape != arr.shape[ax : ax + indx.ndim]:  # codespell:ignore
+            if isinstance(indx, np.ndarray) and indx.dtype == bool:
+                if indx.shape != arr.shape[ax : ax + indx.ndim]:
                     raise IndexError
 
                 try:
                     flat_indx = np.ravel_multi_index(
-                        np.nonzero(indx),  # codespell:ignore
-                        arr.shape[ax : ax + indx.ndim],  # codespell:ignore
-                        mode="raise",
+                        np.nonzero(indx), arr.shape[ax : ax + indx.ndim], mode="raise"
                     )
                 except Exception:
                     error_unless_broadcast_to_empty = True
                     # fill with 0s instead, and raise error later
-                    flat_indx = np.array(
-                        [0] * indx.sum(),  # codespell:ignore
-                        dtype=np.intp,
-                    )
+                    flat_indx = np.array([0] * indx.sum(), dtype=np.intp)
                 # concatenate axis into a single one:
-                if indx.ndim != 0:  # codespell:ignore
+                if indx.ndim != 0:
                     arr = arr.reshape(
                         arr.shape[:ax]
-                        + (np.prod(arr.shape[ax : ax + indx.ndim]),)  # codespell:ignore
-                        + arr.shape[ax + indx.ndim :]  # codespell:ignore
+                        + (np.prod(arr.shape[ax : ax + indx.ndim]),)
+                        + arr.shape[ax + indx.ndim :]
                     )
-                    indx = flat_indx  # codespell:ignore
+                    indx = flat_indx
                 else:
                     # This could be changed, a 0-d boolean index can
                     # make sense (even outside the 0-d indexed array case)
@@ -819,30 +808,27 @@ class TestMultiIndexingAutomated(TestCase):
             else:
                 # If the index is a singleton, the bounds check is done
                 # before the broadcasting. This used to be different in <1.9
-                if indx.ndim == 0:  # codespell:ignore
-                    if (
-                        indx >= arr.shape[ax]  # codespell:ignore
-                        or indx < -arr.shape[ax]  # codespell:ignore
-                    ):
+                if indx.ndim == 0:
+                    if indx >= arr.shape[ax] or indx < -arr.shape[ax]:
                         raise IndexError
-            if indx.ndim == 0:  # codespell:ignore
+            if indx.ndim == 0:
                 # The index is a scalar. This used to be two fold, but if
                 # fancy indexing was active, the check was done later,
                 # possibly after broadcasting it away (1.7. or earlier).
                 # Now it is always done.
-                if indx >= arr.shape[ax] or indx < -arr.shape[ax]:  # codespell:ignore
+                if indx >= arr.shape[ax] or indx < -arr.shape[ax]:
                     raise IndexError
             if len(indices) > 0 and indices[-1][0] == "f" and ax != ellipsis_pos:
                 # NOTE: There could still have been a 0-sized Ellipsis
                 # between them. Checked that with ellipsis_pos.
-                indices[-1].append(indx)  # codespell:ignore
+                indices[-1].append(indx)
             else:
                 # We have a fancy index that is not after an existing one.
                 # NOTE: A 0-d array triggers this as well, while one may
                 # expect it to not trigger it, since a scalar would not be
                 # considered fancy indexing.
                 num_fancy += 1
-                indices.append(["f", indx])  # codespell:ignore
+                indices.append(["f", indx])
 
         if num_fancy > 1 and not no_copy:
             # We have to flush the fancy indexes left
@@ -852,16 +838,16 @@ class TestMultiIndexingAutomated(TestCase):
             new_indices.insert(0, ["f"])
             ni = 0
             ai = 0
-            for indx in indices:  # codespell:ignore
+            for indx in indices:
                 ni += 1
-                if indx[0] == "f":  # codespell:ignore
-                    new_indices[0].extend(indx[1:])  # codespell:ignore
+                if indx[0] == "f":
+                    new_indices[0].extend(indx[1:])
                     del new_indices[ni]
                     ni -= 1
-                    for ax in range(ai, ai + len(indx[1:])):  # codespell:ignore
+                    for ax in range(ai, ai + len(indx[1:])):
                         fancy_axes.append(ax)
                         axes.remove(ax)
-                ai += len(indx) - 1  # axis we are at # codespell:ignore
+                ai += len(indx) - 1  # axis we are at
             indices = new_indices
             # and now we need to transpose arr:
             arr = arr.transpose(*(fancy_axes + axes))
@@ -869,52 +855,46 @@ class TestMultiIndexingAutomated(TestCase):
         # We only have one 'f' index now and arr is transposed accordingly.
         # Now handle newaxis by reshaping...
         ax = 0
-        for indx in indices:  # codespell:ignore
-            if indx[0] == "f":  # codespell:ignore
-                if len(indx) == 1:  # codespell:ignore
+        for indx in indices:
+            if indx[0] == "f":
+                if len(indx) == 1:
                     continue
                 # First of all, reshape arr to combine fancy axes into one:
                 orig_shape = arr.shape
-                orig_slice = orig_shape[ax : ax + len(indx[1:])]  # codespell:ignore
+                orig_slice = orig_shape[ax : ax + len(indx[1:])]
                 arr = arr.reshape(
                     arr.shape[:ax]
                     + (np.prod(orig_slice).astype(int),)
-                    + arr.shape[ax + len(indx[1:]) :]  # codespell:ignore
+                    + arr.shape[ax + len(indx[1:]) :]
                 )
 
                 # Check if broadcasting works
-                res = np.broadcast(*indx[1:])  # codespell:ignore
+                res = np.broadcast(*indx[1:])
                 # unfortunately the indices might be out of bounds. So check
                 # that first, and use mode='wrap' then. However only if
                 # there are any indices...
                 if res.size != 0:
                     if error_unless_broadcast_to_empty:
                         raise IndexError
-                    for _indx, _size in zip(indx[1:], orig_slice):  # codespell:ignore
+                    for _indx, _size in zip(indx[1:], orig_slice):
                         if _indx.size == 0:
                             continue
                         if np.any(_indx >= _size) or np.any(_indx < -_size):
                             raise IndexError
-                if len(indx[1:]) == len(orig_slice):  # codespell:ignore
-                    if np.prod(orig_slice) == 0:
+                if len(indx[1:]) == len(orig_slice):
+                    if np.product(orig_slice) == 0:
                         # Work around for a crash or IndexError with 'wrap'
                         # in some 0-sized cases.
                         try:
                             mi = np.ravel_multi_index(
-                                indx[1:],  # codespell:ignore
-                                orig_slice,
-                                mode="raise",  # codespell:ignore
+                                indx[1:], orig_slice, mode="raise"
                             )
                         except Exception as exc:
                             # This happens with 0-sized orig_slice (sometimes?)
                             # here it is a ValueError, but indexing gives a:
                             raise IndexError("invalid index into 0-sized") from exc
                     else:
-                        mi = np.ravel_multi_index(
-                            indx[1:],  # codespell:ignore
-                            orig_slice,
-                            mode="wrap",
-                        )
+                        mi = np.ravel_multi_index(indx[1:], orig_slice, mode="wrap")
                 else:
                     # Maybe never happens...
                     raise ValueError
@@ -928,7 +908,7 @@ class TestMultiIndexingAutomated(TestCase):
                 continue
 
             # If we are here, we have a 1D array for take:
-            arr = arr.take(indx[1], axis=ax)  # codespell:ignore
+            arr = arr.take(indx[1], axis=ax)
             ax += 1
 
         return arr, no_copy
@@ -1034,15 +1014,6 @@ class TestMultiIndexingAutomated(TestCase):
             # This is so that np.array(True) is not accepted in a full integer
             # index, when running the file separately.
             warnings.filterwarnings("error", "", DeprecationWarning)
-            # np.VisibleDeprecationWarning moved to np.exceptions in numpy>=2.0.0
-            # np.exceptions only available in numpy>=1.25.0
-            has_exceptions_ns = hasattr(np, "exceptions")
-            VisibleDeprecationWarning = (  # noqa: F841
-                np.exceptions.VisibleDeprecationWarning
-                if has_exceptions_ns
-                else np.VisibleDeprecationWarning
-            )
-            # FIXME(rec): should this use VisibleDeprecationWarning instead?
             warnings.filterwarnings("error", "", np.VisibleDeprecationWarning)
 
             def isskip(idx):
@@ -1123,7 +1094,7 @@ class TestFloatNonIntegerArgument(TestCase):
         def mult(a, b):
             return a * b
 
-        assert_raises(TypeError, mult, [1], np.float64(3))
+        assert_raises(TypeError, mult, [1], np.float_(3))
         # following should be OK
         mult([1], np.int_(3))
 
@@ -1154,14 +1125,8 @@ class TestBooleanIndexing(TestCase):
     def test_boolean_indexing_weirdness(self):
         # Weird boolean indexing things
         a = np.ones((2, 3, 4))
-        if a[False, True, ...].shape != (0, 2, 3, 4):
-            raise AssertionError(
-                f"Expected shape (0, 2, 3, 4), got {a[False, True, ...].shape}"
-            )
-        if a[True, [0, 1], True, True, [1], [[2]]].shape != (1, 2):
-            raise AssertionError(
-                f"Expected shape (1, 2), got {a[True, [0, 1], True, True, [1], [[2]]].shape}"
-            )
+        assert a[False, True, ...].shape == (0, 2, 3, 4)
+        assert a[True, [0, 1], True, True, [1], [[2]]].shape == (1, 2)
         assert_raises(IndexError, lambda: a[False, [0, 1], ...])
 
     def test_boolean_indexing_fast_path(self):

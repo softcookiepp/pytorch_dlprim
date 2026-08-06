@@ -9,20 +9,28 @@ import torch
 import torch._C
 from torch.jit.mobile import _load_for_lite_interpreter
 from torch.testing import FileCheck
+
 from torch.testing._internal.common_utils import (
     find_library_location,
     IS_FBCODE,
     IS_MACOS,
     IS_SANDCASTLE,
     IS_WINDOWS,
-    raise_on_run_directly,
+    skipIfRocm,
+    TEST_WITH_ROCM,
 )
 from torch.testing._internal.jit_utils import JitTestCase
-
 
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(pytorch_test_dir)
+
+if __name__ == "__main__":
+    raise RuntimeError(
+        "This test file is not meant to be run directly, use:\n\n"
+        "\tpython test/test_jit.py TESTNAME\n\n"
+        "instead."
+    )
 
 
 def to_test_backend(module, method_compile_spec):
@@ -59,7 +67,7 @@ class BasicModule(torch.nn.Module):
 
 # This is ignored in IS_WINDOWS or IS_MACOS cases. Hence we need the one in TestBackends.
 @unittest.skipIf(
-    IS_SANDCASTLE or IS_WINDOWS or IS_MACOS or IS_FBCODE,
+    TEST_WITH_ROCM or IS_SANDCASTLE or IS_WINDOWS or IS_MACOS or IS_FBCODE,
     "Non-portable load_library call used in test",
 )
 class JitBackendTestCase(JitTestCase):
@@ -106,16 +114,19 @@ class JitBackendTestCase(JitTestCase):
         """
         Stub for correctness tests.
         """
+        pass
 
     def test_save_load(self):
         """
         Stub for serialization tests.
         """
+        pass
 
     def test_errors(self):
         """
         Stub for testing error checking.
         """
+        pass
 
 
 class BasicModuleTest(JitBackendTestCase):
@@ -142,6 +153,7 @@ class BasicModuleTest(JitBackendTestCase):
         self.check_function("sub_accum", (input, input))
         self.check_function("forward", (input, input))
 
+    @skipIfRocm
     def test_save_load(self):
         # Lowered module should produce the same outputs.
         self.test_execution()
@@ -198,8 +210,9 @@ class BasicModuleUnavailableTest(JitBackendTestCase):
             'raise Exception("Backend is not available."',
         ):
             backend_method = self.lowered_module.__getattr__("forward")
-            backend_method(*(input, input))
+            backend_output = backend_method(*(input, input))
 
+    @skipIfRocm
     def test_save_load(self):
         # Test that saving the lowered module is OK but loading fails because the backend is not available.
         buffer = io.BytesIO()
@@ -210,7 +223,7 @@ class BasicModuleUnavailableTest(JitBackendTestCase):
             r"Backend is not available.",
             'raise Exception("Backend is not available."',
         ):
-            torch.jit.load(buffer)
+            imported = torch.jit.load(buffer)
 
 
 class NestedModuleTest(JitBackendTestCase):
@@ -443,7 +456,7 @@ class SelectiveLoweringTest(JitBackendTestCase):
 
 # This is needed for IS_WINDOWS or IS_MACOS to skip the tests.
 @unittest.skipIf(
-    IS_SANDCASTLE or IS_WINDOWS or IS_MACOS or IS_FBCODE,
+    TEST_WITH_ROCM or IS_SANDCASTLE or IS_WINDOWS or IS_MACOS or IS_FBCODE,
     "Non-portable load_library call used in test",
 )
 class TestBackends(JitTestCase):
@@ -461,23 +474,27 @@ class TestBackends(JitTestCase):
 
     def setUp(self):
         super().setUp()
-        self.basic_module_test.setUp()
-        self.basic_module_unavailable_test.setUp()
-        self.nested_module_test.setUp()
-        self.selective_lowering_test.setUp()
+        if not TEST_WITH_ROCM:
+            self.basic_module_test.setUp()
+            self.basic_module_unavailable_test.setUp()
+            self.nested_module_test.setUp()
+            self.selective_lowering_test.setUp()
 
+    @skipIfRocm
     def test_execution(self):
         self.basic_module_test.test_execution()
         self.basic_module_unavailable_test.test_execution()
         self.nested_module_test.test_execution()
         self.selective_lowering_test.test_execution()
 
+    @skipIfRocm
     def test_save_load(self):
         self.basic_module_test.test_save_load()
         self.basic_module_unavailable_test.test_save_load()
         self.nested_module_test.test_save_load()
         self.selective_lowering_test.test_save_load()
 
+    @skipIfRocm
     def test_errors(self):
         self.selective_lowering_test.test_errors()
 
@@ -502,7 +519,7 @@ class BasicModuleAdd(torch.nn.Module):
 
 # This is ignored in IS_WINDOWS or IS_MACOS cases. Hence we need the one in TestBackends.
 @unittest.skipIf(
-    IS_SANDCASTLE or IS_WINDOWS or IS_MACOS or IS_FBCODE,
+    TEST_WITH_ROCM or IS_SANDCASTLE or IS_WINDOWS or IS_MACOS or IS_FBCODE,
     "Non-portable load_library call used in test",
 )
 class JitBackendTestCaseWithCompiler(JitTestCase):
@@ -542,11 +559,13 @@ class JitBackendTestCaseWithCompiler(JitTestCase):
         """
         Stub for correctness tests.
         """
+        pass
 
     def test_errors(self):
         """
         Stub for testing error checking.
         """
+        pass
 
 
 class BasicModuleTestWithCompiler(JitBackendTestCaseWithCompiler):
@@ -610,7 +629,7 @@ class ErrorMessagesWithCompiler(JitBackendTestCase):
 """,
             "",
         ):
-            torch._C._jit_to_backend(
+            lowered_module_n = torch._C._jit_to_backend(
                 "backend_with_compiler_demo", scripted_module_n, {"forward": {"": ""}}
             )
 
@@ -732,7 +751,7 @@ class CompModuleTestSameNameWithCompiler(JitBackendTestCase):
         A module with two lowered submodules.
         """
 
-        def __init__(self) -> None:
+        def __init__(self):
             super().__init__()
             compile_spec = {
                 "forward": {
@@ -794,8 +813,7 @@ class AddedAttributesTest(JitBackendTestCase):
         # Attach bundled inputs which adds several attributes and functions to the model
         self.lowered_module = (
             torch.utils.bundled_inputs.augment_model_with_bundled_inputs(
-                lowered_module,  # noqa: F821
-                input,
+                lowered_module, input  # noqa: F821
             )
         )
         post_bundled = self.lowered_module(
@@ -809,7 +827,3 @@ class AddedAttributesTest(JitBackendTestCase):
         )
         self.assertEqual(pre_bundled, post_bundled)
         self.assertEqual(post_bundled, post_load)
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

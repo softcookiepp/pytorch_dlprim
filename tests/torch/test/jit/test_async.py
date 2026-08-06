@@ -1,13 +1,12 @@
 # Owner(s): ["oncall: jit"]
-# ruff: noqa: F841
 
 import os
 import sys
+
 from typing import Any, Tuple
 
 import torch
 import torch.nn as nn
-
 
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -16,7 +15,6 @@ from typing import List
 
 from torch import Tensor
 from torch.jit import Future
-from torch.testing._internal.common_utils import raise_on_run_directly
 from torch.testing._internal.jit_utils import _inline_everything, JitTestCase
 
 
@@ -35,7 +33,7 @@ class TestAsync(JitTestCase):
     def test_async_future_type_python(self):
         def foo(inp):
             futures = torch.jit.annotate(List[torch.jit.Future[torch.Tensor]], [])
-            for _ in range(5):
+            for i in range(5):
                 futures.append(torch.jit.fork(lambda x: x, inp))
             all_outputs = []
             for future in futures:
@@ -90,7 +88,7 @@ class TestAsync(JitTestCase):
         class Mod(torch.jit.ScriptModule):
             __constants__ = ["const"]
 
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.const = 42
                 self.param = nn.Parameter(torch.randn(2, 2))
@@ -255,7 +253,7 @@ class TestAsync(JitTestCase):
                 return (torch.neg(x), x)
 
         class Mod(torch.jit.ScriptModule):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 x = torch.rand(3, 3)
                 self.traced = torch.jit.trace(Traced(), (x), _force_outplace=True)
@@ -278,7 +276,7 @@ class TestAsync(JitTestCase):
                 return (tensor_list, tensor_tuple, tensor_tuple[1])
 
         class TupleCl(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.module = Mod()
 
@@ -458,7 +456,7 @@ class TestAsync(JitTestCase):
         class TestListFutureModule(nn.Module):
             def forward(self, input):
                 input_list = []
-                for _ in range(3):
+                for i in range(3):
                     input_list.append(input)
 
                 fut_list: List[Future[torch.Tensor]] = []
@@ -469,7 +467,7 @@ class TestAsync(JitTestCase):
                 return fut_list
 
         class TestModuleWrapper(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.list_fut_mod = TestListFutureModule()
 
@@ -494,7 +492,7 @@ class TestAsync(JitTestCase):
                 return input, fut_res
 
         class TestModule(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.gen_output = DifferentOutputModule()
 
@@ -548,4 +546,8 @@ class TestAsync(JitTestCase):
 
 
 if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")
+    raise RuntimeError(
+        "This test file is not meant to be run directly, use:\n\n"
+        "\tpython test/test_jit.py TESTNAME\n\n"
+        "instead."
+    )

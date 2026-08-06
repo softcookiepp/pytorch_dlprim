@@ -1,10 +1,12 @@
-# Owner(s): ["module: sparse"]
+# Owner(s): ["module: unknown"]
 
 import warnings
 
 from torch import nn
+
 from torch.ao.pruning import BaseScheduler, CubicSL, LambdaSL, WeightNormSparsifier
-from torch.testing._internal.common_utils import raise_on_run_directly, TestCase
+
+from torch.testing._internal.common_utils import TestCase
 
 
 class ImplementedScheduler(BaseScheduler):
@@ -22,14 +24,9 @@ class TestScheduler(TestCase):
         sparsifier.prepare(model, config=None)
         scheduler = ImplementedScheduler(sparsifier)
 
-        if scheduler.sparsifier is not sparsifier:
-            raise AssertionError("scheduler.sparsifier should be sparsifier")
-        if scheduler._step_count != 1:
-            raise AssertionError(f"Expected _step_count=1, got {scheduler._step_count}")
-        if scheduler.base_sl != [sparsifier.groups[0]["sparsity_level"]]:
-            raise AssertionError(
-                f"Expected base_sl={[sparsifier.groups[0]['sparsity_level']]}, got {scheduler.base_sl}"
-            )
+        assert scheduler.sparsifier is sparsifier
+        assert scheduler._step_count == 1
+        assert scheduler.base_sl == [sparsifier.groups[0]["sparsity_level"]]
 
     def test_order_of_steps(self):
         """Checks if the warning is thrown if the scheduler step is called
@@ -53,53 +50,33 @@ class TestScheduler(TestCase):
             for warning in w:
                 fname = warning.filename
                 fname = "/".join(fname.split("/")[-5:])
-                if fname == "torch/ao/sparsity/scheduler/base_scheduler.py":
-                    raise AssertionError("Unexpected warning from base_scheduler")
+                assert fname != "torch/ao/sparsity/scheduler/base_scheduler.py"
 
     def test_step(self):
         model = nn.Sequential(nn.Linear(16, 16))
         sparsifier = WeightNormSparsifier()
         sparsifier.prepare(model, config=None)
-        if sparsifier.groups[0]["sparsity_level"] != 0.5:
-            raise AssertionError(
-                f"Expected sparsity_level=0.5, got {sparsifier.groups[0]['sparsity_level']}"
-            )
+        assert sparsifier.groups[0]["sparsity_level"] == 0.5
         scheduler = ImplementedScheduler(sparsifier)
-        if sparsifier.groups[0]["sparsity_level"] != 0.5:
-            raise AssertionError(
-                f"Expected sparsity_level=0.5 after scheduler init, got {sparsifier.groups[0]['sparsity_level']}"
-            )
+        assert sparsifier.groups[0]["sparsity_level"] == 0.5
 
         sparsifier.step()
         scheduler.step()
-        if sparsifier.groups[0]["sparsity_level"] != 0.25:
-            raise AssertionError(
-                f"Expected sparsity_level=0.25 after step, got {sparsifier.groups[0]['sparsity_level']}"
-            )
+        assert sparsifier.groups[0]["sparsity_level"] == 0.25
 
     def test_lambda_scheduler(self):
         model = nn.Sequential(nn.Linear(16, 16))
         sparsifier = WeightNormSparsifier()
         sparsifier.prepare(model, config=None)
-        if sparsifier.groups[0]["sparsity_level"] != 0.5:
-            raise AssertionError(
-                f"Expected sparsity_level=0.5, got {sparsifier.groups[0]['sparsity_level']}"
-            )
+        assert sparsifier.groups[0]["sparsity_level"] == 0.5
         scheduler = LambdaSL(sparsifier, lambda epoch: epoch * 10)
-        if sparsifier.groups[0]["sparsity_level"] != 0.0:  # Epoch 0
-            raise AssertionError(
-                f"Expected sparsity_level=0.0 at epoch 0, got {sparsifier.groups[0]['sparsity_level']}"
-            )
+        assert sparsifier.groups[0]["sparsity_level"] == 0.0  # Epoch 0
         scheduler.step()
-        if sparsifier.groups[0]["sparsity_level"] != 5.0:  # Epoch 1
-            raise AssertionError(
-                f"Expected sparsity_level=5.0 at epoch 1, got {sparsifier.groups[0]['sparsity_level']}"
-            )
+        assert sparsifier.groups[0]["sparsity_level"] == 5.0  # Epoch 1
 
 
 class TestCubicScheduler(TestCase):
     def setUp(self):
-        super().setUp()
         self.model_sparse_config = [
             {"tensor_fqn": "0.weight", "sparsity_level": 0.8},
             {"tensor_fqn": "2.weight", "sparsity_level": 0.4},
@@ -213,9 +190,5 @@ class TestCubicScheduler(TestCase):
         self.assertEqual(
             self._get_sparsity_levels(sparsifier),
             self.sorted_sparse_levels,
-            msg="Sparsity level is not reaching the target level after delta_t * n steps ",
+            msg="Sparsity level is not reaching the target level afer delta_t * n steps ",
         )
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_ao_sparsity.py")

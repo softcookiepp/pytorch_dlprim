@@ -3,13 +3,11 @@
 import collections
 import re
 import sys
-import time
 from io import StringIO
 
 import torch._dynamo.test_case
 import torch._dynamo.testing
 from torch._dynamo.comptime import comptime
-
 
 # Because we don't support free variables in comptime at the moment,
 # we have to communicate via globals.  This also means these tests cannot
@@ -35,7 +33,7 @@ class ComptimeTests(torch._dynamo.test_case.TestCase):
         class mylist(list):
             pass
 
-        @torch.compile(backend=cnt, dynamic=True)
+        @torch._dynamo.optimize(cnt, dynamic=True)
         def f(x):
             y = x * 2
             comptime_print(y)
@@ -46,6 +44,7 @@ class ComptimeTests(torch._dynamo.test_case.TestCase):
             comptime_print(range(1, 3))
             comptime_print(Employee("foo", 2))
             comptime_print(mylist([1, 2]))
+            comptime_print(collections.defaultdict(lambda: None))
             comptime_print(set())
             comptime_print({"a", "b"})
             comptime_print(x.size(0))
@@ -56,33 +55,18 @@ class ComptimeTests(torch._dynamo.test_case.TestCase):
         self.assertExpectedInline(
             FILE.getvalue().strip(),
             """\
-FakeTensor(..., size=(s77,))
+FakeTensor(..., size=(s0,))
 2
-[FakeTensor(..., size=(s77,)), 2]
-(FakeTensor(..., size=(s77,)), 2)
-{'foo': FakeTensor(..., size=(s77,))}
-range(1, 3)
+[FakeTensor(..., size=(s0,)), 2]
+(FakeTensor(..., size=(s0,)), 2)
+{'foo': FakeTensor(..., size=(s0,))}
+range(1, 3, 1)
 Employee(name='foo', id=2)
-UserDefinedListVariable(mylist)
+[1, 2]
+defaultdict(NestedUserFunctionVariable(), {})
 set()
 {'a','b'}
-s77""",
-        )
-
-        FILE = StringIO()
-
-        @torch.compile(backend=cnt, dynamic=True)
-        def g(x):
-            comptime_print(collections.defaultdict(lambda: None))
-
-        g(torch.randn(2))
-
-        # it seems different pythons in CI change the
-        # function str repr. Since this doesn't seem that
-        # important, we just be very lenient
-        self.assertIn(
-            "defaultdict",
-            FILE.getvalue().strip(),
+s0""",
         )
 
     def test_print_graph(self):
@@ -90,7 +74,7 @@ s77""",
         FILE = StringIO()
         cnt = torch._dynamo.testing.CompileCounter()
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x):
             y = x * 2
 
@@ -111,7 +95,7 @@ s77""",
             """\
 def forward(self, L_x_ : torch.Tensor):
     l_x_ = L_x_
-    y = l_x_ * 2;  l_x_ = y = None""",
+    y = l_x_ * 2;  l_x_ = None""",
         )
 
     def test_print_disas(self):
@@ -119,7 +103,7 @@ def forward(self, L_x_ : torch.Tensor):
         FILE = StringIO()
         cnt = torch._dynamo.testing.CompileCounter()
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x):
             y = x * 2
 
@@ -131,7 +115,7 @@ def forward(self, L_x_ : torch.Tensor):
 
             return y + 3
 
-        def munge_disas(s):  # noqa: F841
+        def munge_disas(s):
             re.sub(
                 r"^(?: +\d+)?(?: +(-->)) \+\d+ ([A-Za-z0-9_]+)",
                 "\1 \3",
@@ -163,7 +147,7 @@ def forward(self, L_x_ : torch.Tensor):
 
             return x
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x):
             y = x + g(x)
 
@@ -174,7 +158,7 @@ def forward(self, L_x_ : torch.Tensor):
         self.assertExpectedInline(
             FILE.getvalue(),
             """\
-- FakeTensor(..., size=(2,))
+- TensorVariable()
 """,
         )
 
@@ -183,7 +167,7 @@ def forward(self, L_x_ : torch.Tensor):
         FILE = StringIO()
         cnt = torch._dynamo.testing.CompileCounter()
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x):
             y = x * 2
 
@@ -200,8 +184,8 @@ def forward(self, L_x_ : torch.Tensor):
         self.assertExpectedInline(
             FILE.getvalue(),
             """\
-x = FakeTensor(..., size=(2,))
-y = FakeTensor(..., size=(2,))
+x = TensorVariable()
+y = TensorVariable()
 """,
         )
 
@@ -209,7 +193,7 @@ y = FakeTensor(..., size=(2,))
     def test_print_direct(self):
         cnt = torch._dynamo.testing.CompileCounter()
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x, z):
             y = x * 2
             lambda: z
@@ -218,36 +202,13 @@ y = FakeTensor(..., size=(2,))
 
         f(torch.randn(2), torch.randn(2))
 
-    def test_sleep(self):
-        sleep_time = 5
-        cnt = torch._dynamo.testing.CompileCounter()
-
-        @torch.compile(backend=cnt)
-        def f(x, z, should_sleep):
-            if should_sleep:
-                comptime.sleep(sleep_time)
-            y = x * 2
-            return y + 3
-
-        start = time.time()
-        f(torch.randn(2), torch.randn(2), False)
-        total_no_sleep = time.time() - start
-
-        start = time.time()
-        f(torch.randn(2), torch.randn(2), True)
-        total_with_sleep = time.time() - start
-
-        self.assertTrue(total_with_sleep > sleep_time)
-        # Hopefully this won't be flaky
-        self.assertTrue(abs(total_with_sleep - sleep_time - total_no_sleep) < 3)
-
     # Just make sure it doesn't crash
     def test_get_local_closure_variable(self):
         global SELF
         SELF = self
         cnt = torch._dynamo.testing.CompileCounter()
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x):
             z = 3
 
@@ -279,13 +240,13 @@ y = FakeTensor(..., size=(2,))
 
             return x + 3
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x):
             y = x * 2
             y = g(y)
             return y + 3
 
-        def munge_filenames(s):  # noqa: F841
+        def munge_filenames(s):
             return re.sub(r'File "[^"]+", line \d+', 'File "X", line X', s)
 
         f(torch.randn(2))
@@ -298,7 +259,7 @@ y = FakeTensor(..., size=(2,))
         FILE = StringIO()
         cnt = torch._dynamo.testing.CompileCounter()
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x):
             y = x * 2
 
@@ -323,13 +284,6 @@ y = FakeTensor(..., size=(2,))
             'obj_weakref': None
             'guarded_class': None
         }
-        global '' AUTOGRAD_SAVED_TENSORS_HOOKS
-        {
-            'guard_types': None,
-            'code': None,
-            'obj_weakref': None
-            'guarded_class': None
-        }
         global '' GRAD_MODE
         {
             'guard_types': None,
@@ -338,13 +292,6 @@ y = FakeTensor(..., size=(2,))
             'guarded_class': None
         }
         global '' DETERMINISTIC_ALGORITHMS
-        {
-            'guard_types': None,
-            'code': None,
-            'obj_weakref': None
-            'guarded_class': None
-        }
-        global '' GLOBAL_STATE
         {
             'guard_types': None,
             'code': None,
@@ -377,7 +324,7 @@ y = FakeTensor(..., size=(2,))
     def test_graph_break(self):
         cnt = torch._dynamo.testing.CompileCounter()
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x):
             y = x * 2
 
@@ -391,7 +338,7 @@ y = FakeTensor(..., size=(2,))
         self.assertEqual(cnt.frame_count, 1)
         cnt.frame_count = 0
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def g(x):
             y = x * 2
 
@@ -414,10 +361,10 @@ y = FakeTensor(..., size=(2,))
         FILE = StringIO()
         cnt = torch._dynamo.testing.CompileCounter()
 
-        @torch.compile(backend=cnt)
+        @torch._dynamo.optimize(cnt)
         def f(x):
             y = x * 2
-            lit = 2  # noqa: F841
+            lit = 2
 
             @comptime
             def _(ctx):
@@ -444,7 +391,7 @@ y = FakeTensor(..., size=(2,))
 def forward(self, L_x_ : torch.Tensor):
     l_x_ = L_x_
     y = l_x_ * 2;  l_x_ = None
-    add = y + 4;  y = add = None""",
+    add = y + 4;  y = None""",
         )
 
 

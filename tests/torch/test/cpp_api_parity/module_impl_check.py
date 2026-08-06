@@ -21,6 +21,7 @@ import types
 from string import Template
 
 import torch
+
 from cpp_api_parity.sample_module import SAMPLE_MODULE_CPP_SOURCE
 from cpp_api_parity.utils import (
     add_test,
@@ -38,8 +39,6 @@ from cpp_api_parity.utils import (
     TorchNNModuleTestParams,
     try_remove_folder,
 )
-from torch.jit._pickle import restore_type_tag
-
 
 # Expected substitutions:
 #
@@ -194,9 +193,7 @@ def test_forward_backward(unit_test_class, test_params):
             backward_grad_dict_file_path,
         )
         cpp_output = torch.load(forward_output_file_path)
-        # weights_only: need GLOBAL torch.jit._pickle.restore_type_tag
-        with torch.serialization.safe_globals([restore_type_tag]):
-            cpp_grad_dict = torch.load(backward_grad_dict_file_path)
+        cpp_grad_dict = torch.load(backward_grad_dict_file_path)
 
         # Check that forward outputs are equal
         unit_test_class.assertEqual(
@@ -219,8 +216,7 @@ def test_forward_backward(unit_test_class, test_params):
                 if key.endswith(suffix):
                     param_name = key[: -len(suffix)]
                     break
-            if param_name is None:
-                raise AssertionError(f"Could not determine param_name from key '{key}'")
+            assert param_name is not None
             sparsity_str = (
                 "sparse" if key.endswith(("_grad_indices", "_grad_values")) else "dense"
             )
@@ -264,24 +260,20 @@ def process_test_params_for_module(test_params_dict, device, test_instance_class
         "constructor", getattr(torch.nn, module_name)
     )
     test_instance = test_instance_class(**test_params_dict)
-    if not test_instance.get_name().startswith("test_"):
-        raise AssertionError(
-            f"Expected test name to start with 'test_', got '{test_instance.get_name()}'"
-        )
+    assert test_instance.get_name().startswith("test_")
     # Example output: `BCELoss_weights_cuda`
     module_variant_name = test_instance.get_name()[5:] + (
         ("_" + device) if device != "cpu" else ""
     )
 
     if "constructor_args" in test_params_dict:
-        if "cpp_constructor_args" not in test_params_dict:
-            raise AssertionError(
-                "If `constructor_args` is present in test params dict, to enable C++ API parity test, "
-                f"`cpp_constructor_args` must be present in:\n{pprint.pformat(test_params_dict)}"
-                "If you are interested in adding the C++ API parity test, please see:\n"
-                "NOTE [How to check NN module / functional API parity between Python and C++ frontends]. \n"
-                "If not, please add `test_cpp_api_parity=False` to the test params dict and file an issue about this."
-            )
+        assert "cpp_constructor_args" in test_params_dict, (
+            "If `constructor_args` is present in test params dict, to enable C++ API parity test, "
+            f"`cpp_constructor_args` must be present in:\n{pprint.pformat(test_params_dict)}"
+            "If you are interested in adding the C++ API parity test, please see:\n"
+            "NOTE [How to check NN module / functional API parity between Python and C++ frontends]. \n"
+            "If not, please add `test_cpp_api_parity=False` to the test params dict and file an issue about this."
+        )
 
     return TorchNNModuleTestParams(
         module_name=module_name,
@@ -298,25 +290,22 @@ def process_test_params_for_module(test_params_dict, device, test_instance_class
 def write_test_to_test_class(
     unit_test_class, test_params_dict, test_instance_class, parity_table, devices
 ):
-    if is_torch_nn_functional_test(test_params_dict):
-        raise AssertionError("Expected non-functional test")
+    assert not is_torch_nn_functional_test(test_params_dict)
 
     module_name = compute_module_name(test_params_dict)
 
-    if not hasattr(torch.nn, module_name):
-        raise AssertionError(
-            f"`torch.nn` doesn't have module `{module_name}`. "
-            "If you are adding a new test, please set `fullname` using format `ModuleName_desc` "
-            f"or set `module_name` using format `ModuleName` in the module test dict:\n{pprint.pformat(test_params_dict)}"
-        )
+    assert hasattr(torch.nn, module_name), (
+        f"`torch.nn` doesn't have module `{module_name}`. "
+        "If you are adding a new test, please set `fullname` using format `ModuleName_desc` "
+        f"or set `module_name` using format `ModuleName` in the module test dict:\n{pprint.pformat(test_params_dict)}"
+    )
 
     module_full_name = "torch::nn::" + module_name
 
-    if module_full_name not in parity_table["torch::nn"]:
-        raise AssertionError(
-            f"Please add `{module_full_name}` entry to `torch::nn` section of `test/cpp_api_parity/parity-tracker.md`. "
-            f"(Discovered while processing\n{pprint.pformat(test_params_dict)}.)"
-        )
+    assert module_full_name in parity_table["torch::nn"], (
+        f"Please add `{module_full_name}` entry to `torch::nn` section of `test/cpp_api_parity/parity-tracker.md`. "
+        f"(Discovered while processing\n{pprint.pformat(test_params_dict)}.)"
+    )
 
     for device in devices:
         test_params = process_test_params_for_module(
@@ -372,10 +361,7 @@ def generate_test_cpp_sources(test_params, template):
 
 # Build all C++ tests together, instead of once per test.
 def build_cpp_tests(unit_test_class, print_cpp_source=False):
-    if len(unit_test_class.module_test_params_map) <= 0:
-        raise AssertionError(
-            "Expected module_test_params_map to have at least one entry"
-        )
+    assert len(unit_test_class.module_test_params_map) > 0
     cpp_sources = TORCH_NN_COMMON_TEST_HARNESS + SAMPLE_MODULE_CPP_SOURCE
     functions = []
     for test_params in unit_test_class.module_test_params_map.values():

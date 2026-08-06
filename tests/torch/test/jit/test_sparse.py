@@ -4,18 +4,14 @@ import io
 import unittest
 
 import torch
-from torch.testing._internal.common_utils import (
-    IS_WINDOWS,
-    raise_on_run_directly,
-    TEST_MKL,
-)
+from torch.testing._internal.common_utils import IS_WINDOWS, TEST_MKL
 from torch.testing._internal.jit_utils import JitTestCase
 
 
 class TestSparse(JitTestCase):
     def test_freeze_sparse_coo(self):
         class SparseTensorModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.a = torch.rand(3, 4).to_sparse()
                 self.b = torch.rand(3, 4).to_sparse()
@@ -46,7 +42,7 @@ class TestSparse(JitTestCase):
 
     def test_serialize_sparse_coo(self):
         class SparseTensorModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.a = torch.rand(3, 4).to_sparse()
                 self.b = torch.rand(3, 4).to_sparse()
@@ -70,7 +66,7 @@ class TestSparse(JitTestCase):
     @unittest.skipIf(IS_WINDOWS or not TEST_MKL, "Need MKL to run CSR matmul")
     def test_freeze_sparse_csr(self):
         class SparseTensorModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.a = torch.rand(4, 4).to_sparse_csr()
                 self.b = torch.rand(4, 4).to_sparse_csr()
@@ -102,7 +98,7 @@ class TestSparse(JitTestCase):
     @unittest.skipIf(IS_WINDOWS or not TEST_MKL, "Need MKL to run CSR matmul")
     def test_serialize_sparse_csr(self):
         class SparseTensorModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.a = torch.rand(4, 4).to_sparse_csr()
                 self.b = torch.rand(4, 4).to_sparse_csr()
@@ -122,7 +118,3 @@ class TestSparse(JitTestCase):
         loaded_result = loaded_model.forward(x)
 
         self.assertEqual(expected_result.to_dense(), loaded_result.to_dense())
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

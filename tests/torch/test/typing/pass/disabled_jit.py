@@ -1,11 +1,10 @@
 from enum import Enum
-from typing import TypeVar
+from typing import Type, TypeVar
 from typing_extensions import assert_never, assert_type, ParamSpec
 
 import pytest
 
 from torch import jit, nn, ScriptDict, ScriptFunction, ScriptList
-
 
 P = ParamSpec("P")
 R = TypeVar("R", covariant=True)
@@ -18,7 +17,7 @@ class Color(Enum):
 
 
 # Script Enum
-assert_type(jit.script(Color), type[Color])
+assert_type(jit.script(Color), Type[Color])
 
 # ScriptDict
 assert_type(jit.script({1: 1}), ScriptDict)

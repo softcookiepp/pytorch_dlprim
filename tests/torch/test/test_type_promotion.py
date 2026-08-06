@@ -8,7 +8,8 @@ import torch
 
 from torch.testing._internal.common_utils import (TestCase, run_tests, load_tests, make_tensor,
                                                   TEST_NUMPY, set_default_dtype, torch_to_numpy_dtype_dict,
-                                                  numpy_to_torch_dtype_dict, skipIfTorchDynamo)
+                                                  numpy_to_torch_dtype_dict, skipIfTorchDynamo,
+                                                  xfailIfTorchDynamo)
 from torch.testing._internal.common_device_type import (instantiate_device_type_tests, onlyNativeDeviceTypes,
                                                         dtypes, onlyCPU, expectedFailureMeta, skipMeta)
 from torch.testing._internal.common_dtype import (
@@ -22,7 +23,7 @@ import operator
 
 # load_tests from torch.testing._internal.common_utils is used to automatically filter tests for
 # sharding on sandcastle. This line silences flake warnings
-load_tests = load_tests  # noqa: PLW0127
+load_tests = load_tests
 
 # Not thread-safe decorator that runs the decorated test once with
 # the default dtype being torch.float and again with the default dtype
@@ -44,6 +45,7 @@ class TestTypePromotion(TestCase):
     # Promoting inplace would require re-allocating and copying the memory of the
     # tensor data, since element size could change.
     # https://github.com/pytorch/pytorch/issues/127049
+    @xfailIfTorchDynamo
     @float_double_default_dtype
     def test_inplace(self, device):
         int_tensor = torch.ones([4, 4, 4], dtype=torch.int32, device=device)
@@ -922,6 +924,7 @@ class TestTypePromotion(TestCase):
     def test_sparse_div_promotion(self, device, dtype):
         for op in (torch.div, torch.true_divide):
             dividend = torch.randn(5, device=device).to(dtype)
+            divisor = 2
             dividend_sparse = dividend.to_sparse()
             casting_result = dividend.to(torch.get_default_dtype()) / 2
             self.assertEqual(casting_result, op(dividend_sparse, 2).to_dense())
@@ -968,7 +971,7 @@ class TestTypePromotion(TestCase):
                 except Exception as e:
                     expected = e
 
-                same_result = (type(expected) is type(actual)) and expected == actual
+                same_result = (type(expected) == type(actual)) and expected == actual
 
                 # Note: An "undesired failure," as opposed to an "expected failure"
                 # is both expected (we know the test will fail) and
@@ -1046,13 +1049,13 @@ class TestTypePromotion(TestCase):
                     and not (out_dtype.is_floating_point or out_dtype.is_complex))
                     or ((x_dtype.is_complex or y_dtype.is_complex) and not out_dtype.is_complex)):
                 # This combinations do not support type conversion to a different class out type
-                with self.assertRaises(TypeError):
+                with self.assertRaises(RuntimeError):
                     torch.cat([x, y], out=out)
             else:
                 torch.cat([x, y], out=out)
                 self.assertEqual(out, expected_out, exact_dtype=True)
 
-    # Verifies that unary ops require matching out types
+    # Verfies that unary ops require matching out types
     @onlyNativeDeviceTypes
     @dtypes(*itertools.product((torch.int64,
                                 torch.float32, torch.float64,
@@ -1128,7 +1131,7 @@ class TestTypePromotion(TestCase):
         maxs = (max_t, max_t[0], max_t[0].item())
         inp = make_tensor((S,), dtype0)
         for min_v, max_v in itertools.product(mins, maxs):
-            if type(max_v) is not type(min_v):
+            if type(max_v) != type(min_v):
                 continue
             if isinstance(min_v, torch.Tensor) and min_v.ndim == 0 and max_v.ndim == 0:
                 continue  # 0d tensors go to scalar overload, and it's tested separately

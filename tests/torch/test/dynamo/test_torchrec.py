@@ -1,15 +1,16 @@
 # Owner(s): ["module: dynamo"]
 import sys
 import unittest
+from typing import Dict, List
 
 import torch
+
 import torch._dynamo.config
 import torch._dynamo.test_case
 from torch import nn
 from torch._dynamo.test_case import TestCase
 from torch._dynamo.testing import CompileCounter
 from torch.testing._internal.common_utils import NoTest
-
 
 try:
     from torchrec.datasets.random import RandomRecDataset
@@ -22,7 +23,7 @@ except ImportError:
 
 @torch._dynamo.config.patch(force_unspec_int_unbacked_size_like_on_torchrec_kjt=True)
 class BucketizeMod(torch.nn.Module):
-    def __init__(self, feature_boundaries: dict[str, list[float]]):
+    def __init__(self, feature_boundaries: Dict[str, List[float]]):
         super().__init__()
         self.bucket_w = torch.nn.ParameterDict()
         self.boundaries_dict = {}
@@ -83,7 +84,7 @@ class TorchRecTests(TestCase):
 
         @torch.compile(backend=counter, fullgraph=True, dynamic=True)
         def f(id_list_features: KeyedJaggedTensor):
-            id_list_jt_dict: dict[str, JaggedTensor] = id_list_features.to_dict()
+            id_list_jt_dict: Dict[str, JaggedTensor] = id_list_features.to_dict()
             pooled_embeddings = {}
             # TODO: run feature processor
             for emb_module, feature_names in tables:
@@ -178,7 +179,7 @@ class TorchRecTests(TestCase):
 
         counter = CompileCounter()
 
-        @torch.compile(backend=counter, fullgraph=True)
+        @torch._dynamo.optimize(counter, nopython=True)
         def f(jag_tensor):
             # The indexing here requires more symbolic reasoning
             # and doesn't work right now

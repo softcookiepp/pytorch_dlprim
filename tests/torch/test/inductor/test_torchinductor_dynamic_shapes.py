@@ -1,6 +1,7 @@
 # Owner(s): ["module: inductor"]
 import contextlib
 import importlib
+
 import math
 import operator
 import os
@@ -10,43 +11,40 @@ from functools import partial
 
 import torch
 import torch.library
-from torch._dynamo.testing import CompileCounterWithBackend, make_test_cls_with_patches
-from torch._inductor import metrics
-from torch._inductor.choices import InductorChoices
-from torch._inductor.codegen.wrapper import PythonWrapperCodegen
+from torch._dynamo.testing import make_test_cls_with_patches
+from torch._inductor.codegen.common import device_codegens, register_backend_for_device
+from torch._inductor.codegen.cpp import CppScheduling
+from torch._inductor.codegen.wrapper import WrapperCodeGen
 from torch._inductor.test_case import TestCase
-from torch._inductor.utils import run_and_get_code
 from torch._inductor.virtualized import V
-from torch.testing import FileCheck
-from torch.testing._internal.common_cuda import IS_SM89
 from torch.testing._internal.common_device_type import (
     instantiate_device_type_tests,
     onlyCPU,
-    onlyOn,
+    onlyCUDA,
 )
 from torch.testing._internal.common_utils import (
     IS_ARM64,
-    IS_FBCODE,
-    MI350_ARCH,
+    IS_CI,
+    IS_WINDOWS,
     parametrize,
-    serialTest,
-    skipIfRocmArch,
     TEST_CUDA_MEM_LEAK_CHECK,
     TEST_WITH_ASAN,
+    TEST_WITH_ROCM,
 )
-from torch.testing._internal.inductor_utils import (
-    GPU_TYPE,
-    HAS_CPU,
-    HAS_GPU,
-    HAS_MPS,
-    patch_inductor_backend,
-)
+from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_CPU, HAS_CUDA, HAS_GPU
 
+if IS_WINDOWS and IS_CI:
+    sys.stderr.write(
+        "Windows CI does not have necessary dependencies for test_torchinductor_dynamic_shapes yet\n"
+    )
+    if __name__ == "__main__":
+        sys.exit(0)
+    raise unittest.SkipTest("requires sympy/functorch/filelock")
 
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(pytorch_test_dir)
-from inductor.test_torchinductor import (  # @manual=fbcode//caffe2/test/inductor:test_inductor-library
+from inductor.test_torchinductor import (
     check_model,
     check_model_gpu,
     CommonTemplate,
@@ -54,53 +52,26 @@ from inductor.test_torchinductor import (  # @manual=fbcode//caffe2/test/inducto
     TestFailure,
 )
 
-
 importlib.import_module("filelock")
 
 # xfail by default, set is_skip=True to skip
 test_failures = {
     "test_kwargs_dynamic_shapes": TestFailure(("cpu",)),
-    # PDL tests are CUDA SM90+ only, skip on CPU
-    "test_pdl_mutation_dynamic_shapes": TestFailure(("cpu",), is_skip=True),
-    "test_pdl_template_and_delay_dynamic_shapes": TestFailure(("cpu",), is_skip=True),
-    # Bool argmax/argmin fix is Triton-only (see #174069), skip on CPU
-    "test_max_min_bool_dynamic_shapes": TestFailure(("cpu",), is_skip=True),
     # calling div on only symint args
-    "test_AllenaiLongformerBase_repro_dynamic_shapes": TestFailure(
-        ("cpu", "cuda", "xpu", "mps")
-    ),
-    "test_argmax_argmin_with_duplicates_dynamic_shapes": TestFailure(("mps",)),
-    "test_batch_norm_2d_2_dynamic_shapes": TestFailure(("mps",)),
-    "test_buffer_batch_norm_dynamic_shapes": TestFailure(("mps",)),
-    "test_index_propagation_abs_dynamic_shapes": TestFailure(("mps",)),
-    "test_index_propagation_floordiv_dynamic_shapes": TestFailure(("mps",)),
-    "test_index_propagation_remainder_dynamic_shapes": TestFailure(("mps",)),
-    "test_multilayer_var_dynamic_shapes": TestFailure(("mps",)),
-    "test_multilayer_var_lowp_dynamic_shapes": TestFailure(("mps",)),
-    "test_reduction2_dynamic_shapes": TestFailure(("mps",)),
-    "test_reduction3_dynamic_shapes": TestFailure(("mps",)),
-    "test_reduction5_dynamic_shapes": TestFailure(("mps",)),
-    "test_roll_dynamic_shapes": TestFailure(("mps",)),
-    "test_std_dynamic_shapes": TestFailure(("mps",)),
-    "test_var_correction_dynamic_shapes": TestFailure(("mps",)),
-    "test_var_mean_div_by_dynamic_shapes": TestFailure(("mps",)),
-    "test_var_mean_tile_reduction_False_dynamic_shapes": TestFailure(("mps",)),
-    "test_var_mean_tile_reduction_True_dynamic_shapes": TestFailure(("mps",)),
-    "test_reflection_pad2d_backward_dynamic_shapes": TestFailure(
-        ("mps",), is_skip=True
-    ),
+    "test_AllenaiLongformerBase_repro_dynamic_shapes": TestFailure(("cpu", "cuda")),
+    "test_conv_inference_heuristics_dynamic_shapes": TestFailure("cuda"),
 }
 
-if any(os.getenv("BUILD_ENVIRONMENT", "").endswith(x) for x in ("-debug", "-asan")):
-    # Fails with TORCH_INTERNAL_ASSERT(!is_heap_allocated()), see https://github.com/pytorch/pytorch/issues/130073
-    # After https://github.com/pytorch/pytorch/pull/161586, starts failing UBSAN so we can't even xfail.
-    # Root cause seems to be SymInt issues in StorageImpl, see
-    # https://github.com/pytorch/pytorch/pull/161586#issuecomment-3246530671
-    test_failures["test_resize_as_dynamic_shapes"] = TestFailure(
+if TEST_WITH_ROCM:
+    # Tensor-likes are not close
+    test_failures["test_convolution1_dynamic_shapes"] = TestFailure(
         ("cpu", "cuda"), is_skip=True
     )
-    test_failures["test_resize_dynamic_shapes"] = TestFailure(
-        ("cpu", "cuda"), is_skip=True
+    test_failures["test_convolution3_dynamic_shapes"] = TestFailure(
+        ("cuda"), is_skip=True
+    )
+    test_failures["test_expanded_reduction_dynamic_shapes"] = TestFailure(
+        ("cuda"), is_skip=True
     )
 
 
@@ -126,7 +97,7 @@ if HAS_CPU:
     copy_tests(DynamicShapesCommonTemplate, DynamicShapesCpuTests, "cpu", test_failures)
 
 
-if (HAS_GPU or HAS_MPS) and not TEST_WITH_ASAN:
+if HAS_CUDA and not TEST_WITH_ASAN:
 
     class DynamicShapesGPUTests(TestCase):
         common = check_model_gpu
@@ -136,27 +107,17 @@ if (HAS_GPU or HAS_MPS) and not TEST_WITH_ASAN:
         DynamicShapesCommonTemplate, DynamicShapesGPUTests, GPU_TYPE, test_failures
     )
 
-    if HAS_GPU and hasattr(
-        DynamicShapesGPUTests, "test_conv_with_as_strided_dynamic_shapes_cuda"
-    ):
-        # gfx950 shows a deterministic numerical mismatch for this generated test.
-        DynamicShapesGPUTests.test_conv_with_as_strided_dynamic_shapes_cuda = (
-            skipIfRocmArch(MI350_ARCH)(
-                DynamicShapesGPUTests.test_conv_with_as_strided_dynamic_shapes_cuda
-            )
-        )
-
 
 class TestInductorDynamic(TestCase):
     compile_fn = partial(torch.compile, dynamic=True)
 
     def setUp(self):
-        # HAS_CUDA_AND_TRITON also checks compute capability to skip tests
+        # HAS_CUDA also checks compute capability to skip tests
         # on older devices
         if not HAS_GPU:
             self.skipTest("Triton not available")
         torch._dynamo.reset()
-        super().setUp()
+        TestCase.setUp(self)
         # this should be in setUpClass, but device-generic tests
         # don't work with setUpClass well (non-deterministically the wrong setUpClass is resolved),
         # so put it in test setUp, it's cheap
@@ -176,106 +137,6 @@ class TestInductorDynamic(TestCase):
         self._stack.close()
         TestCase.tearDown(self)
         torch._dynamo.reset()
-
-    def test_constant_fold_uniform_value_dynamic(self, device):
-        def full_add_zero(x):
-            a = torch.full(x.shape, 1, dtype=x.dtype, device=x.device)
-            b = a - 1
-            return x + b
-
-        def full_mul_one(x):
-            a = torch.full(x.shape, -1, dtype=x.dtype, device=x.device)
-            b = 2 + a
-            return x * b
-
-        def full_view_op(x):
-            a = torch.ones([1], dtype=x.dtype, device=x.device)
-            a = a[:, None]
-            return x * a
-
-        def full_mul_symint(x):
-            a = torch.full(x.shape, -1, dtype=x.dtype, device=x.device)
-            b = 2 + a
-            return b * x.shape[0]
-
-        fns = (full_add_zero, full_mul_one, full_view_op)
-
-        x = torch.randn((2, 4), device=device)
-        y = torch.randn((3, 4), device=device)
-
-        for dynamic in [False, True]:
-            torch._dynamo.reset()
-            for fn in fns:
-                ref = fn(x)
-                fn_c = torch.compile(fn, dynamic=dynamic)
-
-                actual, source_codes = run_and_get_code(fn_c, x)
-
-                if fn is not full_mul_symint:
-                    # due to constant folding, fn returns x directly.
-                    if device == "cpu":
-                        FileCheck().check_not("cpp_fused").run(source_codes[0])
-                    else:
-                        FileCheck().check_not("triton.jit").run(source_codes[0])
-
-                self.assertEqual(ref, actual)
-                self.assertEqual(fn(x), fn_c(x))
-                self.assertEqual(fn(y), fn_c(y))
-
-    def test_constant_fold_uniform_value_self_referential_shape(self, device):
-        """
-        Test that constant_fold_uniform_value correctly handles the case where
-        a tensor's shape depends on a sym_size computed from the tensor itself.
-
-        This is a regression test for a bug where creating a replacement full()
-        node with a shape that includes a sym_size_int derived from the original
-        tensor would create a circular dependency in the graph, causing
-        stable_topological_sort to fail with an assertion error.
-        """
-        torch._dynamo.config.capture_scalar_outputs = True
-        torch._dynamo.config.capture_dynamic_output_shape_ops = True
-
-        def fn(arg0, arg1):
-            t0 = arg0
-            t1 = t0.clone()
-            t1.zero_()
-            t2 = t1.reshape((109, 115, 96))
-            t3 = arg1
-            t4 = t3.contiguous()
-            t5 = torch.nn.functional.relu(t4)
-            t6 = t2.clone()
-            t6.fill_(t5.item())
-            return t6
-
-        arg0 = torch.rand(
-            [401120, 3], dtype=torch.float32, device=device, requires_grad=True
-        )
-        arg1 = torch.rand([], dtype=torch.float32, device=device, requires_grad=True)
-
-        # Test eager mode
-        out_eager = fn(arg0, arg1)
-        out_eager.sum().backward()
-
-        # Reset grads
-        arg0 = torch.rand(
-            [401120, 3], dtype=torch.float32, device=device, requires_grad=True
-        )
-        arg1 = torch.rand([], dtype=torch.float32, device=device, requires_grad=True)
-
-        # Test compiled mode - this would fail before the fix with:
-        # AssertionError in stable_topological_sort due to circular dependency
-        compiled_fn = torch.compile(fn, fullgraph=True, dynamic=True)
-        out_compiled = compiled_fn(arg0, arg1)
-        out_compiled.sum().backward()
-
-        # Verify outputs match
-        arg0_test = torch.rand(
-            [401120, 3], dtype=torch.float32, device=device, requires_grad=False
-        )
-        arg1_test = torch.rand(
-            [], dtype=torch.float32, device=device, requires_grad=False
-        )
-        self.assertEqual(fn(arg0_test, arg1_test), compiled_fn(arg0_test, arg1_test))
 
     def test_arange_dynamic(self, device):
         def fn(a):
@@ -337,25 +198,12 @@ class TestInductorDynamic(TestCase):
         def f():
             full = torch.full((), 11)
             i0 = full.item()
+            torch._check_is_size(i0)
             return torch.full((i0,), 0)
 
         opt_f = torch.compile(f, fullgraph=True)
         r = f()
         opt_r = opt_f()
-        self.assertEqual(r, opt_r)
-
-    @torch._dynamo.config.patch(capture_scalar_outputs=True)
-    def test_sym_sum_unbacked(self, device):
-        def f(a):
-            xs = a.tolist()
-            y = sum(xs)
-            return torch.tensor(y)
-
-        splits = torch.randint(10, (100,), device=device)
-
-        opt_f = torch.compile(f, fullgraph=True)
-        r = f(splits)
-        opt_r = opt_f(splits)
         self.assertEqual(r, opt_r)
 
     @torch._dynamo.config.patch(capture_dynamic_output_shape_ops=True)
@@ -453,24 +301,22 @@ class TestInductorDynamic(TestCase):
     @torch._dynamo.config.patch(capture_scalar_outputs=True)
     @torch._inductor.config.patch(implicit_fallbacks=True)
     def test_item_to_inputs_kernel_nobreak(self, device):
-        @torch.library.custom_op(
-            "test_inductor_dynamic_shapes::nobreak_test", mutates_args=()
-        )
-        def nobreak_test(x: torch.Tensor, y: int) -> torch.Tensor:
+        @torch.library.custom_op("test::foo", mutates_args=())
+        def foo(x: torch.Tensor, y: int) -> torch.Tensor:
             return x.clone()
 
-        @nobreak_test.register_fake
+        @foo.register_fake
         def _(x: torch.Tensor, y: int) -> torch.Tensor:
             return x.clone()
 
         @torch.compile(fullgraph=True)
         def f(x, r):
             y = x.item()
-            return torch.ops.test_inductor_dynamic_shapes.nobreak_test(r, y)
+            return torch.ops.test.foo(r, y)
 
         f(torch.tensor([3], device=device), torch.randn(10, device=device))
 
-    @unittest.skipUnless(IS_FBCODE, "")
+    @unittest.expectedFailure
     @torch._dynamo.config.patch(
         capture_scalar_outputs=True, capture_dynamic_output_shape_ops=True
     )
@@ -501,6 +347,8 @@ class TestInductorDynamic(TestCase):
     def test_return_unbacked_view_split(self, device):
         def f(values, length_per_key):
             u0, u1 = length_per_key.tolist()
+            torch._check_is_size(u0)
+            torch._check_is_size(u1)
             v1, v2 = torch.functional.split(values, [u0, u1])
             return v1, v2
 
@@ -521,51 +369,9 @@ class TestInductorDynamic(TestCase):
         arg = torch.tensor(5, device=device)
         self.assertEqual(f(arg), cf(arg))
 
-    @torch._dynamo.config.patch(
-        capture_scalar_outputs=True, capture_dynamic_output_shape_ops=True
-    )
-    @torch._inductor.config.patch(implicit_fallbacks=True)
-    def test_unbacked_save_for_backwards(self, device) -> None:
-        @torch.library.custom_op("_test::_cat", mutates_args=())
-        def _cat(t: torch.Tensor, ds: list[int]) -> torch.Tensor:
-            return t * t.new_ones([sum(ds)])
-
-        @torch.library.register_fake("_test::_cat")
-        def _cat_fake(t: torch.Tensor, ds: list[int]) -> torch.Tensor:
-            return t.new_empty([sum(ds)])
-
-        def _cat_setup_context(ctx, inputs, output):
-            pass
-
-        def _cat_backward(ctx, grad):
-            return grad.sum(), None
-
-        torch.library.register_autograd(
-            "_test::_cat",
-            _cat_backward,
-            setup_context=_cat_setup_context,
-        )
-
-        def fn(t, sizes):
-            r = torch.ops._test._cat(t, sizes.tolist())
-            return r * t
-
-        t = torch.randn((), requires_grad=True, device=device)
-        sizes = torch.tensor([4, 8], dtype=torch.int64, device="cpu")
-        out = fn(t, sizes)
-        out.sum().backward()
-        expect = t.grad
-        t.grad = None
-        torch.compile(fn, backend="inductor", fullgraph=True, dynamic=True)(
-            t, sizes
-        ).sum().backward()
-        self.assertEqual(t.grad, expect)
-
     @torch._dynamo.config.patch(capture_scalar_outputs=True)
     def test_unbacked_reduction(self, device):
-        expect_fail = (
-            device == "cpu" and not IS_ARM64 and not torch._inductor.config.cpp_wrapper
-        )
+        expect_fail = device == "cpu" and not IS_ARM64
         try:
 
             def f(x):
@@ -594,7 +400,7 @@ class TestInductorDynamic(TestCase):
             return torch.ops.aten.cat.default([g, g, g2])
 
         cf = torch.compile(fullgraph=True)(f)
-        arg = torch.tensor([4, 6], device=GPU_TYPE)
+        arg = torch.tensor([4, 6], device="cuda")
         self.assertEqual(f(arg), cf(arg))
 
     @torch._dynamo.config.patch(
@@ -646,45 +452,9 @@ class TestInductorDynamic(TestCase):
     @torch._dynamo.config.patch(
         capture_scalar_outputs=True, capture_dynamic_output_shape_ops=True
     )
-    @torch._inductor.config.patch(emulate_precision_casts=True)
-    def test_embedding_backward_dynamic_shapes_large_grid(self, device):
-        """Test _check_max_grid_x correctly applies platform-specific grid limits.
-
-        On CUDA: uses num_blocks only (not num_blocks * num_warps * warp_size).
-        On ROCm: uses num_blocks * num_warps * warp_size (total threads limit).
-        """
-        from torch._inductor.runtime.triton_heuristics import (
-            _check_max_grid_x,
-            _num_warps,
-        )
-
-        size_hints = {"x": 600_000_000}
-        x = 64
-        num_warps = _num_warps(8)
-
-        result_x, result_num_blocks = _check_max_grid_x(size_hints, x, num_warps)
-
-        max_grid_x = 2147483647
-        if torch.version.hip:
-            warp_size = 64  # TODO: query warp size once #129663 is merged
-            # ROCm limits total threads (num_blocks * num_warps * warp_size)
-            self.assertLessEqual(
-                result_num_blocks * num_warps * warp_size,
-                max_grid_x,
-                "ROCm total-threads grid limit should be satisfied",
-            )
-        else:
-            # CUDA limits number of blocks only — 600M/64 ≈ 9.4M blocks,
-            # well within 2^31-1, so no scaling should occur
-            self.assertEqual(result_x, 64, f"XBLOCK should remain 64 (got {result_x})")
-            self.assertLessEqual(result_num_blocks, max_grid_x)
-
-    @torch._dynamo.config.patch(
-        capture_scalar_outputs=True, capture_dynamic_output_shape_ops=True
-    )
     @torch._inductor.config.patch(implicit_fallbacks=True)
     def test_dynamic_stride_nobreak(self, device):
-        @torch.library.custom_op("test_dynamic_stride_nobreak::foo", mutates_args=())
+        @torch.library.custom_op("test::foo", mutates_args=())
         def foo(x: torch.Tensor) -> torch.Tensor:
             stride = x.item()
             return torch.empty_strided((1,), (stride,), device=x.device)
@@ -697,51 +467,16 @@ class TestInductorDynamic(TestCase):
 
         @torch.compile(fullgraph=True)
         def f(x):
-            r = torch.ops.test_dynamic_stride_nobreak.foo(x)
+            r = torch.ops.test.foo(x)
             y = r.stride(0)
             return torch.empty(y, device=x.device)
 
         f(torch.tensor([3], device=device))
 
-    @unittest.skipIf(
-        IS_SM89,
-        "Fails(with OOMS) on SM89, see https://github.com/pytorch/pytorch/issues/141915",
-    )
-    @torch._dynamo.config.patch(
-        capture_scalar_outputs=True, capture_dynamic_output_shape_ops=True
-    )
-    @torch._inductor.config.patch(implicit_fallbacks=True)
-    def test_multi_output_unbacked_custom_op(self, device):
-        @torch.library.custom_op(
-            "test_inductor_dynamic_shapes::unbacked_test", mutates_args=()
-        )
-        def unbacked_test(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-            return torch.empty(2, device=x.device), torch.empty(3, device=x.device)
-
-        @unbacked_test.register_fake
-        def _(x: torch.Tensor) -> torch.Tensor:
-            ctx = torch.library.get_ctx()
-            u0 = ctx.new_dynamic_size()
-            return torch.empty(u0, device=x.device), torch.empty(3, device=x.device)
-
-        @torch.compile(fullgraph=True)
-        def f(x):
-            a, b = torch.ops.test_inductor_dynamic_shapes.unbacked_test(x)
-            return a.sum() + b.sum()
-
-        f(torch.tensor([3], device=device))
-
-    def test_meta_dynamic_shapes(self):
-        def foobar(x, y):
-            return x * 2, y * 3
-
-        foo_c = torch.compile(dynamic=True)(foobar)
-        t = torch.empty((1, 16, 128, 128), device="meta")
-        y = torch.rand([64])
-
-        self.assertEqual(foo_c(t, y), foobar(t, y))
-
+    @torch._inductor.config.patch(disable_cpp_codegen=True)
     def test_floor(self):
+        # `int(n * 0.2)` will be generated as `floor(0.2*s0)` of torch.SymInt type.
+        # If cpp codegen is disabled, we should generate `math.floor` using PythonPrinter.
         def fn(x):
             n = x.size(-1)
             y = x + int(n * 0.2) + 1
@@ -759,16 +494,16 @@ class TestInductorDynamic(TestCase):
         res1 = opt(x1)
         self.assertEqual(ref1, res1)
 
-    @onlyOn(GPU_TYPE)
+    # Need to comment: is xpu need this? if yes we may need to add onlyGPU
+    @onlyCUDA
     def test_pad_dynamic(self, device):
         def get_same_padding(x: int, k: int, s: int, d: int):
             return max((math.ceil(x / s) - 1) * s + (k - 1) * d + 1 - x, 0)
 
         def pad_same(x, k, s, d=(1, 1), value=0):
             ih, iw = x.size()[-2:]
-            pad_h, pad_w = (
-                get_same_padding(ih, k[0], s[0], d[0]),
-                get_same_padding(iw, k[1], s[1], d[1]),
+            pad_h, pad_w = get_same_padding(ih, k[0], s[0], d[0]), get_same_padding(
+                iw, k[1], s[1], d[1]
             )
             if pad_h > 0 or pad_w > 0:
                 x = torch.nn.functional.pad(
@@ -988,7 +723,6 @@ class TestInductorDynamic(TestCase):
         output = cfunc(x, op, a)
         self.assertEqual(output, expected)
 
-    @serialTest()
     def test_wrapper_codegen_statically_known_int_or_none(self):
         torch._dynamo.reset()
 
@@ -1030,23 +764,21 @@ class TestInductorDynamic(TestCase):
             batch_dim = input_layouts[0].size[0]
             if call_count == 1:
                 # testing fn_1
-                if (
-                    PythonWrapperCodegen.statically_known_int_or_none(batch_dim)
-                    is not None
-                ):
-                    raise AssertionError("Should not be statically known on first call")
+                assert (
+                    WrapperCodeGen.statically_known_int_or_none(batch_dim) is None
+                ), "Should not be statically known on first call"
             elif call_count == 2:
                 # testing fn_2
-                if PythonWrapperCodegen.statically_known_int_or_none(batch_dim) != 5:
-                    raise AssertionError(
-                        "Should be limited to exactly 5 on second call due to multiple constraints"
-                    )
+                assert (
+                    WrapperCodeGen.statically_known_int_or_none(batch_dim) == 5
+                ), "Should be limited to exactly 5 on second call due to multiple constraints"
             elif call_count == 2:
                 # testing fn_3
-                if PythonWrapperCodegen.statically_known_int_or_none(batch_dim) != 5:
-                    raise AssertionError("Should be exactly 5 on third call")
+                assert (
+                    WrapperCodeGen.statically_known_int_or_none(batch_dim) == 5
+                ), "Should be exactly 5 on third call"
 
-        class TestWrapperCodegen(PythonWrapperCodegen):
+        class TestWrapperCodegen(WrapperCodeGen):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
 
@@ -1054,334 +786,42 @@ class TestInductorDynamic(TestCase):
                 _test_wrapper_codegen_statically_known_int_or_none_in_context()
                 return super().generate(is_inference, *args, **kwargs)
 
-        with patch_inductor_backend("cpu", python_wrapper_codegen=TestWrapperCodegen):
+        if "cpu" not in device_codegens:
+            register_backend_for_device("cpu", CppScheduling, WrapperCodeGen)
+        orig_cpu_codegens = device_codegens["cpu"]
+        try:
+            register_backend_for_device(
+                "cpu", orig_cpu_codegens.scheduling, TestWrapperCodegen
+            )
             # Compile each of the functions above, with an example input
             # that has 5 in the first dimension, but is marked as dynamic
 
             torch.compile(backend="inductor", dynamic=None)(fn_1)(_x)
             torch.compile(backend="inductor", dynamic=None)(fn_2)(_x)
             torch.compile(backend="inductor", dynamic=None)(fn_3)(_x)
+        finally:
+            register_backend_for_device(
+                "cpu", orig_cpu_codegens.scheduling, orig_cpu_codegens.wrapper_codegen
+            )
 
     @torch._dynamo.config.patch(capture_scalar_outputs=True)
     def test_item_unbacked_stride_nobreak(self, device):
         @torch.compile(fullgraph=True, dynamic=True)
         def f(x):
             a = x.item()
+            torch._check_is_size(a)
             torch._check(a >= 1)
             torch._check(a <= 10)
             return torch.ones(a, a)
 
         f(torch.tensor([5], device=device))
 
-    @torch._dynamo.config.patch(capture_scalar_outputs=True)
-    def test_symint_sum_list(self, device):
-        @torch.compile()
-        def f(xt):
-            xs = xt.tolist()
-            y = sum(xs)
-            return torch.zeros(y, device=device)
 
-        f(torch.tensor([5] * 320))
-
-    def test_mark_unbacked_slice(self):
-        @torch.compile(backend="inductor", mode="reduce-overhead", fullgraph=True)
-        def f(x):
-            return x.sum()
-
-        x = torch.empty_strided((1, 4), (5, 1), device=GPU_TYPE)
-        torch._dynamo.decorators.mark_unbacked(x, 0)
-        f(x)
-
-    @torch._dynamo.config.patch(specialize_float=False, capture_scalar_outputs=True)
-    def test_unspecialized_float_operations(self):
-        operations = {
-            "multiply": operator.mul,
-            "add": operator.add,
-            "subtract": operator.sub,
-            "divide": operator.truediv,
-        }
-
-        for i, (name, op) in enumerate(operations.items()):
-            with self.subTest(operation=name):
-
-                def fn(x, y):
-                    return op(x, y)
-
-                cnt = CompileCounterWithBackend("inductor")
-                fn_opt = torch.compile(fn, backend=cnt)
-
-                x = torch.arange(3)
-                self.assertEqual(fn(x, 2.0), fn_opt(x, 2.0))
-                self.assertEqual(fn(x, 3.0), fn_opt(x, 3.0))
-                self.assertEqual(fn(x, 4.0), fn_opt(x, 4.0))
-                if i == 0:
-                    # Automatic dynamic state persists across
-                    # compiles so only the first compile
-                    # goes through the automatic dynamic step.
-                    self.assertEqual(cnt.frame_count, 2)
-                else:
-                    self.assertEqual(cnt.frame_count, 1)
-
-    @torch._dynamo.config.patch(specialize_float=False)
-    def test_unspecialized_float_fallback_specialization(self):
-        def fn(x, y, z):
-            return (
-                torch.tensor(z),
-                torch.exp(torch.tensor(z)) * (x * y),
-                x.size(0),
-                math.sqrt(x.size(0)),
-                math.floor(math.sqrt(x.size(0))),
-                math.floor(math.sqrt(x.numel())),
-                math.floor(math.sqrt(x.dim())),
-                math.floor(math.sqrt(z)),
-            )
-
-        cnt = CompileCounterWithBackend("inductor")
-        fn_opt = torch.compile(fn, backend=cnt)
-        x = torch.arange(3)
-        z = 1.3
-
-        self.assertEqual(fn(x, 2.0, z), fn_opt(x, 2.0, z))
-        self.assertEqual(fn(x, 3.0, z), fn_opt(x, 3.0, z))
-        self.assertEqual(fn(x, 4.0, z), fn_opt(x, 4.0, z))
-        # Automatic dynamic float arguments
-        self.assertEqual(cnt.frame_count, 2)
-
-    @torch._dynamo.config.patch(specialize_float=False)
-    def test_unspecialized_float_softshrink(self):
-        # This test is particularly interesting since it exercises
-        # both standard operator replacements ie. torch.ops.aten.mul.Tensor
-        # as well as comparison replacements ie. torch.ops.aten.ge.Scalar
-        def fn(x, y):
-            return torch._C._nn.softshrink(x, lambd=y)
-
-        cnt = CompileCounterWithBackend("inductor")
-        fn_opt = torch.compile(fn, backend=cnt)
-        x = torch.randn(5, 5)
-
-        print(fn(x, 2.0), fn_opt(x, 2.0))
-
-        self.assertEqual(fn(x, 2.0), fn_opt(x, 2.0))
-        self.assertEqual(fn(x, 3.0), fn_opt(x, 3.0))
-        self.assertEqual(fn(x, 4.0), fn_opt(x, 4.0))
-        self.assertEqual(cnt.frame_count, 2)
-
-    @onlyOn(GPU_TYPE)
-    def test_dynamic_rblock_bounds(self):
-        class ForcePersistent(InductorChoices):
-            @staticmethod
-            def should_use_cooperative_reduction(*args, **kwargs) -> bool:
-                return False
-
-            @staticmethod
-            def should_use_persistent_reduction(*args, **kwargs) -> bool:
-                return True
-
-        def fn(x):
-            return x.sum()
-
-        x = torch.rand([31], device=GPU_TYPE)
-
-        with V.set_choices_handler(ForcePersistent()):
-            torch._dynamo.mark_dynamic(x, 0, min=1, max=62)
-            fn_c = torch.compile(fn)
-            actual, source_codes = run_and_get_code(fn_c, x)
-            self.assertEqual(fn(x), actual)
-            FileCheck().check("R0_BLOCK: tl.constexpr = 64").run(source_codes[0])
-            torch._dynamo.reset()
-
-            torch._dynamo.mark_dynamic(x, 2, min=1, max=64)
-            fn_c = torch.compile(fn)
-            actual, source_codes = run_and_get_code(fn_c, x)
-            self.assertEqual(fn(x), actual)
-            FileCheck().check("R0_BLOCK: tl.constexpr = 64").run(source_codes[0])
-
-    def test_non_persistent_dynamic_rblock(self):
-        def reduce_bounded(x, y):
-            """Reduce over a dimension with bounded size."""
-            # x shape: [batch, features, reduction_dim]
-            # reduction_dim is dynamic but bounded to max 128
-            assert x.shape[2] <= 64, f"Reduction dim {x.shape[2]} exceeds max 128"  # noqa: S101
-
-            # Perform reduction (sum) over the last dimension
-            result = torch.sum(x * y, dim=2)
-            return result
-
-        # Create tensors where reduction dimension is 6 (but could be up to 128)
-        batch = 256
-        features = 5536
-        reduction_dim = 6  # Actual size is small
-
-        x = torch.randn(reduction_dim, batch, features, device=GPU_TYPE).permute(
-            1, 2, 0
-        )
-        y = torch.randn(reduction_dim, batch, features, device=GPU_TYPE).permute(
-            1, 2, 0
-        )
-
-        torch._dynamo.mark_dynamic(x, 2, min=6, max=64)
-        torch._dynamo.mark_dynamic(y, 2, min=6, max=64)
-
-        compiled_fn = torch.compile(reduce_bounded)
-        result, source_codes = run_and_get_code(compiled_fn, x, y)
-
-        FileCheck().check_not("@triton_heuristics.persistent").run(source_codes[0])
-        expected = reduce_bounded(x, y)
-
-        if not torch.allclose(result, expected, atol=1e-3, rtol=1e-3):
-            raise AssertionError
-
-    def test_unspecialized_float_dynamic(self):
-        def fn(x, y):
-            return x * y
-
-        cnt = CompileCounterWithBackend("inductor")
-        fn_opt = torch.compile(fn, dynamic=True, backend=cnt)
-        x = torch.randn(5, 5)
-
-        self.assertEqual(fn(x, 2.0), fn_opt(x, 2.0))
-        self.assertEqual(fn(x, 3.0), fn_opt(x, 3.0))
-        self.assertEqual(fn(x, 4.0), fn_opt(x, 4.0))
-        self.assertEqual(cnt.frame_count, 1)
-
-    @torch._dynamo.config.patch(specialize_float=False)
-    def test_unspecialized_float_fallback_symint_specialization(self):
-        def fn(x, y):
-            return math.floor(x**2) * y
-
-        cnt = CompileCounterWithBackend("inductor")
-        fn_opt = torch.compile(fn, backend=cnt)
-        y = torch.arange(3)
-
-        self.assertEqual(fn(2.0, y), fn_opt(2.0, y))
-        self.assertEqual(fn(3.0, y), fn_opt(3.0, y))
-        self.assertEqual(fn(4.0, y), fn_opt(4.0, y))
-        # N + 1 for automatic dynamic float arguments
-        self.assertEqual(cnt.frame_count, 4)
-
-    def test_sort_dynamic_shape_with_check(self, device):
-        if torch.device(device).type != GPU_TYPE:
-
-            def check_count(n):
-                self.assertEqual(metrics.generated_kernel_count, 0)
-
-        else:
-
-            def check_count(n):
-                self.assertEqual(metrics.generated_kernel_count, n)
-
-        # Test dynamic shapes with statically known small enough to generate
-        # persistent sort kernel
-        def fn(a, descending):
-            torch._check(a.shape[-1] <= 256)
-            return a.sort(dim=-1, stable=True, descending=descending)
-
-        inp = torch.rand(10, 128, dtype=torch.float32, device=device)
-        inp[:, 10:20] = 1.0
-        inp[:, 30:40] = 1.0
-        metrics.reset()
-
-        opt_fn = torch.compile(fn, dynamic=True)
-        expect = fn(inp, False)
-        actual = opt_fn(inp, False)
-        self.assertEqual(actual, expect)
-        check_count(1)
-
-        expect = fn(inp, True)
-        actual = opt_fn(inp, True)
-        self.assertEqual(actual, expect)
-        check_count(2)
-
-        # Non-power of two
-        inp[:, :120]
-
-        expect = fn(inp, False)
-        actual = opt_fn(inp, False)
-        self.assertEqual(actual, expect)
-        check_count(2)  # Reused existing kernel
-
-        expect = fn(inp, True)
-        actual = opt_fn(inp, True)
-        self.assertEqual(actual, expect)
-        check_count(2)  # Reused existing kernel
-
-    def test_coalescing_analysis_sympy_is_constant(self, device):
-        # Regression test for issue where sympy's is_constant() would trigger
-        # numerical evaluation that caused assertion errors in our custom Mod function
-        def fn(arg0, arg1, arg2, arg3, arg4, arg5, arg6):
-            t3 = torch.nn.functional.scaled_dot_product_attention(arg0, arg1, arg2)
-            t4 = t3.min(dim=3).values
-            t6 = arg3.var(dim=0)
-            t7 = t6.reshape((29, 50, 32))
-            t10 = arg5.clone()
-            t10.zero_()
-            t11 = t10.transpose(0, 2)
-            t12 = torch.pow(torch.pow(t4, arg4), t11)
-            t15 = torch.nn.functional.layer_norm(arg6, (32,))
-            t16 = t12 / t15
-            t17 = ((((t4) - t7) - t16) - t11) - t16
-            return t17
-
-        arg0 = torch.rand([29, 50, 32, 5], dtype=torch.float16, device=device)
-        arg1 = torch.rand([29, 50, 32, 5], dtype=torch.float16, device=device)
-        arg2 = torch.rand([29, 50, 32, 5], dtype=torch.float16, device=device)
-        arg3 = torch.rand([3, 10, 4640], dtype=torch.float16, device=device)
-        arg4 = torch.rand([29, 50, 32], dtype=torch.float16, device=device)
-        arg5 = torch.rand([32, 50, 29], dtype=torch.float16, device=device)
-        arg6 = torch.rand([29, 50, 32], dtype=torch.float16, device=device)
-
-        compiled_fn = torch.compile(fn, fullgraph=True, dynamic=True)
-        expected = fn(arg0, arg1, arg2, arg3, arg4, arg5, arg6)
-        actual = compiled_fn(arg0, arg1, arg2, arg3, arg4, arg5, arg6)
-        self.assertEqual(actual, expected, atol=1e-2, rtol=1e-2)
-
-    @onlyOn(GPU_TYPE)
-    @torch._dynamo.config.patch(capture_scalar_outputs=True)
-    @torch._dynamo.config.patch(capture_dynamic_output_shape_ops=True)
-    def test_sympy_infinity_bounds_in_persistent_reduction(self):
-        """
-        Regression test for sympy Infinity bounds handling in should_use_persistent_reduction.
-
-        When bound_sympy() returns infinity bounds for dynamic reduction dimensions,
-        the inductor compiler should handle them correctly without attempting to
-        convert infinity to an integer.
-
-        Previously this would fail with: AttributeError: 'Infinity' object has no attribute '_mpf_'
-        """
-
-        def fn(arg0, arg2, arg3):
-            t0 = arg0
-            t2 = torch.nn.functional.layer_norm(t0, (1024, 10))
-            t3 = arg2
-            t4 = t3.contiguous().view((67, 1024, 5))
-            t5 = torch.nn.functional.conv1d(t2, t4, stride=1, padding=0)
-            t6 = arg3
-            t7 = torch.sqrt(t6)
-            t14 = torch.nn.functional.group_norm(t7, 1)
-            t15 = (((t5) - t14) - t5) - t5
-            return t15
-
-        arg0 = torch.rand(
-            [65, 1024, 10], dtype=torch.float32, device=GPU_TYPE, requires_grad=True
-        )
-        arg2 = torch.rand(
-            [134, 4, 640], dtype=torch.float32, device=GPU_TYPE, requires_grad=True
-        )
-        arg3 = torch.rand(
-            [65, 67, 6], dtype=torch.bfloat16, device=GPU_TYPE, requires_grad=True
-        )
-
-        compiled_fn = torch.compile(fn, fullgraph=True, dynamic=True)
-        out_compiled = compiled_fn(arg0, arg2, arg3)
-        # Test backward pass as well - this is where the bug manifested
-        out_compiled.sum().backward()
-
-
-instantiate_device_type_tests(TestInductorDynamic, globals(), allow_xpu=True)
+instantiate_device_type_tests(TestInductorDynamic, globals())
 
 if __name__ == "__main__":
     from torch._inductor.test_case import run_tests
 
     # Slow on ASAN after https://github.com/pytorch/pytorch/pull/94068
-    if (HAS_CPU or HAS_GPU or HAS_MPS) and not TEST_WITH_ASAN:
+    if (HAS_CPU or HAS_CUDA) and not TEST_WITH_ASAN:
         run_tests(needs="filelock")

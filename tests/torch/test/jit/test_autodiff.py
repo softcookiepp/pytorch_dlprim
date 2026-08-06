@@ -1,13 +1,10 @@
 # Owner(s): ["oncall: jit"]
-# ruff: noqa: F841
 
 from typing import List
 
 import torch
-from torch.testing._internal.common_utils import (
-    raise_on_run_directly,
-    skipIfTorchDynamo,
-)
+
+from torch.testing._internal.common_utils import skipIfTorchDynamo
 from torch.testing._internal.jit_utils import JitTestCase
 
 
@@ -68,7 +65,7 @@ class TestAutodiffJit(JitTestCase):
 
         fn_s = torch.jit.script(fn)
 
-        for _ in range(4):
+        for i in range(4):
             x, y = fn_s(a, b, c)
             self.assertFalse(x.requires_grad)
             self.assertTrue(y.requires_grad)
@@ -90,7 +87,7 @@ class TestAutodiffJit(JitTestCase):
         b = torch.rand((10, 10), requires_grad=False)
         c = torch.rand((10, 10), requires_grad=True)
 
-        for _ in range(4):
+        for i in range(4):
             x_s, y_s, z_s = fn_s(a, b, c)
             x, y, z = fn(a, b, c)
 
@@ -115,7 +112,7 @@ class TestAutodiffJit(JitTestCase):
         b = torch.rand((10, 10), requires_grad=False)
         c = torch.rand((10, 10), requires_grad=True)
 
-        for _ in range(4):
+        for i in range(4):
             x_s, y_s, z_s = fn_s(a, b, c)
             x, y, z = fn(a, b, c)
 
@@ -141,14 +138,10 @@ class TestAutodiffJit(JitTestCase):
         b = torch.rand((10, 10), requires_grad=True)
         c = torch.rand((10, 10), requires_grad=True)
 
-        for _ in range(4):
+        for i in range(4):
             x_s, y_s, z_s = fn_s(a, b, c)
             x, y, z = fn(a, b, c)
 
             self.assertEqual(x_s.requires_grad, x.requires_grad)
             self.assertEqual(y_s.requires_grad, y.requires_grad)
             self.assertEqual(z_s.requires_grad, z.requires_grad)
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

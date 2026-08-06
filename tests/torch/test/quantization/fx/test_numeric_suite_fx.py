@@ -1,5 +1,4 @@
 # Owner(s): ["oncall: quantization"]
-# ruff: noqa: F841
 
 import copy
 import math
@@ -37,7 +36,7 @@ from torch.testing._internal.common_quantization import (
     skip_if_no_torchvision,
     TwoLayerLinearModel
 )
-from torch.testing._internal.common_utils import raise_on_run_directly, skipIfTorchDynamo
+from torch.testing._internal.common_utils import skipIfTorchDynamo
 from torch.ao.quantization.quantization_mappings import (
     get_default_static_quant_module_mappings,
     get_default_dynamic_quant_module_mappings,
@@ -101,7 +100,7 @@ from torch.ao.quantization.fx.quantize_handler import _get_pattern_to_quantize_h
 # across various different files, speed of debugging on individual test cases
 # decreases.
 class LinearReluFunctional(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.w1 = nn.Parameter(torch.empty(4, 4))
         self.b1 = nn.Parameter(torch.zeros(4))
@@ -114,7 +113,7 @@ class LinearReluFunctional(nn.Module):
 
 
 class LinearFunctional(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.w1 = nn.Parameter(torch.empty(4, 4))
         self.b1 = nn.Parameter(torch.zeros(4))
@@ -126,7 +125,7 @@ class LinearFunctional(nn.Module):
 
 
 class LinearReluLinearFunctional(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.w = nn.Parameter(torch.Tensor(4, 4))
         self.b = nn.Parameter(torch.zeros(4))
@@ -151,7 +150,7 @@ class AddMulFunctional(nn.Module):
 
 
 class AllConvAndLinearFusionModules(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         # conv1d
         self.conv1d_0 = nn.Conv1d(1, 1, 1)
@@ -332,7 +331,7 @@ class TestFXGraphMatcher(QuantizationTestCase):
     @skipIfNoFBGEMM
     def test_simple_fun(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.w = nn.Parameter(torch.empty(1, 4))
                 self.b = nn.Parameter(torch.zeros(1))
@@ -496,7 +495,7 @@ class TestFXGraphMatcher(QuantizationTestCase):
     @skipIfNoFBGEMM
     def test_nodes_with_equal_types_get_matched(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.conv1 = nn.Conv2d(1, 1, 1)
                 self.conv2 = nn.Conv2d(1, 1, 1)
@@ -866,7 +865,7 @@ class FXNumericSuiteQuantizationTestCase(QuantizationTestCase):
     ):
         if qconfig_dict is None:
             qconfig_dict = torch.ao.quantization.get_default_qconfig_mapping()
-        if prepare_fn is prepare_fx:
+        if prepare_fn == prepare_fx:
             m.eval()
         else:
             m.train()
@@ -929,7 +928,7 @@ class FXNumericSuiteQuantizationTestCase(QuantizationTestCase):
     ):
         if qconfig_dict is None:
             qconfig_dict = torch.ao.quantization.get_default_qconfig_mapping()
-        if prepare_fn is prepare_fx:
+        if prepare_fn == prepare_fx:
             m.eval()
         else:
             m.train()
@@ -1082,7 +1081,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
             nn.Conv2d(1, 1, 1),
         ).eval()
         qconfig_dict = None
-        if prepare_fn is prepare_qat_fx:
+        if prepare_fn == prepare_qat_fx:
             qconfig_dict = {'': torch.ao.quantization.get_default_qat_qconfig('fbgemm')}
         expected_occurrence = {
             ns.call_module(OutputLogger): 2,
@@ -1103,7 +1102,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
     def _test_match_activations_fun_impl(self, prepare_fn=prepare_fx):
         m = LinearReluLinearFunctional().eval()
         qconfig_dict = None
-        if prepare_fn is prepare_qat_fx:
+        if prepare_fn == prepare_qat_fx:
             qconfig_dict = {'': torch.ao.quantization.get_default_qat_qconfig('fbgemm')}
         expected_occurrence = {
             ns.call_module(OutputLogger): 2,
@@ -1165,7 +1164,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
             nn.Conv2d(1, 1, 1),
         ).eval()
         qconfig_dict = None
-        if prepare_fn is prepare_qat_fx:
+        if prepare_fn == prepare_qat_fx:
             qconfig_dict = {'': torch.ao.quantization.get_default_qat_qconfig('fbgemm')}
         res = self._test_match_shadow_activations(
             m, (torch.randn(1, 1, 4, 4),), results_len=2,
@@ -1182,7 +1181,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
     def _test_add_shadow_loggers_fun_impl(self, prepare_fn=prepare_fx):
         m = LinearReluLinearFunctional()
         qconfig_dict = None
-        if prepare_fn is prepare_qat_fx:
+        if prepare_fn == prepare_qat_fx:
             qconfig_dict = {'': torch.ao.quantization.get_default_qat_qconfig('fbgemm')}
         res = self._test_match_shadow_activations(
             m, (torch.randn(4, 4),), results_len=2, prepare_fn=prepare_fn,
@@ -1242,7 +1241,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
         Verifies that logging inputs works correctly
         """
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.conv = nn.Conv2d(1, 1, 1)
 
@@ -1264,7 +1263,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
         signature for fp32 and int8 tensors.
         """
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.max_pool_2d = nn.MaxPool2d(2)
 
@@ -1348,7 +1347,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
         int8 inputs.
         """
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.relu = nn.ReLU()
 
@@ -1402,7 +1401,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
                 return (x1, x2)
 
         class M2(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.m1 = M1()
 
@@ -1447,7 +1446,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
                 return x
 
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.linear = nn.Linear(1, 1)
                 self.user_module = UserModule()
@@ -1683,7 +1682,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
         Verify that NS APIs work on user defined functions
         """
         class M1(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.w1 = nn.Parameter(torch.empty(1, 1))
                 self.b1 = nn.Parameter(torch.zeros(1))
@@ -1696,7 +1695,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
                 return x
 
         class M2(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.w1 = nn.Parameter(torch.empty(1, 1))
                 self.b1 = nn.Parameter(torch.zeros(1))
@@ -1787,7 +1786,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
         # extract weights
         results = extract_weights('fp32', mp, 'int8', mq)
         mq_node_names = [node.name for node in mq.graph.nodes]
-        for layer_name in results:
+        for layer_name in results.keys():
             self.assertTrue(layer_name in mq_node_names)
 
         # match activations
@@ -1799,7 +1798,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
         mq_ns(data)
         results = extract_logger_info(mp_ns, mq_ns, OutputLogger, 'int8')
         mq_node_names = [node.name for node in mq_ns.graph.nodes]
-        for layer_name in results:
+        for layer_name in results.keys():
             self.assertTrue(layer_name in mq_node_names)
 
         # match shadow activations
@@ -1810,7 +1809,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
         results = extract_shadow_logger_info(
             mp_shadows_mq, OutputLogger, 'int8')
         mq_node_names = [node.name for node in mp_shadows_mq.graph.nodes]
-        for layer_name in results:
+        for layer_name in results.keys():
             self.assertTrue(layer_name in mq_node_names)
 
     @skipIfNoFBGEMM
@@ -1833,27 +1832,12 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
             'cosine_similarity_int8_vs_fp32')
 
         for layer_results in results.values():
-            if (
-                'sqnr_int8_vs_fp32'
-                not in layer_results['weight']['int8'][0]
-            ):
-                raise AssertionError(
-                    f"'sqnr_int8_vs_fp32' not found in layer results: {layer_results['weight']['int8'][0].keys()}"
-                )
-            if (
-                'l2_error_int8_vs_fp32'
-                not in layer_results['weight']['int8'][0]
-            ):
-                raise AssertionError(
-                    f"'l2_error_int8_vs_fp32' not found in layer results: {layer_results['weight']['int8'][0].keys()}"
-                )
-            if (
-                'cosine_similarity_int8_vs_fp32'
-                not in layer_results['weight']['int8'][0]
-            ):
-                raise AssertionError(
-                    f"'cosine_similarity_int8_vs_fp32' not found in layer results: {layer_results['weight']['int8'][0].keys()}"
-                )
+            assert 'sqnr_int8_vs_fp32' in \
+                layer_results['weight']['int8'][0].keys()
+            assert 'l2_error_int8_vs_fp32' in \
+                layer_results['weight']['int8'][0].keys()
+            assert 'cosine_similarity_int8_vs_fp32' in \
+                layer_results['weight']['int8'][0].keys()
 
     @skipIfNoFBGEMM
     def test_int8_shadows_fp32_simple(self):
@@ -1897,7 +1881,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
     @skipIfNoFBGEMM
     def test_int8_shadows_fp32_coverage(self):
         class M(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.adaptive_avg_pool = nn.AdaptiveAvgPool2d(1)
                 self.conv = nn.Conv2d(1, 1, 1)
@@ -2064,7 +2048,7 @@ class TestFXNumericSuiteCoreAPIs(FXNumericSuiteQuantizationTestCase):
     def test_linear_kwargs_shadow(self):
 
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.w1 = nn.Parameter(torch.empty(4, 4))
                 self.b1 = nn.Parameter(torch.zeros(4))
@@ -2120,7 +2104,7 @@ class TestFXNumericSuiteNShadows(FXNumericSuiteQuantizationTestCase):
     @withQNNPACKBackend
     def test_linear_mod(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.fc1 = nn.Linear(2, 2)
 
@@ -2138,7 +2122,7 @@ class TestFXNumericSuiteNShadows(FXNumericSuiteQuantizationTestCase):
     @withQNNPACKBackend
     def test_linear_relu_mod(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.fc1 = nn.Linear(2, 2)
                 self.fc2 = nn.Linear(2, 2)
@@ -2164,7 +2148,7 @@ class TestFXNumericSuiteNShadows(FXNumericSuiteQuantizationTestCase):
     @withQNNPACKBackend
     def test_conv_bn_relu_mod(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.conv = nn.Conv2d(1, 1, 1)
                 self.bn = nn.BatchNorm2d(1)
@@ -2189,7 +2173,7 @@ class TestFXNumericSuiteNShadows(FXNumericSuiteQuantizationTestCase):
     @withQNNPACKBackend
     def test_functions(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.w1 = nn.Parameter(torch.randn(2, 2))
                 self.b1 = nn.Parameter(torch.zeros(2))
@@ -2228,7 +2212,7 @@ class TestFXNumericSuiteNShadows(FXNumericSuiteQuantizationTestCase):
     @withQNNPACKBackend
     def test_partial_qconfig_mapping(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.fc = nn.Linear(2, 2)
                 self.w1 = nn.Parameter(torch.randn(2, 2))
@@ -2267,7 +2251,7 @@ class TestFXNumericSuiteNShadows(FXNumericSuiteQuantizationTestCase):
             msp(*example_input)
 
         def _check_logger_count(model, exp_count_stats, exp_count_comparisons):
-            for mod in model.modules():
+            for name, mod in model.named_modules():
                 if isinstance(mod, OutputLogger):
                     self.assertTrue(
                         len(mod.stats) == exp_count_stats,
@@ -2520,7 +2504,7 @@ class TestFXNumericSuiteNShadows(FXNumericSuiteQuantizationTestCase):
     @withQNNPACKBackend
     def test_custom_functions_and_tracer(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.fc1 = nn.Linear(2, 2)
                 self.fc2 = nn.Linear(2, 2)
@@ -2587,7 +2571,7 @@ class TestFXNumericSuiteNShadows(FXNumericSuiteQuantizationTestCase):
     @withQNNPACKBackend
     def test_extract_weights_linear(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.w1 = nn.Parameter(torch.randn(2, 2))
                 self.b1 = nn.Parameter(torch.randn(2))
@@ -2726,7 +2710,7 @@ class TestFXNumericSuiteNShadows(FXNumericSuiteQuantizationTestCase):
     @withQNNPACKBackend
     def test_add_loggers_functions(self):
         class M(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.w1 = nn.Parameter(torch.randn(2, 2))
                 self.b1 = nn.Parameter(torch.randn(2))
@@ -2930,6 +2914,3 @@ class TestFXNumericSuiteCoreAPIsModels(FXNumericSuiteQuantizationTestCase):
             m, (torch.randn(1, 3, 224, 224),),
             qconfig_dict=qconfig_dict,
             should_log_inputs=False)
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_quantization.py")

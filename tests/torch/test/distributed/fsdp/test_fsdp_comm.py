@@ -1,41 +1,39 @@
 # Owner(s): ["oncall: distributed"]
+
 import sys
 from contextlib import nullcontext
 from enum import auto, Enum
+from typing import List, Optional
 from unittest.mock import patch
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import distributed as dist
-from torch._utils import _get_device_module
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.fully_sharded_data_parallel import ShardingStrategy
 from torch.distributed.fsdp.wrap import ModuleWrapPolicy
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
-from torch.testing._internal.common_device_type import instantiate_device_type_tests
 from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_fsdp import (
-    DEVICEInitMode,
+    CUDAInitMode,
     FSDPInitMode,
-    FSDPTestContinuous,
-    get_devtype,
+    FSDPTest,
     MLP,
     NestedWrappedModule,
     TransformerWithSharedParams,
 )
 from torch.testing._internal.common_utils import (
+    instantiate_parametrized_tests,
     parametrize,
     run_tests,
     TEST_WITH_DEV_DBG_ASAN,
 )
 
-
-device_type = torch.device(get_devtype())
-
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
+
 if TEST_WITH_DEV_DBG_ASAN:
     print(
         "Skip dev-asan as torch + multiprocessing spawn have known issues",
@@ -50,36 +48,33 @@ class PassType(Enum):
     BWD = auto()
 
 
-class TestCommunication(FSDPTestContinuous):
+class TestCommunication(FSDPTest):
     """Tests ``FullyShardedDataParallel``'s collective communication usage."""
 
     def _init_model(
         self,
-        device,
         nested_model: bool,
         sharding_strategy: ShardingStrategy,
+        device: torch.device,
     ):
-        fsdp_kwargs = {
-            "sharding_strategy": sharding_strategy,
-            "device_id": device_type.type,
-        }
+        fsdp_kwargs = {"sharding_strategy": sharding_strategy}
         if nested_model:
             model = NestedWrappedModule.init(
                 self.process_group,
                 FSDPInitMode.RECURSIVE,
-                DEVICEInitMode.DEVICE_AFTER,
+                CUDAInitMode.CUDA_AFTER,
                 fsdp_kwargs,
             )
             fsdp_model: FSDP = FSDP(
                 model,
                 self.process_group,
                 **fsdp_kwargs,
-            )
+            ).to(device)
         else:
             fsdp_model: FSDP = TransformerWithSharedParams.init(
                 self.process_group,
                 FSDPInitMode.RECURSIVE,
-                DEVICEInitMode.DEVICE_BEFORE,
+                CUDAInitMode.CUDA_BEFORE,
                 fsdp_kwargs,
             )
         return fsdp_model
@@ -104,7 +99,7 @@ class TestCommunication(FSDPTestContinuous):
     def _get_ref_num_all_gathers(
         self,
         num_fsdp: int,
-        sharding_strategy: ShardingStrategy | None,
+        sharding_strategy: Optional[ShardingStrategy],
         is_first_iter: bool,
         is_last_iter_no_sync: bool,
     ) -> int:
@@ -124,7 +119,7 @@ class TestCommunication(FSDPTestContinuous):
     def _get_ref_num_all_gathers_in_pass(
         self,
         num_fsdp: int,
-        sharding_strategy: ShardingStrategy | None,
+        sharding_strategy: Optional[ShardingStrategy],
         pass_type: PassType,
         is_first_iter: bool,
         is_last_iter_no_sync: bool,
@@ -161,7 +156,7 @@ class TestCommunication(FSDPTestContinuous):
             # forward pass
             num_all_gathers = 0
         else:
-            raise AssertionError(
+            assert 0, (
                 f"Unsupported: add a branch for pass_type={pass_type} "
                 f"is_first_iter={is_first_iter} "
                 f"is_last_iter_no_sync={is_last_iter_no_sync} "
@@ -207,14 +202,14 @@ class TestCommunication(FSDPTestContinuous):
     @parametrize("sharding_strategy", [ShardingStrategy.SHARD_GRAD_OP, None])
     def test_communication(
         self,
-        device,
         nested_model: bool,
         use_no_sync: bool,
-        sharding_strategy: ShardingStrategy | None,
+        sharding_strategy: Optional[ShardingStrategy],
     ):
         """
         Tests FSDP's communication cost in terms of calls to collective
         communication primitives (i.e. all-gather and reduce-scatter).
+
         Arguments:
             nested_model (bool): If ``True``, uses ``NestedWrappedModule``,
                 which has nested FSDP instances; if ``False``, uses the default
@@ -229,22 +224,26 @@ class TestCommunication(FSDPTestContinuous):
         # Enable execution order checking
         dist.set_debug_level(dist.DebugLevel.DETAIL)
         # Initialize the model and inputs
-        fsdp_model = self._init_model(device_type, nested_model, sharding_strategy)
-        batch = fsdp_model.module.get_input(device_type)
+        device = torch.device("cuda")
+        fsdp_model = self._init_model(nested_model, sharding_strategy, device)
+        batch = fsdp_model.module.get_input(device)
+
         # Count the number of FSDP instances that manage parameters since the
         # number of collectives are a function of this number
         num_fsdp = sum(
             (isinstance(m, FSDP) and len(m.params) > 0) for m in fsdp_model.modules()
         )
+
         # If `use_no_sync=True`, we run `num_iters` iterations inside
         # `no_sync()` followed by `num_iters` iterations outside `no_sync()`,
         # and if `use_no_sync=False`, we only run `num_iters` iterations
         # outside `no_sync()`
         num_iters = 3
-        with (
-            patch("torch.distributed.all_gather_into_tensor") as mock_all_gather,
-            patch("torch.distributed.reduce_scatter_tensor") as mock_reduce_scatter,
-        ):
+        with patch(
+            "torch.distributed.all_gather_into_tensor"
+        ) as mock_all_gather, patch(
+            "torch.distributed.reduce_scatter_tensor"
+        ) as mock_reduce_scatter:
 
             def reset_mocks():
                 mock_all_gather.reset_mock()
@@ -289,14 +288,14 @@ class TestCommunication(FSDPTestContinuous):
                 self.assertEqual(num_reduce_scatters, ref_num_reduce_scatters)
 
 
-class TestExplicitUnshard(FSDPTestContinuous):
+class TestExplicitUnshard(FSDPTest):
     @property
     def world_size(self) -> int:
-        return min(_get_device_module(self.device_type).device_count(), 2)
+        return min(torch.cuda.device_count(), 2)
 
     @skip_if_lt_x_gpu(2)
     @parametrize("use_orig_params", [False, True])
-    def test_unshard_async(self, device, use_orig_params: bool):
+    def test_unshard_async(self, use_orig_params: bool):
         class ReduceModule(nn.Module):
             def __init__(self, dim: int, group: dist.ProcessGroup):
                 super().__init__()
@@ -317,7 +316,7 @@ class TestExplicitUnshard(FSDPTestContinuous):
                 self.mlp2 = MLP(dim)
                 self.mlp3 = MLP(dim)
 
-            def forward(self, ys: list[torch.Tensor], works: list[dist.Work]):
+            def forward(self, ys: List[torch.Tensor], works: List[dist.Work]):
                 (y1, y2, y3), (work1, work2, work3) = ys, works
                 work1.wait()
                 z1 = self.mlp1(y1)
@@ -350,27 +349,30 @@ class TestExplicitUnshard(FSDPTestContinuous):
         group = self.process_group
         batch_size, dim = 2, 8
         torch.manual_seed(42)
-        ref_model = DDP(ReduceModel(dim, group).to(device_type), device_ids=[self.rank])
+        ref_model = DDP(ReduceModel(dim, group).cuda(), device_ids=[self.rank])
         ref_optim = torch.optim.Adam(ref_model.parameters(), lr=1e-2)
+
         torch.manual_seed(42)
         model = ReduceModel(dim, group)
         model.mlps = FSDP(
             model.mlps,
             sharding_strategy=ShardingStrategy.SHARD_GRAD_OP,
             auto_wrap_policy=ModuleWrapPolicy((MLP,)),
-            device_id=device_type.type,
+            device_id=self.rank,
             use_orig_params=use_orig_params,
         )
         model.mlps.check_is_root()
         mlp_params = set(model.mlps.parameters())
         mlp_param_names = {n for n, p in model.named_parameters() if p in mlp_params}
         DDP._set_params_and_buffers_to_ignore_for_model(model, mlp_param_names)
-        model = DDP(model.to(device_type), device_ids=[self.rank])
+        model = DDP(model.cuda(), device_ids=[self.rank])
         optim = torch.optim.Adam(model.parameters(), lr=1e-2)
+
         torch.manual_seed(42 + self.rank + 1)
-        inp = torch.randn((batch_size, dim), device=device_type)
+        inp = torch.randn((batch_size, dim), device="cuda")
+
         for _ in range(10):
-            losses: list[torch.Tensor] = []
+            losses: List[torch.Tensor] = []
             for _model, _optim in ((ref_model, ref_optim), (model, optim)):
                 losses.append(_model(inp).sum())
                 losses[-1].backward()
@@ -379,52 +381,9 @@ class TestExplicitUnshard(FSDPTestContinuous):
             self.assertEqual(losses[0], losses[1])
             model.module.mlps._wait_unshard_streams_on_current_stream()
 
-    @skip_if_lt_x_gpu(2)
-    @parametrize("use_orig_params", [False, True])
-    @parametrize("async_op", [False, True])
-    def test_unshard_after_backward(
-        self, device, use_orig_params: bool, async_op: bool
-    ):
-        """
-        Tests that _unshard() works correctly after backward().
-        This is a regression test for issue #168947 where a Stream was
-        incorrectly passed instead of an Event to UnshardHandle.
-        """
-        model = nn.Sequential(
-            MLP(dim=8),
-            nn.Linear(8, 4, device=device_type.type),
-        )
-        model[0] = FSDP(
-            model[0],
-            device_id=device_type.type,
-            use_orig_params=use_orig_params,
-        )
 
-        inp = torch.randn(2, 8, device=device_type.type)
-        output = model(inp)
-        loss = output.sum()
-        loss.backward()
+instantiate_parametrized_tests(TestCommunication)
+instantiate_parametrized_tests(TestExplicitUnshard)
 
-        # This should not raise "AttributeError: 'Stream' object has no attribute 'wait'"
-        handle = model[0]._unshard(async_op=async_op)
-
-        if async_op:
-            self.assertIsNotNone(handle)
-            handle.wait()
-        else:
-            self.assertIsNone(handle)
-
-        for param in model[0].parameters():
-            self.assertIsNotNone(param)
-            self.assertTrue(param.numel() > 0)
-
-
-devices = ("cuda", "hpu", "xpu")
-instantiate_device_type_tests(
-    TestCommunication, globals(), only_for=devices, allow_xpu=True
-)
-instantiate_device_type_tests(
-    TestExplicitUnshard, globals(), only_for=devices, allow_xpu=True
-)
 if __name__ == "__main__":
     run_tests()

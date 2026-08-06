@@ -4,6 +4,7 @@
 
 import io
 import textwrap
+from typing import Dict, List, Optional
 
 import torch
 import torch.utils.bundled_inputs
@@ -31,7 +32,7 @@ class TestBundledInputs(TestCase):
 
         sm = torch.jit.script(SingleTensorModel())
         original_size = model_size(sm)
-        get_expr: list[str] = []
+        get_expr: List[str] = []
         samples = [
             # Tensor with small numel and small storage.
             (torch.tensor([1]),),
@@ -57,20 +58,17 @@ class TestBundledInputs(TestCase):
         # Make sure the model only grew a little bit,
         # despite having nominally large bundled inputs.
         augmented_size = model_size(sm)
-
         self.assertLess(augmented_size, original_size + (1 << 12))
 
         loaded = save_and_load(sm)
         inflated = loaded.get_all_bundled_inputs()
         self.assertEqual(loaded.get_num_bundled_inputs(), len(samples))
         self.assertEqual(len(inflated), len(samples))
-
         self.assertTrue(loaded(*inflated[0]) is inflated[0][0])
 
         for idx, inp in enumerate(inflated):
             self.assertIsInstance(inp, tuple)
             self.assertEqual(len(inp), 1)
-
             self.assertIsInstance(inp[0], torch.Tensor)
             if idx != 5:
                 # Strides might be important for benchmarking.
@@ -138,7 +136,6 @@ class TestBundledInputs(TestCase):
         loaded = save_and_load(sm)
         inflated = loaded.get_all_bundled_inputs()
         self.assertEqual(inflated, samples)
-
         self.assertTrue(loaded(*inflated[0]) == "first 1")
 
     def test_multiple_methods_with_inputs(self):
@@ -185,7 +182,6 @@ class TestBundledInputs(TestCase):
         self.assertEqual(inflated, loaded.get_all_bundled_inputs_for_foo())
 
         # Check running and size helpers
-
         self.assertTrue(loaded(*inflated[0]) is inflated[0][0])
         self.assertEqual(loaded.get_num_bundled_inputs(), len(samples))
 
@@ -204,7 +200,7 @@ class TestBundledInputs(TestCase):
         self.assertEqual(all_info["foo"]["info"], info)
 
         # example of how to turn the 'get_inputs_function_name' into the actual list of bundled inputs
-        for func_name in all_info:
+        for func_name in all_info.keys():
             input_func_name = all_info[func_name]["get_inputs_function_name"][0]
             func_to_run = getattr(loaded, input_func_name)
             self.assertEqual(func_to_run(), samples)
@@ -270,8 +266,7 @@ class TestBundledInputs(TestCase):
         with self.assertRaises(TypeError):
             m = torch.jit.script(SingleTensorModel())
             torch.utils.bundled_inputs.augment_model_with_bundled_inputs(
-                m,
-                inputs="foo",  # type: ignore[arg-type]
+                m, inputs="foo"  # type: ignore[arg-type]
             )
 
         # List of non tuples. Most common error using the api.
@@ -279,7 +274,9 @@ class TestBundledInputs(TestCase):
             m = torch.jit.script(SingleTensorModel())
             torch.utils.bundled_inputs.augment_model_with_bundled_inputs(
                 m,
-                inputs=[torch.ones(1, 2)],  # type: ignore[list-item]
+                inputs=[
+                    torch.ones(1, 2),  # type: ignore[list-item]
+                ],
             )
 
     def test_double_augment_fail(self):
@@ -332,8 +329,8 @@ class TestBundledInputs(TestCase):
         class MyModel(torch.nn.Module):
             def forward(
                 self,
-                arg1: dict[str, torch.Tensor] | None,
-                arg2: list[torch.Tensor] | None,
+                arg1: Optional[Dict[str, torch.Tensor]],
+                arg2: Optional[List[torch.Tensor]],
                 arg3: torch.Tensor,
             ):
                 if arg1 is None:
@@ -359,10 +356,7 @@ class TestBundledInputs(TestCase):
 
         def condensed(t):
             ret = torch.empty_like(t).flatten()[0].clone().expand(t.shape)
-            if ret.storage().size() != 1:
-                raise AssertionError(
-                    f"storage size must be 1, got {ret.storage().size()}"
-                )
+            assert ret.storage().size() == 1
             # ret.storage()[0] = 0
             return ret
 
@@ -400,7 +394,7 @@ class TestBundledInputs(TestCase):
                 """,
             )
 
-        out: list[str] = []
+        out: List[str] = []
         sm = torch.jit.script(MyModel())
         original_size = model_size(sm)
         small_inputs = (
@@ -416,22 +410,25 @@ class TestBundledInputs(TestCase):
 
         torch.utils.bundled_inputs.augment_model_with_bundled_inputs(
             sm,
-            [big_inputs, small_inputs],
+            [
+                big_inputs,
+                small_inputs,
+            ],
             _receive_inflate_expr=out,
         )
         augmented_size = model_size(sm)
         # assert the size has not increased more than 8KB
-
         self.assertLess(augmented_size, original_size + (1 << 13))
 
         loaded = save_and_load(sm)
         inflated = loaded.get_all_bundled_inputs()
         self.assertEqual(len(inflated[0]), len(small_inputs))
 
-        methods, _ = (
-            torch.utils.bundled_inputs._get_bundled_inputs_attributes_and_methods(
-                loaded
-            )
+        (
+            methods,
+            _,
+        ) = torch.utils.bundled_inputs._get_bundled_inputs_attributes_and_methods(
+            loaded
         )
 
         # One Function (forward)

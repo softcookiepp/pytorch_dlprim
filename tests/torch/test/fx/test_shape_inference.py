@@ -86,7 +86,7 @@ class TestShapeInference(unittest.TestCase):
 
     def test_infer_shape(self):
         class TestModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.w_1 = torch.empty([256, 328])
                 self.b_1 = torch.empty([256])
@@ -108,10 +108,3 @@ class TestShapeInference(unittest.TestCase):
         gm = generate_graph_module(m)
         input_tensors = [torch.randn(1, 1)]
         infer_shape(gm, input_tensors)
-
-
-if __name__ == "__main__":
-    raise RuntimeError(
-        "This test is not currently used and should be "
-        "enabled in discover_tests.py if required."
-    )

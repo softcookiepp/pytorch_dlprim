@@ -6,7 +6,6 @@ from enum import Enum
 
 # Importing these files make modifications to the op_db that we need
 import test_ops  # noqa: F401
-
 import test_vmap  # noqa: F401
 from functorch_additional_op_db import additional_op_db
 
@@ -14,7 +13,6 @@ import torch
 import torch._functorch.top_operators_github_usage as top_ops
 from torch.testing._internal.common_device_type import toleranceOverride
 from torch.testing._internal.common_methods_invocations import op_db
-
 
 all_overridable = list(torch.overrides.get_testing_overrides().keys())
 
@@ -36,7 +34,7 @@ def get_public_overridable_apis(pytorch_root="/raid/rzou/pt/debug-cpu"):
     for module, module_name, src in public_docs:
         with open(f"{pytorch_root}/{src}") as f:
             lines = f.readlines()
-        # APIs either begin with 4 spaces or ".. autofunction::"
+        # APIs eitehr begin with 4 spaces or ".. autofunction::"
         api_lines1 = [line.strip() for line in lines if line.startswith(" " * 4)]
         api_lines2 = [
             line.strip()[len(".. autofunction:: ") :]
@@ -44,7 +42,7 @@ def get_public_overridable_apis(pytorch_root="/raid/rzou/pt/debug-cpu"):
             if line.startswith(".. autofunction::")
         ]
         lines = api_lines1 + api_lines2
-        lines = [line.removeprefix("Tensor.") for line in lines]
+        lines = [line[7:] if line.startswith("Tensor.") else line for line in lines]
         lines = [line for line in lines if hasattr(module, line)]
         for line in lines:
             api = getattr(module, line)
@@ -90,7 +88,7 @@ denylist = {
 def get_method_only_ops_we_care_about():
     apis = get_public_overridable_apis()
     result = []
-    for key in apis:
+    for key in apis.keys():
         if not key.startswith("torch.Tensor"):
             continue
         if key in denylist:
@@ -99,7 +97,7 @@ def get_method_only_ops_we_care_about():
         # filter out in-place
         if api.endswith("_"):
             continue
-        if f"torch.{api}" not in apis:
+        if f"torch.{api}" not in apis.keys():
             result.append(api)
     return result
 
@@ -110,11 +108,11 @@ def get_method_only_ops_we_care_about():
 def get_public_overridable_ops():
     results = get_public_overridable_apis()
     cpy = copy.deepcopy(results)
-    for key in cpy:
+    for key in cpy.keys():
         if not key.startswith("torch.Tensor"):
             continue
         api = key.split(".")[2]
-        if f"torch.{api}" in results:
+        if f"torch.{api}" in results.keys():
             del results[key]
     return results
 
@@ -122,7 +120,7 @@ def get_public_overridable_ops():
 def get_public_overridable_outplace_ops():
     results = get_public_overridable_ops()
     cpy = copy.deepcopy(results)
-    for key in cpy:
+    for key in cpy.keys():
         # NB: there are no dunder methods bcs we don't document those
         if key.endswith("_"):
             del results[key]
@@ -132,7 +130,7 @@ def get_public_overridable_outplace_ops():
 def get_public_overridable_outplace_we_care_about():
     results = get_public_overridable_outplace_ops()
     cpy = copy.deepcopy(results)
-    for key in cpy:
+    for key in cpy.keys():
         # quantization
         if "quant" in key or ".q_" in key:
             del results[key]
@@ -294,10 +292,7 @@ def get_ops_percentage(torch_threshold, nn_fn_threshold):
         if opname == "t":
             return 0
         result = [op[1] for op in data if op[0] == opname]
-        if len(result) != 1:
-            raise AssertionError(
-                f"Expected exactly 1 result for {opname}, got {len(result)}"
-            )
+        assert len(result) == 1
         return result[0]
 
     # get all operators that are not in the denylist
@@ -355,14 +350,11 @@ tests = {
 
 
 def is_decorateinfo_skip_or_xfail(decorateinfo):
-    if len(decorateinfo.decorators) != 1:
-        raise AssertionError(
-            f"Expected exactly 1 decorator, got {len(decorateinfo.decorators)}"
-        )
+    assert len(decorateinfo.decorators) == 1
     actual_decorator = decorateinfo.decorators[0]
     if isinstance(actual_decorator, toleranceOverride):
         return False
-    if actual_decorator is unittest.expectedFailure:
+    if actual_decorator == unittest.expectedFailure:
         return True
     # Assume the rest are skips
     return True
@@ -419,6 +411,14 @@ def get_statuses(for_subset=None, invert=False):
                     result.remove(decorator.test_name)
         return result
 
+    def get_all_aliases(op):
+        opinfos = op_to_opinfo[op]
+        result = []
+        for opinfo in opinfos:
+            result.append(opinfo.name)
+            result.extend(opinfo.aliases)
+        return set(result)
+
     for name, op in get_covered_ops(overridable_outplace_we_care_about).items():
         successful_tests = get_covered_tests(op)
         failed_tests = tests - successful_tests
@@ -468,8 +468,7 @@ print(
 
 
 def remove_torch(name):
-    if name[:6] != "torch.":
-        raise AssertionError(f"Expected name to start with 'torch.', got {name!r}")
+    assert name[:6] == "torch."
     return name[6:]
 
 
@@ -522,15 +521,8 @@ def get_jvp_coverage(subset=None):
     supports_forward_ad = {
         remove_torch(test) for test in list(supports_forwardad_ops_dct.keys())
     }
-    if not supports_forward_ad.issubset(supports_autograd):
-        raise AssertionError(
-            f"supports_forward_ad is not a subset of supports_autograd: "
-            f"{supports_forward_ad - supports_autograd}"
-        )
-    if not supports_autograd.issubset(ops):
-        raise AssertionError(
-            f"supports_autograd is not a subset of ops: {supports_autograd - ops}"
-        )
+    assert supports_forward_ad.issubset(supports_autograd)
+    assert supports_autograd.issubset(ops)
 
     failed_ops = get_skipped_or_xfailed_ops_for("test_jvp")
 
@@ -713,10 +705,7 @@ class Operator:
     def __init__(self, name):
         self.name = name
         self.opinfos = NAME_TO_OPINFO.get(name, None)
-        if self.opinfos is not None and len(self.opinfos) == 0:
-            raise AssertionError(
-                f"Operator {name!r} found in NAME_TO_OPINFO but has empty opinfos list"
-            )
+        assert self.opinfos is None or len(self.opinfos) > 0
 
     def has_opinfo(self):
         return self.opinfos is not None

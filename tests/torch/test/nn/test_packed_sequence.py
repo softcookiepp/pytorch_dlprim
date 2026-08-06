@@ -58,7 +58,7 @@ class PackedSequenceTest(TestCase):
                     )
                     # Apply cast to `PackedSequence` instance and unpack
                     masked = getattr(packed, cast_str)()
-                    unpacked, _ = rnn_utils.pad_packed_sequence(masked)
+                    unpacked, lengths_out = rnn_utils.pad_packed_sequence(masked)
                     self.assertEqual(unpacked.type(), expected_type_str)
 
     def test_wrong_order(self):
@@ -188,23 +188,6 @@ class PackedSequenceTest(TestCase):
         padded = rnn_utils.pad_sequence([b, a, c])
         self.assertEqual(padded, expected.transpose(0, 1))
 
-        # padding_side = "left", batch_first=True
-        expected = torch.tensor([[0, 4, 5], [1, 2, 3], [0, 0, 6]])
-        padded = rnn_utils.pad_sequence(
-            [b, a, c],
-            batch_first=True,
-            padding_side="left",
-        )
-        self.assertEqual(padded, expected)
-
-        # padding_side = "left", batch_first=False
-        padded = rnn_utils.pad_sequence(
-            [b, a, c],
-            batch_first=False,
-            padding_side="left",
-        )
-        self.assertEqual(padded, expected.transpose(0, 1))
-
         # pad with non-zero value
         expected = torch.tensor([[4, 5, 1], [1, 2, 3], [6, 1, 1]])
         padded = rnn_utils.pad_sequence([b, a, c], True, 1)
@@ -218,38 +201,22 @@ class PackedSequenceTest(TestCase):
         # more dimensions
         maxlen = 9
         for num_dim in (0, 1, 2, 3):
-            sequences: list[torch.Tensor] = []
+            sequences = []
             trailing_dims = [4] * num_dim
             for i in range(1, maxlen + 1):
                 seq_len = i * i
                 sequences.append(torch.rand(seq_len, 5, *trailing_dims))
             random.shuffle(sequences)
+            expected = []
+            for seq in sequences:
+                expected.append(pad(seq, maxlen * maxlen))
             # batch first = true
-            expected = torch.stack([pad(seq, maxlen * maxlen) for seq in sequences])
+            expected = torch.stack(expected)
             padded = rnn_utils.pad_sequence(sequences, True)
             self.assertEqual(padded, expected)
 
             # batch first = false
             padded = rnn_utils.pad_sequence(sequences)
-            self.assertEqual(padded, expected.transpose(0, 1))
-
-            # padding_side = "left", batch_first=True
-            expected = torch.stack(
-                [pad(seq.flip(0), maxlen * maxlen).flip(0) for seq in sequences]
-            )
-            padded = rnn_utils.pad_sequence(
-                sequences,
-                batch_first=True,
-                padding_side="left",
-            )
-            self.assertEqual(padded, expected)
-
-            # padding_side = "left", batch_first=False
-            padded = rnn_utils.pad_sequence(
-                sequences,
-                batch_first=False,
-                padding_side="left",
-            )
             self.assertEqual(padded, expected.transpose(0, 1))
 
     def test_unpad_sequence(self):
@@ -393,6 +360,7 @@ class PackedSequenceTest(TestCase):
                 sum(map(bool, filter(lambda x: x >= i, sorted_lengths)))
                 for i in range(1, max_length + 1)
             ]
+            offset = 0
             padded = torch.cat(
                 [
                     pad(
@@ -491,36 +459,6 @@ class PackedSequenceTest(TestCase):
             packed = rnn_utils.pack_padded_sequence(
                 torch.randn([0, 1, 10]), torch.randn([11, 14, 14, 2]), True
             )
-
-    def test_empty_packed_sequence(self):
-        """
-        Regression test for https://github.com/pytorch/pytorch/issues/149622
-        Tests that pad_packed_sequence and unpack_sequence handle empty tensors
-        without segmentation fault (CVE-2025-2998, CVE-2025-2999)
-        """
-        # Test case 1: pad_packed_sequence with empty tensors
-        # Previously caused segmentation fault
-        empty_data = torch.randn(0, 5)
-        empty_batch_sizes = torch.tensor([], dtype=torch.int64)
-        empty_packed = rnn_utils.PackedSequence(
-            empty_data, empty_batch_sizes, None, None
-        )
-
-        # Should not crash - either return empty result or raise informative error
-        with self.assertRaises(RuntimeError):
-            rnn_utils.pad_packed_sequence(empty_packed, batch_first=True)
-
-        # Test case 2: unpack_sequence with empty tensors
-        # Previously caused segmentation fault
-        empty_data = torch.tensor([])
-        empty_batch_sizes = torch.tensor([], dtype=torch.int64)
-        packed = rnn_utils.PackedSequence(
-            data=empty_data, batch_sizes=empty_batch_sizes
-        )
-
-        # Should not crash - either return empty list or raise informative error
-        with self.assertRaises(RuntimeError):
-            rnn_utils.unpack_sequence(packed)
 
 
 if __name__ == "__main__":

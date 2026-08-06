@@ -2,9 +2,10 @@
 
 import contextlib
 import functools
+import os
 import unittest
-from collections.abc import Callable
 from copy import deepcopy
+from typing import Callable, Optional
 
 import torch
 import torch.distributed as dist
@@ -12,7 +13,6 @@ from torch import _inductor as inductor, nn
 from torch._C import FileCheck
 from torch._dynamo import compiled_autograd
 from torch._dynamo.utils import counters
-from torch._inductor.test_case import TestCase as InductorTestCase
 from torch._inductor.utils import run_and_get_triton_code
 from torch.distributed._composable.replicate import replicate
 from torch.distributed.algorithms.ddp_comm_hooks import (
@@ -26,18 +26,14 @@ from torch.distributed.tensor.parallel import (
 )
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
 from torch.testing._internal.common_distributed import (
-    DistributedTestBase,
+    MultiProcessTestCase,
     skip_if_lt_x_gpu,
-    sm_is_or_higher_than,
+    skip_if_rocm,
 )
-from torch.testing._internal.common_fsdp import get_devtype
 from torch.testing._internal.common_utils import run_tests
-from torch.testing._internal.distributed.fake_pg import FakeStore
-from torch.testing._internal.inductor_utils import HAS_GPU
+from torch.utils._triton import has_triton
 from torch.utils.checkpoint import checkpoint
 
-
-device_type = str(get_devtype())
 
 DIM = 2000
 
@@ -73,34 +69,51 @@ def compiler_fn(no_inductor=False):
     return _compiler_fn
 
 
-class MultiProcessInductorTestCase(DistributedTestBase, InductorTestCase):
-    """
-    A version of MultiProcessTestCase that derives from the Inductor TestCase
-    to handle isolation of the inductor cache dir.
-    """
-
-
-class ReplicateTest(MultiProcessInductorTestCase):
+class ReplicateTest(MultiProcessTestCase):
     @property
     def world_size(self) -> int:
-        return min(2, torch.get_device_module(device_type).device_count())
+        return min(2, torch.cuda.device_count())
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._spawn_processes()
+
+    def tearDown(self):
+        super().tearDown()
+        try:
+            os.remove(self.file_name)
+        except OSError:
+            pass
 
     def _test_compile(
         self,
         *,
+        use_gpu: bool,
         no_sync: bool,
-        setup_func: Callable | None = None,
+        setup_func: Optional[Callable] = None,
         no_inductor: bool = False,
         no_compile_forward: bool = False,
-        checkpoint: bool = False,
-        device: str | torch.device,
     ):
-        self.create_pg(device)
-        torch._dynamo.config.optimize_ddp = "python_reducer"
+        backend = "nccl" if use_gpu else "gloo"
+        dist.init_process_group(
+            backend=backend,
+            rank=self.rank,
+            world_size=self.world_size,
+            store=dist.FileStore(self.file_name, self.world_size),
+        )
+        if use_gpu:
+            torch.cuda.set_device(f"cuda:{self.rank}")
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
+
+        torch._dynamo.config.optimize_ddp = (
+            "python_reducer_without_compiled_forward"
+            if no_compile_forward
+            else "python_reducer"
+        )
         torch.manual_seed(123)
-        if device_type == "xpu":
-            torch.use_deterministic_algorithms(True, warn_only=True)
-        model = Net(checkpoint=checkpoint).to(device)
+        model = Net().to(device)
         input = torch.randn([1, DIM], device=device)
 
         compiled_replicate_model = replicate(deepcopy(model))
@@ -152,7 +165,7 @@ class ReplicateTest(MultiProcessInductorTestCase):
                     bwd_context = (
                         contextlib.nullcontext()
                         if model_idx == 0
-                        else compiled_autograd._enable(compiler_fn(no_inductor))
+                        else compiled_autograd.enable(compiler_fn(no_inductor))
                     )
                     with bwd_context:
                         loss = models[model_idx](input).sum()
@@ -176,7 +189,6 @@ class ReplicateTest(MultiProcessInductorTestCase):
         self.assertEqual(
             tuple(model.parameters()), tuple(compiled_ddp_model.parameters())
         )
-        dist.destroy_process_group()
 
     def test_compile_cpu(self):
         # Test the coalesced_op with CPU.
@@ -184,7 +196,7 @@ class ReplicateTest(MultiProcessInductorTestCase):
             "fuse_ddp_with_coalesced_op",
             "schedule_comm_wait",
         ]
-        self._test_compile(no_sync=False, device="cpu")
+        self._test_compile(use_gpu=False, no_sync=False)
 
     def test_compile_cpu_no_sync(self):
         # Test the coalesced_op with CPU.
@@ -192,34 +204,18 @@ class ReplicateTest(MultiProcessInductorTestCase):
             "fuse_ddp_with_coalesced_op",
             "schedule_comm_wait",
         ]
-        self._test_compile(no_sync=True, device="cpu")
+        self._test_compile(use_gpu=False, no_sync=True)
 
-    @unittest.skipIf(not HAS_GPU, "Inductor+gpu needs triton and recent GPU arch")
+    @unittest.skipIf(not has_triton(), "Inductor+gpu needs triton and recent GPU arch")
+    @skip_if_rocm
     @skip_if_lt_x_gpu(2)
-    @torch._inductor.config.patch(
-        reorder_for_locality=False, reorder_for_peak_memory=False
-    )
     def test_compile_gpu(self):
-        self._test_compile(no_sync=False, checkpoint=False, device=device_type)
+        self._test_compile(use_gpu=True, no_sync=False)
 
-    @unittest.skipIf(not HAS_GPU, "Inductor+gpu needs triton and recent GPU arch")
-    @skip_if_lt_x_gpu(2)
-    @torch._inductor.config.patch(
-        reorder_for_locality=False, reorder_for_peak_memory=False
-    )
-    def test_compile_gpu_ac(self):
-        self._test_compile(no_sync=False, checkpoint=True, device=device_type)
-
-    @unittest.skipIf(not HAS_GPU, "Inductor+gpu needs triton and recent GPU arch")
+    @unittest.skipIf(not has_triton(), "Inductor+gpu needs triton and recent GPU arch")
+    @skip_if_rocm
     @skip_if_lt_x_gpu(2)
     def test_compile_bf16(self):
-        # Check device capability wrt bf16
-        if (
-            not sm_is_or_higher_than(torch.device(device_type), 8, 0)
-            and torch.version.hip is None
-        ):
-            self.skipTest("bf16 requires sm >= 8.0")
-
         def setup(model, compiled_replicate_model, compiled_ddp_model) -> None:
             model.register_comm_hook(None, ddp_default_hooks.bf16_compress_hook)
             compiled_m = compiled_replicate_model._orig_mod
@@ -228,9 +224,10 @@ class ReplicateTest(MultiProcessInductorTestCase):
                 None, ddp_default_hooks.bf16_compress_hook
             )
 
-        self._test_compile(no_sync=False, setup_func=setup, device=device_type)
+        self._test_compile(use_gpu=True, no_sync=False, setup_func=setup)
 
-    @unittest.skipIf(not HAS_GPU, "Inductor+gpu needs triton and recent GPU arch")
+    @unittest.skipIf(not has_triton(), "Inductor+gpu needs triton and recent GPU arch")
+    @skip_if_rocm
     @skip_if_lt_x_gpu(2)
     def test_compile_fp16(self):
         def setup(model, compiled_replicate_model, compiled_ddp_model) -> None:
@@ -243,35 +240,14 @@ class ReplicateTest(MultiProcessInductorTestCase):
 
         # TODO: figure out why we need to disable Inductor to avoid test errors.
         self._test_compile(
-            no_sync=False, setup_func=setup, no_inductor=True, device=device_type
+            use_gpu=True, no_sync=False, setup_func=setup, no_inductor=True
         )
 
-    @unittest.skipIf(not HAS_GPU, "Inductor+gpu needs triton and recent GPU arch")
+    @unittest.skipIf(not has_triton(), "Inductor+gpu needs triton and recent GPU arch")
+    @skip_if_rocm
     @skip_if_lt_x_gpu(2)
     def test_compile_backward_only(self):
-        self._test_compile(no_sync=False, no_compile_forward=True, device=device_type)
-
-    def test_ddp_optimizer_splits_graph(self):
-        dist.init_process_group(
-            backend="gloo",
-            rank=self.rank,
-            world_size=self.world_size,
-            store=dist.FileStore(self.file_name, self.world_size),
-        )
-        torch._dynamo.config.optimize_ddp = "python_reducer"
-
-        model = Net()
-        compiled_model = torch.compile(replicate(model), fullgraph=False)
-
-        input = torch.randn([1, DIM])
-        loss = compiled_model(input).sum()
-
-        with compiled_autograd._enable(compiler_fn()):
-            loss.backward()
-
-        self.assertGreater(counters["inductor"]["ddp_buckets"], 0)
-
-        dist.destroy_process_group()
+        self._test_compile(use_gpu=True, no_sync=False, no_compile_forward=True)
 
     def _test_bucketing(self, init_process_group=True, loop=1):
         if init_process_group:
@@ -289,7 +265,7 @@ class ReplicateTest(MultiProcessInductorTestCase):
         )
 
         def bwd(loss):
-            with compiled_autograd._enable(compiler_fn()):
+            with compiled_autograd.enable(compiler_fn()):
                 loss.backward()
 
         for i in range(loop):
@@ -303,31 +279,21 @@ class ReplicateTest(MultiProcessInductorTestCase):
         self.assertEqual(counters["inductor"]["ddp_buckets"], 3)
         return code
 
-    @torch._inductor.config.patch(
-        _fuse_ddp_communication_passes=[
+    def test_bucketing_coalesced_op(self):
+        torch._inductor.config._fuse_ddp_communication_passes = [
             "fuse_ddp_with_coalesced_op",
             "schedule_comm_wait",
         ]
-    )
-    # todo: This pass mucks things up since Inductor thinks its inference
-    # and can apply this. Should turn off these passes in compiled autograd
-    @torch._inductor.config.patch(
-        reorder_for_locality=False,
-        reorder_for_peak_memory=False,
-        # The correctness of this test relies on the pointless permute ops
-        # in the joint graph does not get eliminated..
-        pattern_matcher=False,
-    )
-    def test_bucketing_coalesced_op(self):
+
         # Gradient is None
         code = self._test_bucketing()
         self.assertEqual(counters["inductor"]["ddp_buckets"], 3)
         fc = FileCheck()
-        for _ in range(3):
+        for i in range(3):
             fc.check("cpp_fused_").check(
                 "torch.ops._c10d_functional.all_reduce_coalesced_.default("
             )
-        for _ in range(3):
+        for i in range(3):
             fc.check("torch.ops._c10d_functional.wait_tensor.default")
 
         fc.run(code)
@@ -336,40 +302,30 @@ class ReplicateTest(MultiProcessInductorTestCase):
         code = self._test_bucketing(init_process_group=False, loop=2)
         self.assertEqual(counters["inductor"]["ddp_buckets"], 3)
         fc = FileCheck()
-        for _ in range(3):
+        for i in range(3):
             fc.check("cpp_fused_").check(
                 "torch.ops._c10d_functional.all_reduce_coalesced_.default("
             )
-        for _ in range(3):
+        for i in range(3):
             fc.check("torch.ops._c10d_functional.wait_tensor.default")
 
         fc.run(code)
 
-    @torch._inductor.config.patch(
-        _fuse_ddp_communication_passes=[
+    def test_bucketing_concat_op(self):
+        torch._inductor.config._fuse_ddp_communication_passes = [
             "fuse_ddp_with_concat_op",
             "schedule_comm_wait",
         ]
-    )
-    # todo: This pass mucks things up since Inductor thinks its inference
-    # and can apply this. Should turn off these passes in compiled autograd
-    @torch._inductor.config.patch(
-        reorder_for_locality=False,
-        reorder_for_peak_memory=False,
-        # The correctness of this test relies on the pointless permute ops
-        # in the joint graph does not get eliminated..
-        pattern_matcher=False,
-    )
-    def test_bucketing_concat_op(self):
+
         # Gradient is None
         code = self._test_bucketing()
         self.assertEqual(counters["inductor"]["ddp_buckets"], 3)
         fc = FileCheck()
-        for _ in range(3):
+        for i in range(3):
             fc.check("aten.flatten.using_ints(").check("cpp_fused_").check(
                 "torch.ops._c10d_functional.all_reduce_.default("
             )
-        for _ in range(3):
+        for i in range(3):
             fc.check("torch.ops._c10d_functional.wait_tensor.default")
         fc.run(code)
 
@@ -377,42 +333,46 @@ class ReplicateTest(MultiProcessInductorTestCase):
         code = self._test_bucketing(init_process_group=False, loop=2)
         self.assertEqual(counters["inductor"]["ddp_buckets"], 3)
         fc = FileCheck()
-        for _ in range(3):
+        for i in range(3):
             fc.check("aten.flatten.using_ints(").check("cpp_fused_").check(
                 "torch.ops._c10d_functional.all_reduce_.default("
             )
-        for _ in range(3):
+        for i in range(3):
             fc.check("torch.ops._c10d_functional.wait_tensor.default")
         fc.run(code)
 
 
-class DDP_TP_Test(InductorTestCase):
-    def setUp(self):
-        # Hmm, why a specific set_device call for rank 0?
-        self.rank = 0
-        self.world_size = 4
-        torch.get_device_module(device_type).set_device(device_type)
+class DDP_TP_Test(MultiProcessTestCase):
+    @property
+    def world_size(self) -> int:
+        return min(4, torch.cuda.device_count())
 
-        store = FakeStore()
-        dist.init_process_group(
-            backend="fake",
-            world_size=self.world_size,
-            rank=self.rank,
-            store=store,
-        )
+    def setUp(self) -> None:
+        super().setUp()
+        self._spawn_processes()
 
     def tearDown(self):
-        dist.destroy_process_group()
+        super().tearDown()
+        try:
+            os.remove(self.file_name)
+        except OSError:
+            pass
 
-    @unittest.skip(
-        "Temporarily disabled due to SymInt error: `unhashable type: non-nested SymInt`"
-    )
-    @unittest.skipIf(not HAS_GPU, "Inductor+gpu needs triton and recent GPU arch")
+    @unittest.skipIf(not has_triton(), "Inductor+gpu needs triton and recent GPU arch")
+    @skip_if_rocm
+    @skip_if_lt_x_gpu(4)
     def test_ddp_tp(self):
-        ref_model = Net()
-        compiled_replicate_model = deepcopy(ref_model)
+        torch.cuda.set_device(f"cuda:{self.rank}")
+        dist.init_process_group(
+            backend="nccl",
+            rank=self.rank,
+            world_size=self.world_size,
+            store=dist.FileStore(self.file_name, self.world_size),
+        )
+        model = Net().cuda()
+        compiled_replicate_model = deepcopy(model)
         mesh_2d = init_device_mesh(
-            device_type, (2, self.world_size // 2), mesh_dim_names=("dp", "tp")
+            "cuda", (2, self.world_size // 2), mesh_dim_names=("dp", "tp")
         )
         tp_mesh = mesh_2d["tp"]
         dp_mesh = mesh_2d["dp"]
@@ -422,8 +382,8 @@ class DDP_TP_Test(InductorTestCase):
             "fc3": ColwiseParallel(),
             "fc4": RowwiseParallel(),
         }
-        ref_model = parallelize_module(ref_model, tp_mesh, parallelize_plan)
-        ref_model = replicate(ref_model, device_mesh=dp_mesh)
+        model = parallelize_module(model, tp_mesh, parallelize_plan)
+        model = replicate(model, device_mesh=dp_mesh)
         compiled_replicate_model = parallelize_module(
             compiled_replicate_model, tp_mesh, parallelize_plan
         )
@@ -431,23 +391,15 @@ class DDP_TP_Test(InductorTestCase):
             compiled_replicate_model, device_mesh=dp_mesh
         )
         compiled_replicate_model = torch.compile(compiled_replicate_model)
-        data = torch.randn([1, DIM])
-        with compiled_autograd._enable(compiler_fn()):
+        data = torch.randn([1, DIM]).cuda()
+        with compiled_autograd.enable(compiler_fn()):
             loss = compiled_replicate_model(data).sum()
-            # TODO: We need "pre-dispatch tracing of backward graph" to make this work:
-            # https://github.com/pytorch/pytorch/issues/127797#issuecomment-2291695474
-            with self.assertRaisesRegex(
-                AssertionError,
-                "Expected ProxyTensor, got <class 'torch.distributed.tensor.DTensor'>",
-            ):
-                loss.backward()
+            loss.backward()
 
-        # ref_loss = ref_model(data).sum()
-        # ref_loss.backward()
-        # for p1, p2 in zip(
-        #     ref_model.parameters(), compiled_replicate_model.parameters()
-        # ):
-        #     self.assertEqual(p1.grad, p2.grad)
+        loss = model(data).sum()
+        loss.backward()
+        for p1, p2 in zip(model.parameters(), compiled_replicate_model.parameters()):
+            self.assertEqual(p1.grad, p2.grad)
 
 
 if __name__ == "__main__":

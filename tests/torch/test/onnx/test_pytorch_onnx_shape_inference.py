@@ -3,15 +3,14 @@
 import io
 
 import numpy as np
-
 import onnx
 import pytorch_test_common
 from pytorch_test_common import skipIfUnsupportedMinOpsetVersion
 
 import torch
 from torch.onnx import _constants, utils
-from torch.onnx._internal.torchscript_exporter import jit_utils
-from torch.onnx._internal.torchscript_exporter._globals import GLOBALS
+from torch.onnx._globals import GLOBALS
+from torch.onnx._internal import jit_utils
 from torch.testing._internal import common_utils
 
 
@@ -350,7 +349,7 @@ class TestONNXShapeInference(pytorch_test_common.ExportTestCase):
         # the added "Cast" node doesn't stop shape inference.
         cond = g.addInput()
         cond.setType(input.type().with_dtype(torch.int32).with_sizes([1]))
-        _, (if_context, else_context), new_node = jit_utils.add_op_with_blocks(
+        if_op, (if_context, else_context), new_node = jit_utils.add_op_with_blocks(
             as_graphcontext(g), "If", cond, n_blocks=2
         )
         block1_output = if_context.op("Add", input, input)
@@ -367,10 +366,7 @@ class TestONNXShapeInference(pytorch_test_common.ExportTestCase):
         # Exporter will add "If" instead of raw "Squeeze" if it does not know
         # that if the dimension it is squeezing has size 1.
         squeezed = squeeze11(as_graphcontext(g), if_output, dim=0)
-        if squeezed.node().kind() != "onnx::Squeeze":
-            raise AssertionError(
-                f"Expected 'onnx::Squeeze' but got {squeezed.node().kind()!r}"
-            )
+        assert squeezed.node().kind() == "onnx::Squeeze"
         self.run_test(g, squeezed.node(), expect_tensor("Float", shape=(None, 5)))
 
 
@@ -399,14 +395,12 @@ class TestONNXCustomOpShapeInference(pytorch_test_common.ExportTestCase):
             f,
             opset_version=self.opset_version,
             custom_opsets={"com.microsoft": 1},
-            dynamo=False,
         )
 
         model_proto = onnx.load(io.BytesIO(f.getvalue()))
         model_value_info = model_proto.graph.value_info
         self.assertIsNotNone(model_value_info)
-        if not model_value_info:
-            raise AssertionError("model_value_info is empty")
+        assert model_value_info
         dims = model_value_info[0].type.tensor_type.shape.dim
         for i in range(len(dims)):
             # If node output has shape info, it should have dim_value
@@ -435,14 +429,12 @@ class TestONNXCustomOpShapeInference(pytorch_test_common.ExportTestCase):
             f,
             opset_version=self.opset_version,
             custom_opsets={"com.microsoft": 1},
-            dynamo=False,
         )
 
         model_proto = onnx.load(io.BytesIO(f.getvalue()))
         model_value_info = model_proto.graph.value_info
         self.assertIsNotNone(model_value_info)
-        if not model_value_info:
-            raise AssertionError("model_value_info is empty")
+        assert model_value_info
         dims = model_value_info[0].type.tensor_type.shape.dim
         for i in range(len(dims)):
             # If node output has shape info, it should have dim_value
@@ -475,14 +467,12 @@ class TestONNXCustomOpShapeInference(pytorch_test_common.ExportTestCase):
             custom_opsets={"com.microsoft": 1},
             input_names=["x"],
             dynamic_axes={"x": {0: "batch"}},
-            dynamo=False,
         )
 
         model_proto = onnx.load(io.BytesIO(f.getvalue()))
         model_value_info = model_proto.graph.value_info
         self.assertIsNotNone(model_value_info)
-        if not model_value_info:
-            raise AssertionError("model_value_info is empty")
+        assert model_value_info
         dims = model_value_info[0].type.tensor_type.shape.dim
         # The first axe should be dynamic as we defined when exporting
         self.assertTrue(dims[0].HasField("dim_param"))
@@ -517,7 +507,6 @@ class TestONNXCustomOpShapeInference(pytorch_test_common.ExportTestCase):
             f,
             opset_version=self.opset_version,
             custom_opsets={"com.microsoft": 1},
-            dynamo=False,
         )
 
         model_proto = onnx.load(io.BytesIO(f.getvalue()))
@@ -528,15 +517,12 @@ class TestONNXCustomOpShapeInference(pytorch_test_common.ExportTestCase):
             if node.op_type == "Inverse":
                 output_name = node.output[0]
                 break
-        if not output_name:
-            raise AssertionError("output_name not found")
+        assert output_name
         model_value_info = model_proto.graph.value_info
         self.assertIsNotNone(model_value_info)
-        if not model_value_info:
-            raise AssertionError("model_value_info is empty")
+        assert model_value_info
         for value_info in model_value_info:
-            if not value_info.name:
-                raise AssertionError("value_info.name is empty")
+            assert value_info.name
             if value_info.name == output_name:
                 dims = value_info.type.tensor_type.shape.dim
                 for i in range(len(dims)):

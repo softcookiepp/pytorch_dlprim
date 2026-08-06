@@ -5,6 +5,7 @@ from unittest import expectedFailure as xfail
 import numpy
 
 import torch._numpy as tnp
+
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
     parametrize,
@@ -51,20 +52,11 @@ class TestConvertDType(TestCase):
     def test_convert_np_dtypes(self, name, np_dtype):
         tnp_dtype = tnp.dtype(np_dtype)
         if name == "bool_":
-            if tnp_dtype != tnp.bool_:
-                raise AssertionError(
-                    f"Expected tnp_dtype == tnp.bool_, got {tnp_dtype}"
-                )
+            assert tnp_dtype == tnp.bool_
         elif tnp_dtype.name == "bool_":
-            if not name.startswith("bool"):
-                raise AssertionError(
-                    f"Expected name to start with 'bool', got '{name}'"
-                )
+            assert name.startswith("bool")
         else:
-            if tnp_dtype.name != name:
-                raise AssertionError(
-                    f"Expected tnp_dtype.name == '{name}', got '{tnp_dtype.name}'"
-                )
+            assert tnp_dtype.name == name
 
 
 if __name__ == "__main__":

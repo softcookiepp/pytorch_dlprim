@@ -4,22 +4,23 @@ import random
 import unittest
 import warnings
 from functools import partial
+
 from itertools import chain, combinations, permutations, product
 
 import numpy as np
 
 import torch
+
 from torch import nan
 from torch.testing import make_tensor
 from torch.testing._internal.common_device_type import (
     dtypes,
     dtypesIfCUDA,
-    dtypesIfXPU,
     instantiate_device_type_tests,
     largeTensorTest,
     onlyCPU,
+    onlyCUDA,
     onlyNativeDeviceTypes,
-    onlyOn,
 )
 from torch.testing._internal.common_dtype import (
     all_types,
@@ -262,7 +263,7 @@ class TestShapeOps(TestCase):
             expected = xn.diagonal(*args)
             self.assertEqual(expected.shape, result.shape)
             self.assertEqual(expected, result)
-        # test non-contiguous
+        # test non-continguous
         xp = x.permute(1, 2, 3, 0)
         result = torch.diagonal(xp, 0, -2, -1)
         expected = xp.numpy().diagonal(0, -2, -1)
@@ -272,7 +273,6 @@ class TestShapeOps(TestCase):
     @onlyNativeDeviceTypes
     @dtypes(*all_types())
     @dtypesIfCUDA(*all_types_and(torch.half))
-    @dtypesIfXPU(*all_types_and(torch.half))
     def test_trace(self, device, dtype):
         def test(shape):
             tensor = make_tensor(shape, dtype=dtype, device=device, low=-9, high=9)
@@ -389,13 +389,6 @@ class TestShapeOps(TestCase):
                     Y_out = torch.empty_like(X)
                     op(X, min_val, max_val, out=Y_out)
                     self.assertEqual(Y_expected, torch.isnan(Y_out))
-
-    def test_clamp_scalar_nan_bounds(self, device):
-        x = torch.ones(3, device=device)
-        y = torch.clamp(x, None, float("nan"))
-        self.assertTrue(torch.isnan(y).all())
-        y = torch.clamp(x, float("nan"), None)
-        self.assertTrue(torch.isnan(y).all())
 
     def test_clamp_raises_arg_errors(self, device):
         X = torch.randn(100, dtype=torch.float, device=device)
@@ -577,7 +570,7 @@ class TestShapeOps(TestCase):
                     np_fn = partial(np.flip, axis=flip_dim)
                     self.compare_with_numpy(torch_fn, np_fn, data)
 
-    @onlyOn(["cuda", "xpu"])  # CPU is too slow
+    @onlyCUDA  # CPU is too slow
     @largeTensorTest("17GB")  # 4 tensors of 4GB (in, out) x (torch, numpy) + 1GB
     @largeTensorTest(
         "81GB", "cpu"
@@ -589,16 +582,6 @@ class TestShapeOps(TestCase):
         np_fn = partial(np.flip, axis=0)
         self.compare_with_numpy(torch_fn, np_fn, t_in)
         del t_in
-
-    @onlyCPU
-    @unittest.expectedFailure
-    @dtypes(torch.quint4x2, torch.quint2x4)
-    def test_flip_unsupported_dtype(self, dtype):
-        scale, zero_point = 0.1, 5
-        qt = torch.quantize_per_tensor(
-            torch.randn(16, 16), scale=scale, zero_point=zero_point, dtype=dtype
-        )
-        torch.flip(qt, dims=(0,))
 
     def _test_fliplr_flipud(self, torch_fn, np_fn, min_dim, max_dim, device, dtype):
         for dim in range(min_dim, max_dim + 1):
@@ -724,7 +707,6 @@ class TestShapeOps(TestCase):
                 )
             if (
                 self.device_type == "cuda"
-                or self.device_type == "xpu"
                 or self.device_type == TEST_PRIVATEUSE1_DEVICE_TYPE
             ):
                 self.assertRaisesRegex(
@@ -771,7 +753,7 @@ class TestShapeOps(TestCase):
             return tuple_result, nontuple_result, out
 
         with self.assertRaises(RuntimeError):
-            torch.jit.script(_foo)
+            scripted_foo = torch.jit.script(_foo)
 
         # Verifies that JIT tracing works fine
         traced_foo = torch.jit.trace(_foo, t)
@@ -824,41 +806,6 @@ class TestShapeOps(TestCase):
                 x = torch.randint(-9, 9, shape, device=device, dtype=dtype)
             self.assertEqual(x.sparse_dim(), 0)
             self.assertEqual(x.dense_dim(), len(shape))
-
-    def test_unfold_all_devices_and_dtypes(self, device):
-        for dt in all_types_and_complex_and(torch.half, torch.bool, torch.bfloat16):
-            if dt == torch.bool:
-                x = torch.empty((0, 1, 3, 0), dtype=dt, device=device)
-                self.assertEqual((0, 1, 1, 0, 3), x.unfold(2, 3, 2).shape)
-            else:
-                x = torch.empty((0, 1, 3, 0), dtype=dt, device=device)
-                self.assertEqual((0, 1, 1, 0, 3), x.unfold(2, 3, 2).shape)
-
-    def test_unfold_scalars(self, device):
-        x = torch.tensor(0.5, device=device)
-        # unfold on a 0-dimensional tensor should always return a 1-d dimensional
-        # tensor of shape [size] (i.e., the second parameter to unfold)
-
-        self.assertEqual(torch.empty(0, device=device), x.unfold(0, 0, 1))
-        self.assertEqual(torch.empty(0, device=device), x.unfold(0, 0, 2))
-        self.assertEqual(torch.tensor([0.5], device=device), x.unfold(0, 1, 1))
-
-    def test_unfold_errors(self, device):
-        x = torch.arange(1.0, 8, device=device)
-        with self.assertRaisesRegex(RuntimeError, "size is -1 but must be >= 0"):
-            x.unfold(0, -1, 1)
-        with self.assertRaisesRegex(RuntimeError, "step is -1 but must be > 0"):
-            x.unfold(0, 1, -1)
-
-    def test_unfold_backward_errors(self, device):
-        grad_in = torch.randn(2, 3, device=device)
-        input_sizes = [6]
-
-        with self.assertRaisesRegex(ValueError, "step is 0 but must be > 0"):
-            torch.ops.aten.unfold_backward(grad_in, input_sizes, 0, 3, 0)
-
-        with self.assertRaisesRegex(RuntimeError, "size is -1 but must be >= 0"):
-            torch.ops.aten.unfold_backward(grad_in, input_sizes, 0, -1, 1)
 
 
 instantiate_device_type_tests(TestShapeOps, globals())

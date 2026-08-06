@@ -15,10 +15,10 @@ from torch.testing._internal.common_utils import run_tests, TestCase, parametriz
 
 
 class MockModule(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.l1 = torch.nn.Linear(1, 1)
-        self.buffer = torch.nn.Buffer(torch.ones(1))
+        self.register_buffer('buffer', torch.ones(1))
         self.foo = 0.0
 
     def forward(self, x):
@@ -26,12 +26,12 @@ class MockModule(torch.nn.Module):
 
 
 class MockTiedModule(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.l1 = torch.nn.Linear(1, 1)
         self.tied_bias = self.l1.bias
-        self.buffer = torch.nn.Buffer(torch.ones(1))
-        self.tied_buffer = self.buffer
+        self.register_buffer('buffer', torch.ones(1))
+        self.register_buffer('tied_buffer', self.buffer)
 
     def forward(self, x):
         return self.l1(x) + self.tied_bias + self.buffer + self.tied_buffer
@@ -182,13 +182,13 @@ class TestStatelessFunctionalAPI(TestCase):
         rm = torch.zeros(10)
         parameters = {'running_mean': rm}
         prev_rm = module.running_mean.clone()
-        functional_call(module, parameters, x)
+        res = functional_call(module, parameters, x)
         cur_rm = module.running_mean
         self.assertEqual(cur_rm, prev_rm)
         self.assertEqual(rm, torch.full((10,), 12.8))
-        # Now run functional without reparameterization and check that the module has
+        # Now run functional without reparametrization and check that the module has
         # been updated
-        functional_call(module, {}, x)
+        res = functional_call(module, {}, x)
         self.assertEqual(module.running_mean, torch.full((10,), 12.8))
 
     @parametrize("functional_call", [
@@ -210,7 +210,7 @@ class TestStatelessFunctionalAPI(TestCase):
         prev_buffer = module.buffer.clone()
         res = functional_call(module, parameters, x, tie_weights=False)
         self.assertEqual(x, res)
-        # check that the weights remain unmodified and were correctly accessed
+        # check that the weights remain unmodified and were correctly accesed
         cur_weight = module.l1.weight
         cur_buffer = module.buffer
         self.assertEqual(cur_weight, prev_weight)
@@ -272,6 +272,8 @@ class TestStatelessFunctionalAPI(TestCase):
     def test_reparametrize_some_weights(self, functional_call):
         module = MockModule()
         weight = torch.tensor([[2.0]])
+        bias = torch.tensor([5.0])
+        buffer = torch.tensor([3.0])
         extra = torch.tensor([1.0])
 
         parameters = {'l1.weight': weight}
@@ -425,7 +427,7 @@ class TestStatelessFunctionalAPI(TestCase):
     def test_tied_weights_warns(self, functional_call):
         module = MockModule()
         module.tied_bias = module.l1.bias
-        module.tied_buffer = torch.nn.Buffer(module.buffer)
+        module.register_buffer("tied_buffer", module.buffer)
 
     @parametrize("functional_call", [
         subtest(torch.func.functional_call, "torch_func"),
@@ -628,9 +630,9 @@ class TestStatelessFunctionalAPI(TestCase):
     ])
     def test_setattr(self, functional_call):
         class Foo(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
-                self.foo = torch.nn.Buffer(torch.tensor([0.0]))
+                self.register_buffer('foo', torch.tensor([0.0]))
 
             def forward(self, x):
                 self.foo = self.foo + 1
@@ -652,9 +654,9 @@ class TestStatelessFunctionalAPI(TestCase):
     ])
     def test_in_place_operator(self, functional_call):
         class Foo(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
-                self.foo = torch.nn.Buffer(torch.tensor([0.0]))
+                self.register_buffer('foo', torch.tensor([0.0]))
 
             def forward(self, x):
                 self.foo.add_(1)
@@ -676,10 +678,9 @@ class TestStatelessFunctionalAPI(TestCase):
     ])
     def test_setattr_strict(self, functional_call):
         class Bar(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
-                if hasattr(self, 'extra'):
-                    raise AssertionError("self should not have 'extra' attribute")
+                assert not hasattr(self, 'extra')
 
             def forward(self, x):
                 return x + self.extra
@@ -737,8 +738,6 @@ class TestStatelessFunctionalAPI(TestCase):
         self.assertEqual(res, other_inp)
         res_1 = functional_call(mod, a, (), {'inp': inp, 'other_inp': other_inp})
         self.assertEqual(res, res_1)
-        res_2 = functional_call(mod, a, kwargs={'inp': inp, 'other_inp': other_inp})
-        self.assertEqual(res, res_2)
 
     def test_functional_call_tuple_dicts(self):
         mod = MockModule()
@@ -754,7 +753,7 @@ class TestStatelessFunctionalAPI(TestCase):
         res = torch.func.functional_call(mod, (), x)
         self.assertEqual(res, mod(x))
 
-        # three dictionaries
+        # three dictonaries
         a = ({'l1.weight': torch.ones(1, 1)}, {'l1.bias': torch.ones(1)}, {'buffer': torch.zeros(1)})
         res = torch.func.functional_call(mod, a, x)
         self.assertEqual(res, x + 1)
@@ -776,10 +775,10 @@ class TestStatelessFunctionalAPI(TestCase):
     ])
     def test_functional_call_member_reference(self, functional_call):
         class Module(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.l1 = torch.nn.Linear(1, 1)
-                self.buffer = torch.nn.Buffer(torch.ones(1))
+                self.register_buffer('buffer', torch.ones(1))
 
             def forward(self, x):
                 parameters = tuple(self.parameters())
@@ -888,7 +887,7 @@ exit(len(w))
 """
         try:
             subprocess.check_output(
-                [sys.executable, '-W', 'always', '-c', script],
+                [sys.executable, '-W', 'all', '-c', script],
                 stderr=subprocess.STDOUT,
                 # On Windows, opening the subprocess with the default CWD makes `import torch`
                 # fail, so just set CWD to this script's directory

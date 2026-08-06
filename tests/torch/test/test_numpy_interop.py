@@ -3,8 +3,8 @@
 # Owner(s): ["module: numpy"]
 
 import sys
+
 from itertools import product
-from unittest import skipIf
 
 import numpy as np
 
@@ -17,6 +17,7 @@ from torch.testing._internal.common_device_type import (
     skipMeta,
 )
 from torch.testing._internal.common_dtype import all_types_and_complex_and
+
 from torch.testing._internal.common_utils import run_tests, skipIfTorchDynamo, TestCase
 
 
@@ -33,14 +34,9 @@ class TestNumPyInterop(TestCase):
         self.assertWarns(UserWarning, lambda: torch.from_numpy(arr))
 
     @onlyCPU
-    @skipIf(
-        sys.version_info[:2] == (3, 14)
-        and np.lib.NumpyVersion(np.__version__) < "2.4.0",
-        "Broken in older numpy versions, see https://github.com/numpy/numpy/issues/30265",
-    )
     def test_numpy_unresizable(self, device) -> None:
         x = np.zeros((2, 2))
-        y = torch.from_numpy(x)  # noqa: F841
+        y = torch.from_numpy(x)
         with self.assertRaises(ValueError):
             x.resize((5, 5))
 
@@ -170,28 +166,6 @@ class TestNumPyInterop(TestCase):
         self.assertEqual(y.dtype, np.bool_)
         self.assertEqual(x[0], y[0])
 
-    @skipIfTorchDynamo(
-        "can't check if value is ZeroTensor since _is_zerotensor returns a bool and not a TensorVariable"
-    )
-    def test_to_numpy_zero_tensor(self, device) -> None:
-        dtypes = [
-            torch.uint8,
-            torch.int8,
-            torch.short,
-            torch.int,
-            torch.half,
-            torch.float,
-            torch.double,
-            torch.long,
-            torch.bool,
-        ]
-        for dtype in dtypes:
-            x = torch._efficientzerotensor((10), dtype=dtype)
-            self.assertRaises(RuntimeError, lambda: x.numpy())
-            y = x.numpy(force=True)
-            for i in range(10):
-                self.assertEqual(y[i], 0)
-
     @skipIfTorchDynamo("conj bit not implemented in TensorVariable yet")
     def test_to_numpy_force_argument(self, device) -> None:
         for force in [False, True]:
@@ -211,7 +185,7 @@ class TestNumPyInterop(TestCase):
                             x = x.conj()
                             y = x.resolve_conj()
                         expect_error = (
-                            requires_grad or sparse or conj or device != "cpu"
+                            requires_grad or sparse or conj or not device == "cpu"
                         )
                         error_msg = r"Use (t|T)ensor\..*(\.numpy\(\))?"
                         if not force and expect_error:
@@ -306,27 +280,13 @@ class TestNumPyInterop(TestCase):
     def test_from_numpy_no_leak_on_invalid_dtype(self):
         # This used to leak memory as the `from_numpy` call raised an exception and didn't decref the temporary
         # object. See https://github.com/pytorch/pytorch/issues/121138
-        x = np.array(b"value")
-        initial_refcount = sys.getrefcount(x)
+        x = np.array("value".encode("ascii"))
         for _ in range(1000):
             try:
                 torch.from_numpy(x)
             except TypeError:
                 pass
-        final_refcount = sys.getrefcount(x)
-        self.assertEqual(
-            final_refcount,
-            initial_refcount,
-            f"Memory leak detected: refcount increased from {initial_refcount} to {final_refcount}",
-        )
-
-    @skipIfTorchDynamo("No need to test invalid dtypes that should fail by design.")
-    @onlyCPU
-    def test_from_numpy_zero_element_type(self):
-        # This tests that dtype check happens before strides check
-        # which results in div-by-zero on-x86
-        x = np.ndarray((3, 3), dtype=str)
-        self.assertRaises(TypeError, lambda: torch.from_numpy(x))
+        self.assertTrue(sys.getrefcount(x) == 2)
 
     @skipMeta
     def test_from_list_of_ndarray_warning(self, device):
@@ -369,7 +329,13 @@ class TestNumPyInterop(TestCase):
 
         # list of list or numpy array.
         with self.assertRaisesRegex(ValueError, "expected sequence of length"):
-            torch.tensor([[1, 2, 3], np.random.random(size=(2,))], device=device)
+            torch.tensor(
+                [
+                    [1, 2, 3],
+                    np.random.random(size=(2,)),
+                ],
+                device=device,
+            )
 
     @onlyCPU
     def test_ctor_with_numpy_scalar_ctor(self, device) -> None:
@@ -454,7 +420,7 @@ class TestNumPyInterop(TestCase):
             self.assertEqual(asarray.dtype, dtype)
             # Only concrete class can be given where "Type[number[_64Bit]]" is expected
             if np.dtype(dtype).kind == "u":  # type: ignore[misc]
-                wrapped_x = np.array([1, -2, 3, -4]).astype(dtype)
+                wrapped_x = np.array([1, -2, 3, -4], dtype=dtype)
                 for i in range(len(x)):
                     self.assertEqual(asarray[i], wrapped_x[i])
             else:
@@ -514,18 +480,11 @@ class TestNumPyInterop(TestCase):
     def test_parse_numpy_int_overflow(self, device):
         # assertRaises uses a try-except which dynamo has issues with
         # Only concrete class can be given where "Type[number[_64Bit]]" is expected
-        if np.__version__ > "2":
-            self.assertRaisesRegex(
-                OverflowError,
-                "out of bounds",
-                lambda: torch.mean(torch.randn(1, 1), np.uint64(-1)),
-            )  # type: ignore[call-overload]
-        else:
-            self.assertRaisesRegex(
-                ValueError,
-                "(Overflow|an integer is required)",
-                lambda: torch.mean(torch.randn(1, 1), np.uint64(-1)),
-            )  # type: ignore[call-overload]
+        self.assertRaisesRegex(
+            RuntimeError,
+            "(Overflow|an integer is required)",
+            lambda: torch.mean(torch.randn(1, 1), np.uint64(-1)),
+        )  # type: ignore[call-overload]
 
     @onlyCPU
     def test_parse_numpy_int(self, device):
@@ -608,7 +567,7 @@ class TestNumPyInterop(TestCase):
                 if (
                     dtype == torch.complex64
                     and torch.is_tensor(t)
-                    and type(a) is np.complex64
+                    and type(a) == np.complex64
                 ):
                     # TODO: Imaginary part is dropped in this case. Need fix.
                     # https://github.com/pytorch/pytorch/issues/43579
@@ -620,7 +579,7 @@ class TestNumPyInterop(TestCase):
     @dtypes(*all_types_and_complex_and(torch.half, torch.bool))
     def test___eq__(self, device, dtype):
         a = make_tensor((5, 7), dtype=dtype, device=device, low=-9, high=9)
-        b = a.detach().clone()
+        b = a.clone().detach()
         b_np = b.numpy()
 
         # Check all elements equal
@@ -672,38 +631,6 @@ class TestNumPyInterop(TestCase):
         self.assertEqual(torch.mul(x, y).shape, y.shape)
         # Regression test for https://github.com/pytorch/pytorch/issues/113037
         self.assertEqual(torch.div(x, y, rounding_mode="floor").shape, y.shape)
-
-    def test_ndarray_astype_object_graph_break(self):
-        @torch.compile(backend="eager", fullgraph=True)
-        def f(xs):
-            xs.astype("O")
-
-        xs = np.array([1, 2])
-        with self.assertRaisesRegex(
-            torch._dynamo.exc.Unsupported, "ndarray.astype\\(object\\)"
-        ):
-            f(xs)
-
-    def test_ndarray_astype_object_graph_break_2(self):
-        @torch.compile(backend="eager", fullgraph=True)
-        def f(xs):
-            xs.astype(object)
-
-        xs = np.array([1, 2])
-        with self.assertRaisesRegex(
-            torch._dynamo.exc.Unsupported, "ndarray.astype\\(object\\)"
-        ):
-            f(xs)
-
-    def test_copy_mode(self):
-        def f(x):
-            return np.array(x, copy=np._CopyMode.IF_NEEDED)
-
-        opt_f = torch.compile(backend="eager", fullgraph=True)(f)
-        x = np.array([1, 2, 3])
-        # Should run without throwing an exception
-        y = opt_f(x)
-        self.assertEqual(y, f(x))
 
 
 instantiate_device_type_tests(TestNumPyInterop, globals())

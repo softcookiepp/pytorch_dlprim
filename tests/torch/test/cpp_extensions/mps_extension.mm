@@ -3,7 +3,7 @@
 
 // this sample custom kernel is taken from:
 // https://developer.apple.com/documentation/metal/performing_calculations_on_a_gpu
-static at::native::mps::MetalShaderLibrary lib(R"MPS_ADD_ARRAYS(
+static const char* CUSTOM_KERNEL = R"MPS_ADD_ARRAYS(
 #include <metal_stdlib>
 using namespace metal;
 kernel void add_arrays(device const float* inA,
@@ -13,12 +13,7 @@ kernel void add_arrays(device const float* inA,
 {
     result[index] = inA[index] + inB[index];
 }
-
-kernel void add_one(device float* data,
-                    uint index [[thread_position_in_grid]]) {
-  data[index] += 1.0;
-}
-)MPS_ADD_ARRAYS");
+)MPS_ADD_ARRAYS";
 
 at::Tensor get_cpu_add_output(at::Tensor & cpu_input1, at::Tensor & cpu_input2) {
   return cpu_input1 + cpu_input2;
@@ -35,8 +30,20 @@ at::Tensor get_mps_add_output(at::Tensor & mps_input1, at::Tensor & mps_input2) 
   at::Tensor mps_output = at::empty_like(mps_input1);
 
   @autoreleasepool {
+    id<MTLDevice> device = MPSDevice::getInstance()->device();
+    NSError *error = nil;
     size_t numThreads = mps_output.numel();
-    auto kernelPSO = lib.getPipelineStateForFunc("add_arrays");
+    id<MTLLibrary> customKernelLibrary = [device newLibraryWithSource: [NSString stringWithUTF8String:CUSTOM_KERNEL]
+                                                              options: nil
+                                                                error: &error];
+    TORCH_CHECK(customKernelLibrary, "Failed to to create custom kernel library, error: ", error.localizedDescription.UTF8String);
+
+    id<MTLFunction> customFunction = [customKernelLibrary newFunctionWithName: @"add_arrays"];
+    TORCH_CHECK(customFunction, "Failed to create function state object for the kernel");
+
+    id<MTLComputePipelineState> kernelPSO = [device newComputePipelineStateWithFunction: customFunction error: &error];
+    TORCH_CHECK(kernelPSO, error.localizedDescription.UTF8String);
+
     MPSStream* mpsStream = getCurrentMPSStream();
 
     dispatch_sync(mpsStream->queue(), ^() {
@@ -46,40 +53,24 @@ at::Tensor get_mps_add_output(at::Tensor & mps_input1, at::Tensor & mps_input2) 
 
       // Encode the pipeline state object and its parameters.
       [computeEncoder setComputePipelineState: kernelPSO];
-      mtl_setBuffer(computeEncoder, mps_input1, 0);
-      mtl_setBuffer(computeEncoder, mps_input2, 1);
-      mtl_setBuffer(computeEncoder, mps_output, 2);
-      mtl_dispatch1DJob(computeEncoder, kernelPSO, numThreads);
+      [computeEncoder setBuffer: getMTLBufferStorage(mps_input1) offset:0 atIndex:0];
+      [computeEncoder setBuffer: getMTLBufferStorage(mps_input2) offset:0 atIndex:1];
+      [computeEncoder setBuffer: getMTLBufferStorage(mps_output) offset:0 atIndex:2];
+      MTLSize gridSize = MTLSizeMake(numThreads, 1, 1);
+
+      // Calculate a thread group size.
+      NSUInteger threadsPerGroupSize = std::min(kernelPSO.maxTotalThreadsPerThreadgroup, numThreads);
+      MTLSize threadGroupSize = MTLSizeMake(threadsPerGroupSize, 1, 1);
+
+      // Encode the compute command.
+      [computeEncoder dispatchThreads: gridSize threadsPerThreadgroup: threadGroupSize];
+
     });
   }
   return mps_output;
 }
 
-void mps_add_one_new_encoder(const at::Tensor& input) {
-  using namespace at::native::mps;
-  TORCH_CHECK(input.is_mps());
-  TORCH_CHECK(input.numel() > 0);
-
-  @autoreleasepool {
-  auto kernelPSO = lib.getPipelineStateForFunc("add_one");
-  auto serialQueue = torch::mps::get_dispatch_queue();
-
-  dispatch_sync(serialQueue, ^(){
-    auto commandBuffer = torch::mps::get_command_buffer();
-    // Start a compute pass.
-    auto computeEncoder = [commandBuffer computeCommandEncoder];
-    TORCH_CHECK(computeEncoder, "Failed to create compute command encoder");
-    [computeEncoder setComputePipelineState: kernelPSO];
-    mtl_setArgs(computeEncoder, input);
-    mtl_dispatch1DJob(computeEncoder, kernelPSO, input.numel());
-    [computeEncoder endEncoding];
-     torch::mps::commit();
-  });
-  }
-}
-
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("get_cpu_add_output", &get_cpu_add_output);
   m.def("get_mps_add_output", &get_mps_add_output);
-  m.def("mps_add_one_new_context", &mps_add_one_new_encoder);
 }

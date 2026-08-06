@@ -7,7 +7,6 @@ import torch._lazy.metrics as metrics
 import torch._lazy.ts_backend
 from torch.testing._internal.common_utils import run_tests, TestCase
 
-
 torch._lazy.ts_backend.init()
 
 NODE_TYPE_PATTERN = re.compile(r", NodeType=[^\n]+")
@@ -22,7 +21,7 @@ class LazyFuncionalizationTest(TestCase):
                 metrics.reset()
 
             class Model(torch.nn.Module):
-                def __init__(self) -> None:
+                def __init__(self):
                     super().__init__()
                     self.fc1 = torch.nn.Linear(4, 2, bias=False)
 
@@ -40,17 +39,11 @@ class LazyFuncionalizationTest(TestCase):
 
                     sync_tensors = metrics.counter_value("SyncedTensorsWithIR")
                     if reset_storage:
-                        if sync_tensors != 1:
-                            raise AssertionError(
-                                f"Expected 1 synced tensor, got {sync_tensors}"
-                            )
+                        assert sync_tensors == 1
                     else:
                         # There is an extra tensor being unnecessarily synced if
                         # the functional storage is not reset.
-                        if sync_tensors != 2:
-                            raise AssertionError(
-                                f"Expected 2 synced tensors, got {sync_tensors}"
-                            )
+                        assert sync_tensors == 2
 
                 x = torch.ones(4)
                 out = model(x)

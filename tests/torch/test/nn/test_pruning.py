@@ -4,6 +4,7 @@ import unittest
 import unittest.mock as mock
 
 import torch
+
 import torch.nn as nn
 import torch.nn.utils.prune as prune
 from torch.testing._internal.common_nn import NNTestCase
@@ -498,7 +499,7 @@ class TestPruningNN(NNTestCase):
     def test_unstructured_pruning_same_magnitude(self):
         r"""Since it may happen that the tensor to prune has entries with the
         same exact magnitude, it is important to check that pruning happens
-        consistently based on the bottom % of weights, and not by threshold,
+        consistenly based on the bottom % of weights, and not by threshold,
         which would instead kill off *all* units with magnitude = threshold.
         """
         AMOUNT = 0.2
@@ -516,16 +517,13 @@ class TestPruningNN(NNTestCase):
         AXIS = 2
         p = prune.RandomStructured(amount=AMOUNT, dim=AXIS)
         t = 2 * torch.randint(low=-1, high=2, size=(5, 4, 2)).to(dtype=torch.float32)
-        prune._compute_nparams_toprune(AMOUNT, t.shape[AXIS])
+        nparams_toprune = prune._compute_nparams_toprune(AMOUNT, t.shape[AXIS])
 
         computed_mask = p.compute_mask(t, default_mask=torch.ones_like(t))
         # check that 1 column is fully prune, the others are left untouched
         remaining_axes = [_ for _ in range(len(t.shape)) if _ != AXIS]
         per_column_sums = sorted(torch.sum(computed_mask == 0, axis=remaining_axes))
-        if per_column_sums != [0, 20]:
-            raise AssertionError(
-                f"Expected per_column_sums == [0, 20], got {per_column_sums}"
-            )
+        assert per_column_sums == [0, 20]
 
     def test_ln_structured_pruning(self):
         r"""Check Ln structured pruning by hand."""
@@ -778,8 +776,7 @@ class TestPruningNN(NNTestCase):
 
         with TemporaryFileName() as fname:
             torch.save(model, fname)
-            # weights_only=False as this is legacy code that saves the model
-            new_model = torch.load(fname, weights_only=False)
+            new_model = torch.load(fname)
 
         # check that the original weight and the new mask are present
         self.assertIn("0.weight_orig", new_model.state_dict())
@@ -895,41 +892,23 @@ class TestPruningNN(NNTestCase):
 
         # Pruning one of them causes one of the weights to become a tensor
         prune.l1_unstructured(l, "weight_ih_l0", 0.5)
-        param_count = sum(isinstance(p, torch.nn.Parameter) for p in l._flat_weights)
-        if param_count != 3:
-            raise AssertionError(
-                f"Expected 3 Parameters in _flat_weights after pruning, got {param_count}"
-            )
+        assert sum(isinstance(p, torch.nn.Parameter) for p in l._flat_weights) == 3
 
-        # Removing the pruning reparameterization restores the Parameter
+        # Removing the pruning reparametrization restores the Parameter
         prune.remove(l, "weight_ih_l0")
-        param_count = sum(isinstance(p, torch.nn.Parameter) for p in l._flat_weights)
-        if param_count != 4:
-            raise AssertionError(
-                f"Expected 4 Parameters in _flat_weights after removal, got {param_count}"
-            )
+        assert sum(isinstance(p, torch.nn.Parameter) for p in l._flat_weights) == 4
 
-        # Make sure that, upon removal of the reparameterization, the
+        # Make sure that, upon removal of the reparametrization, the
         # `._parameters` and `.named_parameters` contain the right params.
         # Specifically, the original weight ('weight_ih_l0') should be placed
-        # back in the parameters, while the reparameterization component
+        # back in the parameters, while the reparametrization component
         # ('weight_ih_l0_orig') should be removed.
-        if "weight_ih_l0" not in l._parameters:
-            raise AssertionError("'weight_ih_l0' should be in l._parameters")
-        if l._parameters["weight_ih_l0"] is None:
-            raise AssertionError("l._parameters['weight_ih_l0'] should not be None")
-        if "weight_ih_l0_orig" in l._parameters:
-            raise AssertionError("'weight_ih_l0_orig' should not be in l._parameters")
-        if "weight_ih_l0" not in dict(l.named_parameters()):
-            raise AssertionError("'weight_ih_l0' should be in l.named_parameters()")
-        if dict(l.named_parameters())["weight_ih_l0"] is None:
-            raise AssertionError(
-                "l.named_parameters()['weight_ih_l0'] should not be None"
-            )
-        if "weight_ih_l0_orig" in dict(l.named_parameters()):
-            raise AssertionError(
-                "'weight_ih_l0_orig' should not be in l.named_parameters()"
-            )
+        assert "weight_ih_l0" in l._parameters
+        assert l._parameters["weight_ih_l0"] is not None
+        assert "weight_ih_l0_orig" not in l._parameters
+        assert "weight_ih_l0" in dict(l.named_parameters())
+        assert dict(l.named_parameters())["weight_ih_l0"] is not None
+        assert "weight_ih_l0_orig" not in dict(l.named_parameters())
 
 
 instantiate_parametrized_tests(TestPruningNN)

@@ -7,6 +7,7 @@ import random
 import sys
 import unittest
 from enum import auto, Enum
+from typing import Optional
 
 import numpy as np
 import packaging.version
@@ -14,8 +15,8 @@ import pytest
 
 import torch
 from torch.autograd import function
+from torch.onnx._internal import diagnostics
 from torch.testing._internal import common_utils
-
 
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(-1, pytorch_test_dir)
@@ -114,7 +115,7 @@ def skipForAllOpsetVersions():
     return skip_dec
 
 
-def skipTraceTest(skip_before_opset_version: int | None = None, reason: str = ""):
+def skipTraceTest(skip_before_opset_version: Optional[int] = None, reason: str = ""):
     """Skip tracing test for opset version less than skip_before_opset_version.
 
     Args:
@@ -142,7 +143,7 @@ def skipTraceTest(skip_before_opset_version: int | None = None, reason: str = ""
     return skip_dec
 
 
-def skipScriptTest(skip_before_opset_version: int | None = None, reason: str = ""):
+def skipScriptTest(skip_before_opset_version: Optional[int] = None, reason: str = ""):
     """Skip scripting test for opset version less than skip_before_opset_version.
 
     Args:
@@ -196,8 +197,8 @@ def skip_min_ort_version(reason: str, version: str, dynamic_only: bool = False):
 
 def xfail_dynamic_fx_test(
     error_message: str,
-    model_type: TorchModelType | None = None,
-    reason: str | None = None,
+    model_type: Optional[TorchModelType] = None,
+    reason: Optional[str] = None,
 ):
     """Xfail dynamic exporting test.
 
@@ -214,6 +215,36 @@ def xfail_dynamic_fx_test(
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
             if self.dynamic_shapes and (
+                not model_type or self.model_type == model_type
+            ):
+                return xfail(error_message, reason)(func)(self, *args, **kwargs)
+            return func(self, *args, **kwargs)
+
+        return wrapper
+
+    return skip_dec
+
+
+def xfail_op_level_debug_test(
+    error_message: str,
+    model_type: Optional[TorchModelType] = None,
+    reason: Optional[str] = None,
+):
+    """Xfail op level debug test.
+
+    Args:
+        reason: The reason for xfailing op level debug test.
+        model_type (TorchModelType): The model type to xfail dynamic exporting test for.
+            When None, model type is not used to xfail op level debug tests.
+
+    Returns:
+        A decorator for xfailing op level debug test.
+    """
+
+    def skip_dec(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            if self.op_level_debug and (
                 not model_type or self.model_type == model_type
             ):
                 return xfail(error_message, reason)(func)(self, *args, **kwargs)
@@ -274,7 +305,7 @@ def skip_in_ci(reason: str):
     return skip_dec
 
 
-def xfail(error_message: str, reason: str | None = None):
+def xfail(error_message: str, reason: Optional[str] = None):
     """Expect failure.
 
     Args:
@@ -290,10 +321,15 @@ def xfail(error_message: str, reason: str | None = None):
             try:
                 func(self, *args, **kwargs)
             except Exception as e:
-                if error_message not in str(e):
-                    raise AssertionError(
-                        f"Expected error message: {error_message} NOT in {str(e)}"
-                    ) from None
+                if isinstance(e, torch.onnx.OnnxExporterError):
+                    # diagnostic message is in the cause of the exception
+                    assert error_message in str(
+                        e.__cause__
+                    ), f"Expected error message: {error_message} NOT in {str(e.__cause__)}"
+                else:
+                    assert error_message in str(
+                        e
+                    ), f"Expected error message: {error_message} NOT in {str(e)}"
                 pytest.xfail(reason if reason else f"Expected failure: {error_message}")
             else:
                 pytest.fail("Unexpected success!")
@@ -304,8 +340,8 @@ def xfail(error_message: str, reason: str | None = None):
 
 
 # skips tests for opset_versions listed in unsupported_opset_versions.
-# if the PyTorch test cannot be run for a specific version, add this wrapper
-# (for example, an op was modified but the change is not supported in PyTorch)
+# if the caffe2 test cannot be run for a specific version, add this wrapper
+# (for example, an op was modified but the change is not supported in caffe2)
 def skipIfUnsupportedOpsetVersion(unsupported_opset_versions):
     def skip_dec(func):
         @functools.wraps(func)
@@ -340,7 +376,7 @@ def skipDtypeChecking(func):
 
 
 def xfail_if_model_type_is_exportedprogram(
-    error_message: str, reason: str | None = None
+    error_message: str, reason: Optional[str] = None
 ):
     """xfail test with models using ExportedProgram as input.
 
@@ -365,7 +401,7 @@ def xfail_if_model_type_is_exportedprogram(
 
 
 def xfail_if_model_type_is_not_exportedprogram(
-    error_message: str, reason: str | None = None
+    error_message: str, reason: Optional[str] = None
 ):
     """xfail test without models using ExportedProgram as input.
 
@@ -410,3 +446,4 @@ class ExportTestCase(common_utils.TestCase):
         set_rng_seed(0)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(0)
+        diagnostics.engine.clear()

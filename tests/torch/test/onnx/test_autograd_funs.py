@@ -5,11 +5,13 @@ from onnx_test_common import run_model_test
 
 import torch
 from torch.onnx import OperatorExportTypes
+from torch.onnx._globals import GLOBALS
+from torch.onnx.utils import _model_to_graph
 from torch.testing._internal import common_utils
 
 
 class TestAutogradFuns(pytorch_test_common.ExportTestCase):
-    opset_version = 20
+    opset_version = GLOBALS.export_onnx_opset_version
     keep_initializers_as_inputs = False
     onnx_shape_inference = True
 
@@ -63,7 +65,7 @@ class TestAutogradFuns(pytorch_test_common.ExportTestCase):
             @staticmethod
             def forward(ctx, input):
                 ctx.save_for_backward(input)
-                values, _ = torch.topk(input, 3)
+                values, indices = torch.topk(input, 3)
                 return values
 
         class Caller(torch.nn.Module):
@@ -131,7 +133,7 @@ class TestAutogradFuns(pytorch_test_common.ExportTestCase):
         input = torch.ones(1, 5)
 
         # Test ONNX_FALLTHROUGH_MODE
-        graph, _, _ = torch.onnx.utils._model_to_graph(
+        graph, _, _ = _model_to_graph(
             model,
             (input,),
             operator_export_type=OperatorExportTypes.ONNX_FALLTHROUGH,
@@ -140,7 +142,7 @@ class TestAutogradFuns(pytorch_test_common.ExportTestCase):
         self.assertEqual(next(iter).kind(), "prim::PythonOp")
 
         # Test ATEN_FALLBACK_MODE
-        graph, _, _ = torch.onnx.utils._model_to_graph(
+        graph, _, _ = _model_to_graph(
             model,
             (input,),
             operator_export_type=OperatorExportTypes.ONNX_ATEN_FALLBACK,

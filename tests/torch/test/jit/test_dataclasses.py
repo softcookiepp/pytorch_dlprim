@@ -1,5 +1,8 @@
 # Owner(s): ["oncall: jit"]
+# flake8: noqa
 
+import sys
+import unittest
 from dataclasses import dataclass, field, InitVar
 from enum import Enum
 from typing import List, Optional
@@ -7,7 +10,6 @@ from typing import List, Optional
 from hypothesis import given, settings, strategies as st
 
 import torch
-from torch.testing._internal.common_utils import raise_on_run_directly
 from torch.testing._internal.jit_utils import JitTestCase
 
 
@@ -169,7 +171,3 @@ class TestDataclasses(JitTestCase):
 
         with self.assertRaises(OSError):
             torch.jit.script(f)
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

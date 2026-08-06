@@ -3,12 +3,15 @@
 import functools
 import sys
 import unittest
+
 from unittest import skipIf as skipif
 
 import numpy
+
 import pytest
 
 import torch
+
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
     parametrize,
@@ -16,9 +19,8 @@ from torch.testing._internal.common_utils import (
     skipIfTorchDynamo,
     TEST_WITH_TORCHDYNAMO,
     TestCase,
-    xpassIfTorchDynamo_np,
+    xpassIfTorchDynamo,
 )
-
 
 if TEST_WITH_TORCHDYNAMO:
     import numpy as np
@@ -37,16 +39,14 @@ IS_PYPY = False
 @skipif(numpy.__version__ < "1.24", reason="numpy.dlpack is new in numpy 1.23")
 @instantiate_parametrized_tests
 class TestDLPack(TestCase):
-    @xpassIfTorchDynamo_np  # (reason="pytorch seems to handle refcounts differently")
+    @xpassIfTorchDynamo  # (reason="pytorch seems to handle refcounts differently")
     @skipif(IS_PYPY, reason="PyPy can't get refcounts.")
     def test_dunder_dlpack_refcount(self):
         x = np.arange(5)
         y = x.__dlpack__()
-        if sys.getrefcount(x) != 3:
-            raise AssertionError(f"Expected refcount 3, got {sys.getrefcount(x)}")
+        assert sys.getrefcount(x) == 3
         del y
-        if sys.getrefcount(x) != 2:
-            raise AssertionError(f"Expected refcount 2, got {sys.getrefcount(x)}")
+        assert sys.getrefcount(x) == 2
 
     @unittest.expectedFailure
     @skipIfTorchDynamo("I can't figure out how to get __dlpack__ into trace_rules.py")
@@ -57,16 +57,14 @@ class TestDLPack(TestCase):
         with pytest.raises(RuntimeError):
             x.__dlpack__(stream=1)
 
-    @xpassIfTorchDynamo_np  # (reason="pytorch seems to handle refcounts differently")
+    @xpassIfTorchDynamo  # (reason="pytorch seems to handle refcounts differently")
     @skipif(IS_PYPY, reason="PyPy can't get refcounts.")
     def test_from_dlpack_refcount(self):
         x = np.arange(5)
         y = np.from_dlpack(x)
-        if sys.getrefcount(x) != 3:
-            raise AssertionError(f"Expected refcount 3, got {sys.getrefcount(x)}")
+        assert sys.getrefcount(x) == 3
         del y
-        if sys.getrefcount(x) != 2:
-            raise AssertionError(f"Expected refcount 2, got {sys.getrefcount(x)}")
+        assert sys.getrefcount(x) == 2
 
     @parametrize(
         "dtype",
@@ -87,10 +85,7 @@ class TestDLPack(TestCase):
         x = np.arange(5, dtype=dtype)
         y = np.from_dlpack(x)
 
-        if y.dtype != x.dtype:
-            raise AssertionError(
-                f"Expected y.dtype == x.dtype, got {y.dtype} vs {x.dtype}"
-            )
+        assert y.dtype == x.dtype
         assert_array_equal(x, y)
 
     def test_non_contiguous(self):
@@ -116,27 +111,15 @@ class TestDLPack(TestCase):
         shape = (1,) * ndim
         x = np.zeros(shape, dtype=np.float64)
 
-        if shape != np.from_dlpack(x).shape:
-            raise AssertionError(
-                f"Expected shape {shape}, got {np.from_dlpack(x).shape}"
-            )
+        assert shape == np.from_dlpack(x).shape
 
     def test_dlpack_device(self):
         x = np.arange(5)
-        if x.__dlpack_device__() != (1, 0):
-            raise AssertionError(
-                f"Expected x.__dlpack_device__() == (1, 0), got {x.__dlpack_device__()}"
-            )
+        assert x.__dlpack_device__() == (1, 0)
         y = np.from_dlpack(x)
-        if y.__dlpack_device__() != (1, 0):
-            raise AssertionError(
-                f"Expected y.__dlpack_device__() == (1, 0), got {y.__dlpack_device__()}"
-            )
+        assert y.__dlpack_device__() == (1, 0)
         z = y[::2]
-        if z.__dlpack_device__() != (1, 0):
-            raise AssertionError(
-                f"Expected z.__dlpack_device__() == (1, 0), got {z.__dlpack_device__()}"
-            )
+        assert z.__dlpack_device__() == (1, 0)
 
     def dlpack_deleter_exception(self):
         x = np.arange(5)

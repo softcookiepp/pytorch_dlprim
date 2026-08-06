@@ -12,7 +12,6 @@ from torch.package import (
 )
 from torch.testing._internal.common_utils import run_tests
 
-
 try:
     from .common import PackageTestCase
 except ImportError:
@@ -169,7 +168,7 @@ class TestPackageFX(PackageTestCase):
 
     def test_package_fx_wrap(self):
         class TestModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
 
             def forward(self, a):
@@ -186,27 +185,6 @@ class TestPackageFX(PackageTestCase):
         loaded_traced = pi.load_pickle("model", "model.pkl")
         input = torch.rand(2, 3)
         self.assertEqual(loaded_traced(input), traced(input))
-
-    def test_package_gm_preserve_stack_trace(self):
-        class SimpleTest(torch.nn.Module):
-            def forward(self, x):
-                return torch.relu(x + 3.0)
-
-        st = SimpleTest()
-        traced = symbolic_trace(st)
-
-        for node in traced.graph.nodes:
-            node.meta["stack_trace"] = f"test_{node.name}"
-
-        f = BytesIO()
-        with PackageExporter(f) as pe:
-            pe.save_pickle("model", "model.pkl", traced)
-
-        f.seek(0)
-        pi = PackageImporter(f)
-        loaded_traced = pi.load_pickle("model", "model.pkl")
-        for node in loaded_traced.graph.nodes:
-            self.assertEqual(f"test_{node.name}", node.meta["stack_trace"])
 
 
 if __name__ == "__main__":

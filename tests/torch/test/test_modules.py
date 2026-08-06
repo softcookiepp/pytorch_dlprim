@@ -11,22 +11,13 @@ import torch
 from torch._subclasses.meta_utils import assert_metadata_eq
 from torch.testing._internal.common_cuda import with_tf32_off
 from torch.testing._internal.common_device_type import (
-    instantiate_device_type_tests, onlyCPU, onlyOn, toleranceOverride, tol, skipMeta)
+    instantiate_device_type_tests, onlyCPU, onlyCUDA, toleranceOverride, tol, skipMeta)
 from torch.testing._internal.common_modules import module_db, modules, ModuleErrorEnum, TrainEvalMode
 from torch.testing._internal.common_utils import (
     TestCase, run_tests, freeze_rng_state, mock_wrapper, get_tensors_from, gradcheck,
-    gradgradcheck, parametrize, wrapSwapTensorsTest, TEST_WITH_ROCM)
+    gradgradcheck, parametrize, wrapSwapTensorsTest)
 from unittest.mock import patch, call
 
-
-if TEST_WITH_ROCM:
-    import os
-    os.environ["PYTORCH_MIOPEN_SUGGEST_NHWC"] = "1"
-    os.environ["PYTORCH_MIOPEN_SUGGEST_NHWC_BATCHNORM"] = "1"
-
-device_type = (
-    acc.type if (acc := torch.accelerator.current_accelerator(True)) else "cpu"
-)
 
 class TestModule(TestCase):
     _do_cuda_memory_leak_check = True
@@ -148,7 +139,7 @@ class TestModule(TestCase):
                 m.train(training)
                 self._assert_module_parameters_and_buffer_are(m, device, dtype)
 
-    @onlyOn(["cuda", "xpu"])
+    @onlyCUDA
     @modules(module_db)
     def test_multiple_device_transfer(self, device, dtype, module_info, training):
         module_cls = module_info.module_cls
@@ -181,11 +172,11 @@ class TestModule(TestCase):
                 self._assert_module_parameters_and_buffer_are(m, "cpu", dtype)
 
                 # === Move back to GPU and forward pass ===
-                m.to(device_type)
+                m.cuda()
                 m(*input_device_args, **input_device_kwargs)
                 self._assert_module_parameters_and_buffer_are(m, device, dtype)
 
-                if torch.accelerator.device_count() >= 2:
+                if torch.cuda.device_count() >= 2:
                     # === test cross-GPU transfer works
                     def _to_device1(objs):
                         if isinstance(objs, (tuple, list)):
@@ -193,16 +184,16 @@ class TestModule(TestCase):
                         elif isinstance(objs, dict):
                             return {name: _to_device1(item) for name, item in objs.items()}
                         elif isinstance(objs, torch.Tensor):
-                            return objs.to(1)
+                            return objs.cuda(1)
                         else:
                             return objs
                     input_device_1_args = _to_device1(input_device_args)
                     input_device_1_kwargs = _to_device1(input_device_kwargs)
 
-                    m.to(1)
-                    with torch.accelerator.device_index(1):
+                    m.cuda(1)
+                    with torch.cuda.device(1):
                         m(*input_device_1_args, **input_device_1_kwargs)
-                    self._assert_module_parameters_and_buffer_are(m, torch.device(f"{device_type}:1"), dtype)
+                    self._assert_module_parameters_and_buffer_are(m, torch.device("cuda:1"), dtype)
 
     @modules(module_db)
     def test_repr(self, device, dtype, module_info, training):
@@ -248,8 +239,7 @@ class TestModule(TestCase):
                 with tempfile.TemporaryFile() as f:
                     torch.save(m, f)
                     f.seek(0)
-                    # weights_only=False as this is legacy code that saves the model
-                    m_copy = torch.load(f, weights_only=False)
+                    m_copy = torch.load(f)
                     output_from_copy = m_copy(*args, **kwargs)
                     self.assertEqual(output, output_from_copy)
 
@@ -331,7 +321,7 @@ class TestModule(TestCase):
 
     def _retain_grad(self, obj):
         # gradients needs to be retained to check for grad. This is useful when
-        # non-leaves are present in the graph.
+        # non-leafs are present in the graph.
         def inner_retain_grad(obj):
             if obj.requires_grad:
                 obj.retain_grad()
@@ -375,7 +365,9 @@ class TestModule(TestCase):
             elif isinstance(obj, dict):
                 return any(_can_be_noncontiguous(o) for o in obj.values())
             # scalar tensors can not be non-contiguous
-            return isinstance(obj, torch.Tensor) and obj.dim() != 0
+            if not isinstance(obj, torch.Tensor) or obj.dim() == 0:
+                return False
+            return True
 
         for module_input in module_inputs:
             if module_input.forward_input is None:
@@ -448,11 +440,9 @@ class TestModule(TestCase):
         module_cls = module_info.module_cls
         module_inputs = module_info.module_inputs_func(module_info, device=device, dtype=dtype,
                                                        requires_grad=True, training=training)
-        if "xpu" in device and module_info.name == "nn.MultiheadAttention":
-            self.skipTest("GradcheckError issue in MultiheadAttention, https://github.com/intel/torch-xpu-ops/issues/2356")
         # === Set nondet tol for gradcheck to user-defined value if on CUDA and cudNN is enabled
         gradcheck_nondet_tol = 0.0
-        if (torch.device(device).type == 'cuda' and torch.backends.cudnn.enabled) or device_type == "xpu":
+        if (torch.device(device).type == 'cuda' and torch.backends.cudnn.enabled):
             gradcheck_nondet_tol = module_info.gradcheck_nondet_tol
 
         for module_input in module_inputs:
@@ -493,19 +483,11 @@ class TestModule(TestCase):
                     output_flattened = torch.utils._pytree.tree_leaves(output)
                     return output_flattened
 
-            def do_check(flat_input):
-                self.assertTrue(
-                    check(
-                        fn_to_gradcheck,
-                        flat_input,
-                        nondet_tol=gradcheck_nondet_tol,
-                        fast_mode=module_info.gradcheck_fast_mode
-                    ))
-
             # check total derivative
             grad_input = input_args + params + tuple(obj for (_, obj) in kwarg_tensors)
             flat_input, flat_spec = torch.utils._pytree.tree_flatten(grad_input)
-            do_check(flat_input)
+
+            self.assertTrue(check(fn_to_gradcheck, flat_input, nondet_tol=gradcheck_nondet_tol))
 
             # check partial derivatives
             old_params_requires_grad = [p.requires_grad for p in params]
@@ -520,14 +502,14 @@ class TestModule(TestCase):
                 p.requires_grad = old
                 grad_input = input_args + params + tuple(obj for (_, obj) in kwarg_tensors)
                 flat_input, flat_spec = torch.utils._pytree.tree_flatten(grad_input)
-                do_check(flat_input)
+                self.assertTrue(check(fn_to_gradcheck, flat_input, nondet_tol=gradcheck_nondet_tol))
                 p.requires_grad = False
 
             for (_, obj), old in zip(kwarg_tensors, old_kwargs_requires_grad):
                 obj.requires_grad = old
                 grad_input = input_args + params + tuple(obj for (_, obj) in kwarg_tensors)
                 flat_input, flat_spec = torch.utils._pytree.tree_flatten(grad_input)
-                do_check(flat_input)
+                self.assertTrue(check(fn_to_gradcheck, flat_input, nondet_tol=gradcheck_nondet_tol))
                 obj.requires_grad = False
 
     @modules(module_db, allowed_dtypes=[torch.double])
@@ -539,7 +521,7 @@ class TestModule(TestCase):
     def test_gradgrad(self, device, dtype, module_info, training):
         self._test_gradients_helper(device, dtype, module_info, training, gradgradcheck)
 
-    @onlyOn(["cuda", "xpu"])
+    @onlyCUDA
     @with_tf32_off  # Turn off TF32 to compute at full precision https://github.com/pytorch/pytorch/issues/86798
     @toleranceOverride({torch.float32: tol(5e-2, 0),
                         torch.float64: tol(4e-4, 0)})
@@ -671,7 +653,7 @@ class TestModule(TestCase):
                 d = obj.dim()
                 if ((mem_format == torch.channels_last and d != 4)
                    or (mem_format == torch.channels_last_3d and d != 5)):
-                    return obj.detach().clone().requires_grad_(obj.requires_grad)
+                    return obj.clone().detach().requires_grad_(obj.requires_grad)
                 return obj.clone().to(memory_format=mem_format).detach().requires_grad_(obj.requires_grad)
 
             return self._traverse_obj(obj, inner_to_mem_format)
@@ -889,8 +871,8 @@ class TestModule(TestCase):
     def test_to(self, device, dtype, module_info, training, swap, set_grad):
         module_cls = module_info.module_cls
         devices = ['cpu']
-        if torch.cuda.is_available() or torch.xpu.is_available():
-            devices += [device_type]
+        if torch.cuda.is_available():
+            devices += ['cuda']
         dtypes = module_info.dtypes
         module_inputs = module_info.module_inputs_func(module_info, device=device, dtype=dtype,
                                                        requires_grad=False, training=training)
@@ -934,6 +916,7 @@ class TestModule(TestCase):
                 # parameters will be wrapped in an nn.Parameter before swapping
                 # which will cause the ._cdata to change
                 g_no_swap = device_ == prev_device and dtype_ == prev_dtype
+                prev_prev_device, prev_prev_dtype = prev_device, prev_dtype
                 prev_device, prev_dtype = device_, dtype_
 
                 p_ids_before = [id(p) for p in m.parameters()]
@@ -1012,7 +995,7 @@ class TestModule(TestCase):
                 self.assertTrue(all(a != b for a, b in zip(p_cdatas_before, p_cdatas_after)))
 
 
-instantiate_device_type_tests(TestModule, globals(), allow_mps=True, allow_xpu=True)
+instantiate_device_type_tests(TestModule, globals(), allow_mps=True)
 
 if __name__ == '__main__':
     run_tests()

@@ -25,6 +25,7 @@ Note:
 from __future__ import annotations
 
 import copy
+from typing import Optional, Tuple
 
 import onnx_test_common
 import parameterized
@@ -38,7 +39,6 @@ from torch.testing._internal import (
     common_methods_invocations,
     common_utils,
 )
-
 
 OPS_DB = copy.deepcopy(common_methods_invocations.op_db)
 
@@ -91,7 +91,7 @@ TESTED_OPS: frozenset[str] = frozenset(
 #     2a. If a test is now failing because of xpass, because some previous errors
 #     are now fixed, removed the corresponding xfail.
 #     2b. If a test is not failing consistently, use skip.
-EXPECTED_SKIPS_OR_FAILS: tuple[onnx_test_common.DecorateMeta, ...] = (
+EXPECTED_SKIPS_OR_FAILS: Tuple[onnx_test_common.DecorateMeta, ...] = (
     skip(
         "atan", dtypes=onnx_test_common.BOOL_TYPES + onnx_test_common.INT_TYPES,
         reason=onnx_test_common.reason_onnx_does_not_support("Atan")
@@ -191,7 +191,7 @@ SKIP_XFAIL_SUBTESTS: tuple[onnx_test_common.DecorateMeta, ...] = (
         "scatter_reduce",
         # ONNX has not include_self parameter and default is include_self=True mode
         matcher=lambda sample: sample.kwargs.get("include_self") is False,
-        reason="ONNX doesn't support include_self=False option",
+        reason="ONNX does't support include_self=False option",
     ),
     skip(
         "stft",
@@ -217,8 +217,7 @@ SKIP_XFAIL_SUBTESTS: tuple[onnx_test_common.DecorateMeta, ...] = (
 OP_WITH_SKIPPED_XFAIL_SUBTESTS = frozenset(meta.op_name for meta in SKIP_XFAIL_SUBTESTS)
 ALL_OPS_IN_DB = frozenset(op_info.name for op_info in OPS_DB)
 # Assert all ops in OPINFO_FUNCTION_MAPPING are in the OPS_DB
-if not TESTED_OPS.issubset(ALL_OPS_IN_DB):
-    raise AssertionError(f"{TESTED_OPS - ALL_OPS_IN_DB} not in OPS_DB")
+assert TESTED_OPS.issubset(ALL_OPS_IN_DB), f"{TESTED_OPS - ALL_OPS_IN_DB} not in OPS_DB"
 
 
 class SingleOpModel(torch.nn.Module):
@@ -235,15 +234,14 @@ class SingleOpModel(torch.nn.Module):
 
 def _should_skip_xfail_test_sample(
     op_name: str, sample
-) -> tuple[str | None, str | None]:
+) -> Tuple[Optional[str], Optional[str]]:
     """Returns a reason if a test sample should be skipped."""
     if op_name not in OP_WITH_SKIPPED_XFAIL_SUBTESTS:
         return None, None
     for decorator_meta in SKIP_XFAIL_SUBTESTS:
         # Linear search on ops_test_data.SKIP_XFAIL_SUBTESTS. That's fine because the list is small.
         if decorator_meta.op_name == op_name:
-            if decorator_meta.matcher is None:
-                raise AssertionError("Matcher must be defined")
+            assert decorator_meta.matcher is not None, "Matcher must be defined"
             if decorator_meta.matcher(sample):
                 return decorator_meta.test_behavior, decorator_meta.reason
     return None, None
@@ -282,8 +280,7 @@ class TestOnnxModelOutputConsistency(onnx_test_common._TestONNXRuntime):
     def test_output_match(self, device: str, dtype: torch.dtype, op):
         """Test the ONNX exporter."""
         # device is provided by instantiate_device_type_tests, but we only want to run in cpu.
-        if device != "cpu":
-            raise AssertionError(f"Expected device 'cpu', got {device!r}")
+        assert device == "cpu"
 
         samples = op.sample_inputs(
             device,

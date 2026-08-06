@@ -6,12 +6,17 @@ from typing import List
 
 import torch
 
-
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(pytorch_test_dir)
-from torch.testing._internal.common_utils import raise_on_run_directly
 from torch.testing._internal.jit_utils import JitTestCase
+
+if __name__ == "__main__":
+    raise RuntimeError(
+        "This test file is not meant to be run directly, use:\n\n"
+        "\tpython test/test_jit.py TESTNAME\n\n"
+        "instead."
+    )
 
 
 # Tests that Python slice class is supported in TorchScript
@@ -151,7 +156,7 @@ class TestSlice(JitTestCase):
                 return 0
 
         class Foo(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 module_list = [Bar("A"), Bar("B"), Bar("C"), Bar("D"), Bar("E")]
                 self.test = torch.nn.ModuleList(module_list)
@@ -171,7 +176,3 @@ class TestSlice(JitTestCase):
         self.assertEqual(result2[0].identifier, "B")
         self.assertEqual(result2[1].identifier, "C")
         self.assertEqual(result2[2].identifier, "D")
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

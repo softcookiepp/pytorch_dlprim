@@ -3,10 +3,11 @@
 # Test to ensure sparsity information propagates properly into traced graph.
 #
 
+import sys
 import unittest
 
 import torch
-from torch._environment import is_fbcode
+
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
@@ -15,7 +16,6 @@ from torch.testing._internal.common_utils import (
     subtest,
     TestCase,
 )
-
 
 # Various data types (preserved over operations).
 DTYPES = [
@@ -60,18 +60,12 @@ class SumNet(torch.nn.Module):
 
 
 class EltwiseNet(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu = torch.nn.ReLU()
+
     def forward(self, x):
-        return torch.nn.functional.relu(2 * torch.abs(-x))
-
-
-class ToDenseNet(torch.nn.Module):
-    def forward(self, x):
-        return x.to_dense()
-
-
-class AddNet(torch.nn.Module):
-    def forward(self, x, y):
-        return torch.add(x, y)
+        return self.relu(2 * torch.abs(-x))
 
 
 class SparseActivationCOO(torch.nn.Module):
@@ -79,6 +73,7 @@ class SparseActivationCOO(torch.nn.Module):
         return [xi.to_sparse() for xi in x]
 
 
+# TODO: ensure this case work too
 class SparseActivationCSR(torch.nn.Module):
     def forward(self, x):
         return [xi.to_sparse_csr() for xi in x]
@@ -89,10 +84,9 @@ class SparseActivationCSR(torch.nn.Module):
 #
 
 
-@unittest.skipIf(is_fbcode(), "See torch._dynamo.config")
 class TestSparseProp(TestCase):
     def setUp(self):
-        super().setUp()
+        TestCase.setUp(self)
 
     def assertEqualMeta(self, x, y):
         self.assertIsInstance(x, FakeTensor)
@@ -120,15 +114,21 @@ class TestSparseProp(TestCase):
                 x_meta1, y_meta1 = (x.ccol_indices(), y.ccol_indices())
                 x_meta2, y_meta2 = (x.row_indices(), y.row_indices())
             else:
-                raise AssertionError(f"Unexpected layout: {x.layout}")
+                assert 0  # unreachable
             self.assertEqual(x_meta1, y_meta1, exact_layout=True)
             self.assertEqual(x_meta2, y_meta2, exact_layout=True)
             self.assertEqual(x.values(), y.values(), exact_layout=True)
 
+    @unittest.skipIf(
+        sys.version_info >= (3, 12), "torch.compile is not supported on python 3.12+"
+    )
     @parametrize("dtype", DTYPES)
     @parametrize("itype", ITYPES)
     @all_sparse_layouts("layout")
     def test_idnet(self, dtype, itype, layout):
+        if layout is not torch.sparse_coo:
+            self.skipTest("TODO: support non-coo sparsity!")
+
         net = IdNet()
         for sparse_input in self.generate_simple_inputs(
             layout,
@@ -137,7 +137,7 @@ class TestSparseProp(TestCase):
             index_dtype=itype,
         ):
             # Build the traced graph.
-            prog = torch.export.export(net, (sparse_input,), strict=True)
+            prog = torch.export.export(net, (sparse_input,))
             # Test arg/output.
             for i, node in enumerate(prog.graph.nodes):
                 meta = node.meta.get("val", None)
@@ -146,10 +146,16 @@ class TestSparseProp(TestCase):
                 else:
                     self.assertEqual(meta, None)
 
+    @unittest.skipIf(
+        sys.version_info >= (3, 12), "torch.compile is not supported on python 3.12+"
+    )
     @parametrize("dtype", DTYPES)
     @parametrize("itype", ITYPES)
     @all_sparse_layouts("layout")
     def test_sumnet(self, dtype, itype, layout):
+        if layout is not torch.sparse_coo:
+            self.skipTest("TODO: support non-coo sparsity!")
+
         net = SumNet()
         for sparse_input in self.generate_simple_inputs(
             layout,
@@ -159,21 +165,28 @@ class TestSparseProp(TestCase):
         ):
             result = net(sparse_input)
             # Build the traced graph.
-            prog = torch.export.export(net, (sparse_input,), strict=True)
+            prog = torch.export.export(net, (sparse_input,))
             # Test arg/sum/output.
             for i, node in enumerate(prog.graph.nodes):
                 meta = node.meta.get("val", None)
                 if i == 0:
                     self.assertEqualMeta(meta, sparse_input)
                 elif i == 1:
+                    self.assertIsInstance(meta, FakeTensor)
                     self.assertEqualMeta(meta, result)
                 else:
                     self.assertEqual(meta, None)
 
+    @unittest.skipIf(
+        sys.version_info >= (3, 12), "torch.compile is not supported on python 3.12+"
+    )
     @parametrize("dtype", DTYPES)
     @parametrize("itype", ITYPES)
     @all_sparse_layouts("layout")
     def test_eltwisenet(self, dtype, itype, layout):
+        if layout is not torch.sparse_coo:
+            self.skipTest("TODO: support non-coo sparsity!")
+
         net = EltwiseNet()
         for sparse_input in self.generate_simple_inputs(
             layout,
@@ -183,7 +196,7 @@ class TestSparseProp(TestCase):
         ):
             result = net(sparse_input)
             # Build the traced graph.
-            prog = torch.export.export(net, (sparse_input,), strict=True)
+            prog = torch.export.export(net, (sparse_input,))
             # Test arg/neg/abs/mul/relu/output.
             for i, node in enumerate(prog.graph.nodes):
                 meta = node.meta.get("val", None)
@@ -192,84 +205,20 @@ class TestSparseProp(TestCase):
                 else:
                     self.assertEqual(meta, None)
 
-    @parametrize("dtype", DTYPES)
-    @parametrize("itype", ITYPES)
-    @all_sparse_layouts("layout")
-    def test_todensenet(self, dtype, itype, layout):
-        net = ToDenseNet()
-        for sparse_input in self.generate_simple_inputs(
-            layout,
-            device="cpu",
-            dtype=dtype,
-            index_dtype=itype,
-        ):
-            result = net(sparse_input)
-            # Build the traced graph.
-            prog = torch.export.export(net, (sparse_input,), strict=True)
-            # Test arg/todense/output.
-            for i, node in enumerate(prog.graph.nodes):
-                meta = node.meta.get("val", None)
-                if i == 0:
-                    self.assertEqualMeta(meta, sparse_input)
-                elif i == 1:
-                    self.assertEqualMeta(meta, result)
-                else:
-                    self.assertEqual(meta, None)
-
-    def test_add(self):
-        net = AddNet()
-        Y = torch.arange(16, 32, dtype=torch.float32).view(4, 4)
-        A = torch.tensor(
-            [
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 2.0],
-                [0.0, 0.0, 1.0, 1.0],
-                [3.0, 0.0, 3.0, 0.0],
-            ],
-            dtype=torch.float32,
-        )
-        S = A.to_sparse_csr()
-        result = net(S, Y)
-        # Build the traced graph.
-        prog = torch.export.export(net, (S, Y), strict=True)
-        # Test args/add/output.
-        for i, node in enumerate(prog.graph.nodes):
-            meta = node.meta.get("val", None)
-            if i == 0:
-                self.assertEqualMeta(meta, S)
-            elif i == 1:
-                self.assertEqualMeta(meta, Y)
-            elif i == 2:
-                self.assertEqualMeta(meta, result)
-            else:
-                self.assertEqual(meta, None)
-
+    @unittest.skipIf(
+        sys.version_info >= (3, 12), "torch.compile is not supported on python 3.12+"
+    )
     def test_activation_coo(self):
         net = SparseActivationCOO()
         x = [torch.randn(3, 3) for _ in range(3)]
         result = net(x)
         # Build the traced graph.
-        prog = torch.export.export(net, args=(x,), strict=True)
+        prog = torch.export.export(net, args=(x,))
         # Test args/to_sparse/output.
         for i, node in enumerate(prog.graph.nodes):
             meta = node.meta.get("val", None)
             if i <= 2:
-                self.assertEqualMeta(meta, x[i])
-            elif i <= 5:
-                self.assertEqualMeta(meta, result[i - 3])
-            else:
-                self.assertEqual(meta, None)
-
-    def test_activation_csr(self):
-        net = SparseActivationCSR()
-        x = [torch.randn(3, 3) for _ in range(3)]
-        result = net(x)
-        # Build the traced graph.
-        prog = torch.export.export(net, args=(x,), strict=True)
-        # Test args/to_sparse/output.
-        for i, node in enumerate(prog.graph.nodes):
-            meta = node.meta.get("val", None)
-            if i <= 2:
+                self.assertIsInstance(meta, FakeTensor)
                 self.assertEqualMeta(meta, x[i])
             elif i <= 5:
                 self.assertEqualMeta(meta, result[i - 3])

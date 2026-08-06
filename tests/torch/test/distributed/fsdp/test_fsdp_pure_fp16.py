@@ -10,19 +10,18 @@ from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
     MixedPrecision,
 )
-from torch.testing._internal.common_device_type import instantiate_device_type_tests
 from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_fsdp import (
-    DEVICEInitMode,
+    CUDAInitMode,
     FSDPInitMode,
-    FSDPTestContinuous,
-    get_devtype,
+    FSDPTest,
     NestedWrappedModule,
 )
-from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
-
-
-device_type = torch.device(get_devtype())
+from torch.testing._internal.common_utils import (
+    instantiate_parametrized_tests,
+    run_tests,
+    TEST_WITH_DEV_DBG_ASAN,
+)
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -36,7 +35,12 @@ if TEST_WITH_DEV_DBG_ASAN:
     sys.exit(0)
 
 
-class TestPureFP16(FSDPTestContinuous):
+class TestPureFP16(FSDPTest):
+    @property
+    def world_size(self):
+        # Test fails due to inaccuracies when using more than 4 GPUs
+        return min(4, super().world_size)
+
     @skip_if_lt_x_gpu(2)
     def test_pure_fp16_training(self):
         """Tests pure FP16 training, including when the parameter's dtype is
@@ -55,7 +59,7 @@ class TestPureFP16(FSDPTestContinuous):
         self._test_fsdp_parity(
             NestedWrappedModule,
             FSDPInitMode.RECURSIVE,
-            device_init_mode=DEVICEInitMode.DEVICE_BEFORE,
+            cuda_init_mode=CUDAInitMode.CUDA_BEFORE,
             # Run one iteration to avoid NaN without a gradient scaler
             num_iters=1,
             cpu_offload=cpu_offload,
@@ -96,14 +100,12 @@ class TestPureFP16(FSDPTestContinuous):
         model = NestedWrappedModule.init(
             self.process_group,
             FSDPInitMode.NO_FSDP,
-            DEVICEInitMode.DEVICE_NEVER,
-            {
-                "device_id": device_type,
-            },
+            CUDAInitMode.CUDA_NEVER,
+            {},
         )
         fsdp_kwargs = {
             "use_orig_params": use_orig_params,
-            "device_id": device_type,
+            "device_id": torch.cuda.current_device(),
             "mixed_precision": mixed_precision,
         }
         if to_half_before_fsdp_init:
@@ -115,7 +117,7 @@ class TestPureFP16(FSDPTestContinuous):
             self.assertEqual(param.dtype, torch.float16)
         inp = tuple(
             t.half() if torch.is_tensor(t) else t
-            for t in fsdp_model.module.get_input(self.device_type)
+            for t in fsdp_model.module.get_input(torch.device("cuda"))
         )
         out = fsdp_model(*inp)
         out.sum().backward()
@@ -151,7 +153,7 @@ class TestPureFP16(FSDPTestContinuous):
                 self.assertEqual(param.grad.dtype, torch.float16)
 
 
-devices = ("cuda", "hpu", "xpu")
-instantiate_device_type_tests(TestPureFP16, globals(), only_for=devices, allow_xpu=True)
+instantiate_parametrized_tests(TestPureFP16)
+
 if __name__ == "__main__":
     run_tests()

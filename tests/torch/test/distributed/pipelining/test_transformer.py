@@ -2,7 +2,6 @@
 # Owner(s): ["oncall: distributed"]
 import torch
 from torch.distributed.pipelining import pipeline, SplitPoint
-from torch.testing._internal.common_device_type import instantiate_device_type_tests
 from torch.testing._internal.common_utils import run_tests, TestCase
 
 
@@ -35,9 +34,9 @@ class TransformerLike(torch.nn.Module):
 
 
 class TransformerTests(TestCase):
-    def test_ir(self, device):
-        transformer = TransformerLike().to(device)
-        x = torch.randn(microbatch_size, d_hid, device=device)
+    def test_ir(self):
+        transformer = TransformerLike()
+        x = torch.randn(microbatch_size, d_hid)
 
         # Split into 2 stages
         num_stages = 2
@@ -48,8 +47,7 @@ class TransformerTests(TestCase):
             (x,),
             split_spec=split_spec,
         )
-        if pipe.num_stages != num_stages:
-            raise AssertionError(f"{pipe.num_stages=}, expect {num_stages}")
+        assert pipe.num_stages == num_stages, f"{pipe.num_stages=}, expect {num_stages}"
 
         def get_layers(module):
             layers = [name for name, _ in module.layers.named_children()]
@@ -63,8 +61,7 @@ class TransformerTests(TestCase):
 
         # Check layer completeness
         orig_layers = get_layers(transformer)
-        if sorted(layers) != sorted(orig_layers):
-            raise AssertionError(f"{layers} != {orig_layers}")
+        assert sorted(layers) == sorted(orig_layers), f"{layers} != {orig_layers}"
         print("Layers matched!")
 
         # Check equivalence
@@ -73,11 +70,6 @@ class TransformerTests(TestCase):
         torch.testing.assert_close(out, ref)
         print(f"Equivalence test passed {torch.sum(out)} ref {torch.sum(ref)}")
 
-
-devices = ["cpu", "cuda", "hpu", "xpu"]
-instantiate_device_type_tests(
-    TransformerTests, globals(), only_for=devices, allow_xpu=True
-)
 
 if __name__ == "__main__":
     run_tests()

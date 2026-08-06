@@ -5,13 +5,12 @@ from torch.fx import symbolic_trace
 from torch.package import PackageExporter
 from torch.testing._internal.common_utils import IS_FBCODE, IS_SANDCASTLE
 
-
 packaging_directory = f"{Path(__file__).parent}/package_bc"
 torch.package.package_exporter._gate_torchscript_serialization = False
 
 
 def generate_bc_packages():
-    """Function to create packages for testing backwards compatibility"""
+    """Function to create packages for testing backwards compatiblity"""
     if not IS_FBCODE or IS_SANDCASTLE:
         from package_a.test_nn_module import TestNnModule
 

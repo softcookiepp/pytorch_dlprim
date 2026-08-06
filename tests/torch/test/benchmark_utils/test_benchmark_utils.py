@@ -7,7 +7,7 @@ import re
 import textwrap
 import timeit
 import unittest
-from typing import Any
+from typing import Any, List, Tuple
 
 import expecttest
 import numpy as np
@@ -66,10 +66,9 @@ def generate_callgrind_artifacts() -> None:
         json.dump(artifacts, f, indent=4)
 
 
-def load_callgrind_artifacts() -> tuple[
-    benchmark_utils.CallgrindStats,
-    benchmark_utils.CallgrindStats,
-]:
+def load_callgrind_artifacts() -> (
+    Tuple[benchmark_utils.CallgrindStats, benchmark_utils.CallgrindStats]
+):
     """Hermetic artifact to unit test Callgrind wrapper.
 
     In addition to collecting counts, this wrapper provides some facilities for
@@ -86,15 +85,14 @@ def load_callgrind_artifacts() -> tuple[
     pattern = re.compile(r"^\s*([0-9]+)\s(.+)$")
 
     def to_function_counts(
-        count_strings: list[str], inclusive: bool
+        count_strings: List[str], inclusive: bool
     ) -> benchmark_utils.FunctionCounts:
-        data: list[benchmark_utils.FunctionCount] = []
+        data: List[benchmark_utils.FunctionCount] = []
         for cs in count_strings:
             # Storing entries as f"{c} {fn}" rather than [c, fn] adds some work
             # reviving the artifact, but it makes the json much easier to read.
             match = pattern.search(cs)
-            if match is None:
-                raise AssertionError(f"Pattern did not match: {cs}")
+            assert match is not None
             c, fn = match.groups()
             data.append(benchmark_utils.FunctionCount(count=int(c), function=fn))
 
@@ -553,8 +551,7 @@ class TestBenchmarkUtils(TestCase):
         )
 
         stats = timer.collect_callgrind(number=1000, repeats=20)
-        if not isinstance(stats, tuple):
-            raise AssertionError(f"Expected tuple, got {type(stats)}")
+        assert isinstance(stats, tuple)
 
         # Check that the repeats are at least somewhat repeatable. (within 10 instructions per iter)
         counts = collections.Counter(
@@ -602,8 +599,7 @@ class TestBenchmarkUtils(TestCase):
             )
 
         stats = timer.collect_callgrind(number=1000, repeats=20)
-        if not isinstance(stats, tuple):
-            raise AssertionError(f"Expected tuple, got {type(stats)}")
+        assert isinstance(stats, tuple)
 
         # NB: Unlike the example above, there is no expectation that all
         #     repeats will be identical.
@@ -702,16 +698,14 @@ class TestBenchmarkUtils(TestCase):
               8959166  /tmp/build/80754af9/python_15996 ... a3/envs/throwaway/bin/python3.6]
                   ...
                 92821  /tmp/build/80754af9/python_15996 ... a3/envs/throwaway/bin/python3.6]
-                91000  build/../torch/csrc/tensor/pytho ... ch/torch/lib/libtorch_python.so]  # codespell:ignore
+                91000  build/../torch/csrc/tensor/pytho ... ch/torch/lib/libtorch_python.so]
                 91000  /data/users/test_user/repos/pyto ... nsors::get_default_scalar_type()
                 90090  ???:pthread_mutex_lock [/usr/lib64/libpthread-2.28.so]
                 90000  build/../c10/core/TensorImpl.h:c ... ch/torch/lib/libtorch_python.so]
                 90000  build/../aten/src/ATen/record_fu ... torch/torch/lib/libtorch_cpu.so]
-                90000  /data/users/test_user/repos/pyto ... uard(std::optional<c10::Device>)
+                90000  /data/users/test_user/repos/pyto ... uard(c10::optional<c10::Device>)
                 90000  /data/users/test_user/repos/pyto ... ersionCounter::~VersionCounter()
-                88000  /data/users/test_user/repos/pyto ... ratorKernel*, at::Tensor const&)""".replace(
-                "  # codespell:ignore", ""
-            ),
+                88000  /data/users/test_user/repos/pyto ... ratorKernel*, at::Tensor const&)""",
         )
 
         self.regularizeAndAssertExpectedInline(

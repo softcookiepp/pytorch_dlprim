@@ -23,7 +23,7 @@ class TestVulkanRewritePass(TestCase):
         scripted_model = torch.jit.script(module_instance)
         scripted_model.eval()
         input_data = torch.normal(1, 20, size=data_shape)
-        scripted_model(input_data)
+        ref_result = scripted_model(input_data)
         torch._C._jit_pass_vulkan_insert_prepacked_ops(scripted_model._c)
         if fuse_clamping_ops or prepack_removal:
             scripted_model._c = torch._C._freeze_module(scripted_model._c)
@@ -58,6 +58,7 @@ class TestVulkanRewritePass(TestCase):
         dilation = 1
         input_channels = input_channels_per_group * groups
         output_channels = output_channels_per_group * groups
+        kernels = (kernel_h, kernel_w)
         strides = (stride_h, stride_w)
         paddings = (pad_h, pad_w)
         dilations = (dilation, dilation)
@@ -65,7 +66,7 @@ class TestVulkanRewritePass(TestCase):
         conv_bias_shape = (output_channels)
 
         class Conv2D(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.weight = torch.nn.Parameter(torch.rand(conv_weight_shape), requires_grad=False)
                 self.bias = torch.nn.Parameter(torch.rand(conv_bias_shape), requires_grad=False)
@@ -85,7 +86,7 @@ class TestVulkanRewritePass(TestCase):
         TestVulkanRewritePass.validate_transformed_module(Conv2D(), pattern_count_map, data_shape)
 
         class Conv2DRelu(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.weight = torch.nn.Parameter(torch.rand(conv_weight_shape), requires_grad=False)
                 self.bias = torch.nn.Parameter(torch.rand(conv_bias_shape), requires_grad=False)
@@ -124,7 +125,7 @@ class TestVulkanRewritePass(TestCase):
 
 
         class Conv2DHardtanh(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.weight = torch.nn.Parameter(torch.rand(conv_weight_shape), requires_grad=False)
                 self.bias = torch.nn.Parameter(torch.rand(conv_bias_shape), requires_grad=False)

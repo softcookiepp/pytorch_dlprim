@@ -1,5 +1,6 @@
 # Owner(s): ["module: inductor"]
 import copy
+
 import functools
 import os
 import unittest
@@ -7,20 +8,14 @@ import unittest
 import torch
 from torch import nn, Tensor
 from torch._dynamo.convert_frame import maybe_cprofile
-from torch._dynamo.device_interface import get_interface_for_device
+from torch._dynamo.test_case import run_tests, TestCase
 from torch._dynamo.testing import rand_strided, reduce_to_scalar_loss
 from torch._inductor import config, ir, metrics
 from torch._inductor.fx_passes import pad_mm as pad_mm_pass
-from torch._inductor.runtime.benchmarking import benchmarker
-from torch._inductor.test_case import run_tests, TestCase
-from torch._inductor.utils import ceildiv, run_and_get_code
-from torch.testing._internal.common_utils import (
-    instantiate_parametrized_tests,
-    parametrize,
-    serialTest,
-)
-from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_GPU, requires_gpu
-
+from torch._inductor.runtime.runtime_utils import do_bench
+from torch._inductor.utils import run_and_get_code
+from torch.testing._internal.common_utils import serialTest
+from torch.testing._internal.inductor_utils import HAS_CUDA
 
 DO_PERF_TEST = os.environ.get("DO_PERF_TEST") == "1"
 DO_ACC_TEST = os.environ.get("DO_ACC_TEST", "1") == "1"
@@ -47,18 +42,6 @@ def gen_transformer_inputs(vocab_size, bs, seq_length):
 
     input_dict = {"input_ids": geninp(), "labels": geninp()}
     return input_dict
-
-
-def get_padded_stride(shape, alignment_bytes, pad_output, itemsize):
-    align = alignment_bytes // itemsize
-    new_strides = [0 for _ in range(len(shape))]
-    new_strides[len(shape) - 1] = 1
-    for i in range(len(shape) - 1, 0, -1):
-        stride = shape[i] * new_strides[i]
-        if pad_output and stride % align != 0:
-            stride = (stride + align - 1) // align * align
-        new_strides[i - 1] = stride
-    return tuple(new_strides)
 
 
 class LinearAndSoftmax(nn.Module):
@@ -102,28 +85,7 @@ def forward_and_backward_pass(m, inputs):
         "triton.cudagraphs": USE_CUDA_GRAPHS,
     }
 )
-@requires_gpu()
 class TestCaseBase(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        if HAS_GPU:
-            cls.prior_float32_matmul_precision = torch.get_float32_matmul_precision()
-            cls.prior_default_device = torch.get_default_device()
-            if torch.version.hip:
-                torch.set_float32_matmul_precision("highest")
-            else:
-                torch.set_float32_matmul_precision("high")
-            torch.set_default_device(GPU_TYPE)
-
-    @classmethod
-    def tearDownClass(cls):
-        if HAS_GPU:
-            torch.set_float32_matmul_precision(cls.prior_float32_matmul_precision)
-            torch.set_default_device(cls.prior_default_device)
-
-            cls.prior_float32_matmul_precision = None
-            cls.prior_default_device = None
-
     def check_close(self, ref, act, tol=1e-3):
         if type(ref).__name__ == "LongformerMaskedLMOutput":
             ref = ref.loss
@@ -155,8 +117,7 @@ class TestCaseBase(TestCase):
     ):
         if kwargs is None:
             kwargs = {}
-        device_interface = get_interface_for_device(GPU_TYPE)
-        device_interface.synchronize()
+        torch.cuda.synchronize()
         with torch.profiler.profile(with_stack=WITH_STACK) as p:
             niter = 3
             for _ in range(niter):
@@ -165,7 +126,7 @@ class TestCaseBase(TestCase):
 
                 with torch.profiler.record_function(tag_rhs):
                     f_rhs(*args, **kwargs)
-            device_interface.synchronize()
+            torch.cuda.synchronize()
 
         profile_path = "/tmp/chrome.json"
         p.export_chrome_trace(profile_path)
@@ -190,10 +151,10 @@ class PerfTestBetweenGoodAndBadShape(TestCaseBase):
         m_bad_shape_opt = torch.compile(m_bad_shape)
         m_good_shape_opt = torch.compile(m_good_shape)
 
-        latency_good_shape = benchmarker.benchmark_gpu(
+        latency_good_shape = do_bench(
             lambda: forward_and_backward_pass(m_good_shape_opt, inputs_good_shape)
         )
-        latency_bad_shape = benchmarker.benchmark_gpu(
+        latency_bad_shape = do_bench(
             lambda: forward_and_backward_pass(m_bad_shape_opt, inptus_bad_shape)
         )
         print(
@@ -222,7 +183,7 @@ class PerfTestBetweenGoodAndBadShape(TestCaseBase):
 
             def f(**inputs):
                 optim.zero_grad(True)
-                with torch.autocast(GPU_TYPE):
+                with torch.cuda.amp.autocast():
                     pred = model(**inputs)
                     loss = pred[0]
                 loss.backward()
@@ -234,13 +195,9 @@ class PerfTestBetweenGoodAndBadShape(TestCaseBase):
         f_bad_shape, inputs_bad_shape = create_model(30522)
 
         print("benchmark for good shape")
-        latency_good_shape = benchmarker.benchmark_gpu(
-            lambda: f_good_shape(**inputs_good_shape)
-        )
+        latency_good_shape = do_bench(lambda: f_good_shape(**inputs_good_shape))
         print("benchmark for bad shape")
-        latency_bad_shape = benchmarker.benchmark_gpu(
-            lambda: f_bad_shape(**inputs_bad_shape)
-        )
+        latency_bad_shape = do_bench(lambda: f_bad_shape(**inputs_bad_shape))
         print(
             f"Latency with good and bad shape: {latency_good_shape:.3f} v.s. {latency_bad_shape:.3f}"
         )
@@ -294,7 +251,7 @@ class PerfTestWithAndWithoutPadding(TestCaseBase):
             def get_f(m, optim):
                 def f(*args, **kwargs):
                     optim.zero_grad(True)
-                    with torch.autocast(GPU_TYPE):
+                    with torch.cuda.amp.autocast():
                         pred = m(*args, **kwargs)
                         loss = reduce_to_scalar_loss(pred)
                     loss.backward()
@@ -310,7 +267,7 @@ class PerfTestWithAndWithoutPadding(TestCaseBase):
                 opt_f_with_padding = torch.compile(
                     get_f(m_copy_with_padding, optim_with_padding)
                 )
-                latency_with_padding = benchmarker.benchmark_gpu(
+                latency_with_padding = do_bench(
                     lambda: opt_f_with_padding(*perf_args, **perf_kwargs)
                 )
             latency_without_padding = None
@@ -321,7 +278,7 @@ class PerfTestWithAndWithoutPadding(TestCaseBase):
                 opt_f_without_padding = torch.compile(
                     get_f(m_copy_without_padding, optim_without_padding)
                 )
-                latency_without_padding = benchmarker.benchmark_gpu(
+                latency_without_padding = do_bench(
                     lambda: opt_f_without_padding(*perf_args, **perf_kwargs)
                 )
             print(
@@ -344,7 +301,7 @@ class PerfTestWithAndWithoutPadding(TestCaseBase):
         x = torch.randn(4, layer_sizes[0])
 
         class Model(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 mod_list = []
                 for i in range(len(layer_sizes) - 1):
@@ -378,12 +335,11 @@ class PerfTestWithAndWithoutPadding(TestCaseBase):
     @unittest.skipIf(not DO_PERF_TEST or not HAS_TRANSFORMER, "Perf test not enabled")
     def test_longformer_small_bs(self):
         """
-        The model exists in both HF and TB. In TB it uses a smaller batch size.
+        The model exists in both HF and TB. In TB it uses a samller batch size.
         """
         self.test_longformer(bs=2)
 
 
-@instantiate_parametrized_tests
 class PaddingTest(TestCaseBase):
     @unittest.skipIf(not DO_PERF_TEST, "Perf test not enabled")
     def test_mm_padding_perf(self):
@@ -413,13 +369,13 @@ class PaddingTest(TestCaseBase):
         ):
             a = torch.randn(M, K)
             b = torch.randn(K, N)
-            ms = benchmarker.benchmark_gpu(lambda: f(a, b))
+            ms = do_bench(lambda: f(a, b))
             print(f"MxKxN {M}x{K}x{N} {f.__name__}: {ms:.3f}ms")
 
     @unittest.skipIf(not DO_PERF_TEST, "Perf test not enabled")
     def test_padmm(self):
         """
-        Latency between original matmul and padded matmul: 2.717 v.s. 2.356
+        Latency between origional matmul and padded matmul: 2.717 v.s. 2.356
         """
         mat1_pad = torch.randn(8192, 30522, dtype=torch.float16)
         mat2_pad = torch.randn(30522, 768, dtype=torch.float16)
@@ -439,11 +395,11 @@ class PaddingTest(TestCaseBase):
             mat2 = pad_dim(mat2, 6, 0)
             return torch.ops.aten.mm(mat1, mat2)
 
-        ori_time = benchmarker.benchmark_gpu(f)
-        pad_time = benchmarker.benchmark_gpu(g)
+        ori_time = do_bench(f)
+        pad_time = do_bench(g)
 
         print(
-            f"Latency between original matmul and padded matmul: {ori_time:.3f} v.s. {pad_time:.3f}"
+            f"Latency between origional matmul and padded matmul: {ori_time:.3f} v.s. {pad_time:.3f}"
         )
         self.do_profiling(f, g, "No MM Padding", "With mm padding")
 
@@ -458,7 +414,7 @@ class PaddingTest(TestCaseBase):
 
         # Using stride (30522, 1) does not make a difference here.
         x_bad_shape = rand_strided(
-            (8192, 30522), (30528, 1), device=GPU_TYPE, dtype=torch.float16
+            (8192, 30522), (30528, 1), device="cuda", dtype=torch.float16
         )
         weight_bad_shape = torch.randn(30522, 768, dtype=torch.float16)
         out_bad_shape = torch.randn(8192, 768, dtype=torch.float16)
@@ -473,8 +429,8 @@ class PaddingTest(TestCaseBase):
         f2 = torch.compile(
             functools.partial(f, x_bad_shape, weight_bad_shape, out_bad_shape)
         )
-        latency_good_shape = benchmarker.benchmark_gpu(f1)
-        latency_bad_shape = benchmarker.benchmark_gpu(f2)
+        latency_good_shape = do_bench(f1)
+        latency_bad_shape = do_bench(f2)
         print(
             f"Latency with good and bad shapes: {latency_good_shape:.3f} v.s. {latency_bad_shape:.3f}"
         )
@@ -493,20 +449,22 @@ class PaddingTest(TestCaseBase):
             forward_and_backward_pass, m_bad_shape_opt, inputs_bad_shape
         )
         forward_and_backward_pass(m_bad_shape, inputs_bad_shape)
-        self.assertEqual(
-            m_bad_shape.linear.weight.grad, m_bad_shape_opt.linear.weight.grad
+        self.assertTrue(
+            torch.allclose(
+                m_bad_shape.linear.weight.grad, m_bad_shape_opt.linear.weight.grad
+            )
         )
-        self.assertTrue(len(wrapper_codes) == 2)  # one for forward and one for backward
+        self.assertTrue(len(wrapper_codes) == 2)  # one for forward and oen for backward
         forward_wrapper = wrapper_codes[0]
 
         # make sure the load for softmax is aligned
         self.assertTrue(
-            "tl.load(in_ptr0 + (r0_1 + 30528*x0)" in forward_wrapper,
+            "tl.load(in_ptr0 + (r1 + (30528*x0))" in forward_wrapper,
             f"forward_wrapper: {forward_wrapper}",
         )
 
         if DO_PERF_TEST:
-            latency = benchmarker.benchmark_gpu(
+            latency = do_bench(
                 lambda: forward_and_backward_pass(m_bad_shape_opt, inputs_bad_shape)
             )
             print(f"latency: {latency:.3f}ms")
@@ -517,7 +475,7 @@ class PaddingTest(TestCaseBase):
         inv_scale = (num_heads / hidden_size) ** 0.5
 
         class Attention(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.query = nn.Linear(hidden_size, hidden_size)
                 self.key = nn.Linear(hidden_size, hidden_size)
@@ -607,7 +565,7 @@ class PaddingTest(TestCaseBase):
         x1 = torch.randn(*x_shape)
 
         padded_stride = ir.Layout._pad_strides(x1.stride(), x1.shape, torch.float32)
-        x2 = rand_strided(x_shape, padded_stride, device=GPU_TYPE)
+        x2 = rand_strided(x_shape, padded_stride, device="cuda")
         x2.copy_(x1)
 
         weight = torch.randn(64, 128, 3, 3)
@@ -629,8 +587,8 @@ class PaddingTest(TestCaseBase):
         act = fun(x2, weight)
         self.check_close(ref, act)
         if DO_PERF_TEST:
-            latency_with_padding = benchmarker.benchmark_gpu(lambda: fun(x2, weight))
-            latency_without_padding = benchmarker.benchmark_gpu(lambda: fun(x1, weight))
+            latency_with_padding = do_bench(lambda: fun(x2, weight))
+            latency_without_padding = do_bench(lambda: fun(x1, weight))
             print(
                 f"Latency with and without padding: {latency_with_padding:.3f} v.s. {latency_without_padding:.3f}"
             )
@@ -658,8 +616,8 @@ class PaddingTest(TestCaseBase):
         with config.patch("triton.cudagraphs", False):
             opt_f = torch.compile(f)
             opt_f(x)
-        eager_time = benchmarker.benchmark_gpu(lambda: f(x))
-        opt_time = benchmarker.benchmark_gpu(lambda: opt_f(x))
+        eager_time = do_bench(lambda: f(x))
+        opt_time = do_bench(lambda: opt_f(x))
         print(
             f"Latency between eager and compiled: {eager_time:.3f} v.s. {opt_time:.3f}"
         )
@@ -676,239 +634,9 @@ class PaddingTest(TestCaseBase):
         out_strides = ir.Layout._pad_strides(in_strides, t.shape, torch.float32)
         self.assertTrue(in_strides == out_strides)
 
-    @parametrize("alignment_bytes", (32, 128))
-    @parametrize("shape", [(21, 19), (3, 5, 71)])
-    @parametrize("dtype", (torch.float16, torch.float32))
-    def test_pad_outputs(
-        self, dtype: torch.dtype, shape: tuple[int], alignment_bytes: int
-    ):
-        """
-        Tests padding output tensors to a specific alignment.
-        This is enabled by a config flag.
-        """
-        func = torch.add
-        inputs = tuple(torch.randn(*shape, dtype=dtype) for input_idx in range(2))
-
-        # Compile and run
-        with config.patch(
-            {
-                "comprehensive_padding": True,
-                "padding_alignment_bytes": alignment_bytes,
-                "padding_stride_threshold": 0,
-                "pad_outputs": True,
-            }
-        ):
-            compiled_func = torch.compile(func)
-            compiled_out = compiled_func(*inputs)
-
-        # Check numerics
-        eager_out = func(*inputs)
-        self.check_close(eager_out, compiled_out)
-
-        # Compute the expected padding
-        element_size = torch.tensor([], dtype=dtype).element_size()
-        self.assertGreater(alignment_bytes, element_size)
-        self.assertEqual(alignment_bytes % element_size, 0)
-        alignment_elements = alignment_bytes // element_size
-        contiguous_stride = inputs[0].stride()
-        expected_stride = [1]
-        for dim in reversed(shape[1:]):
-            slice_size = dim * expected_stride[0]
-            new_stride = alignment_elements * ceildiv(slice_size, alignment_elements)
-            expected_stride.insert(0, new_stride)
-        expected_stride = tuple(expected_stride)
-        self.assertNotEqual(expected_stride, contiguous_stride)
-
-        # Check strides
-        self.assertFalse(compiled_out.is_contiguous())
-        self.assertEqual(compiled_out.stride(), expected_stride)
-
-    @parametrize(
-        "shape,alignment_bytes,pad_output",
-        [
-            ((512, 1), 32, False),
-            ((512, 1), 32, True),
-            ((32, 30), 64, False),
-            ((32, 30), 64, True),
-        ],
-    )
-    def test_noop_concat_output_padding(self, shape, alignment_bytes, pad_output):
-        """
-        When we generate no-op concat kernel, alignment of the inputs
-        and outputs should be honored based on padding_alignment_bytes.
-        """
-
-        def get_input(size: tuple[int], alignment_bytes: int) -> torch.Tensor:
-            size_padded = list(size)
-            elem_size = 4  # float32
-            pad_elems = alignment_bytes // elem_size
-            if pad_output:
-                size_padded[-1] = (
-                    (size_padded[-1] + pad_elems - 1) // pad_elems * pad_elems
-                )
-            full = torch.randn(size_padded, dtype=torch.float32)
-            view = torch.as_strided(full, size, full.stride())
-            return view
-
-        num_inputs = 12
-        input_tensors = [get_input(shape, alignment_bytes) for _ in range(num_inputs)]
-
-        config_patches = {
-            "compile_threads": 1,
-            "comprehensive_padding": pad_output,
-            "cpu_backend": "triton",
-            "disable_padding_cpu": False,
-            "implicit_fallbacks": False,
-            "inplace_buffers": False,
-            "padding_alignment_bytes": alignment_bytes,
-            "pad_channels_last": True,
-            "pad_outputs": True,
-            "padding_stride_threshold": 0,
-            "triton.prefer_nd_tiling": True,
-            "triton.use_block_ptr": True,
-            "triton.codegen_upcast_to_fp32": False,
-            "unroll_reductions_threshold": 1,
-        }
-        with config.patch(config_patches):
-            compiled = torch.compile(torch.cat)
-            _, code = run_and_get_code(compiled, input_tensors, 0)
-
-        output_shape = (shape[0] * num_inputs, shape[1])
-        output_stride = input_tensors[0].stride()
-        output_line = f"buf12 = empty_strided_{GPU_TYPE}({output_shape}, {output_stride}, torch.float32)"
-        self.assertTrue(output_line in code[0])
-
-    @parametrize(
-        "shape,alignment_bytes,enable_pad",
-        [
-            ((512, 1), 32, False),
-            ((512, 1), 32, True),
-            ((32, 30), 64, False),
-            ((32, 30), 64, True),
-            ((512, 100, 1), 32, False),
-            ((512, 100, 1), 32, True),
-            ((32, 50, 30), 64, False),
-            ((32, 50, 30), 64, True),
-        ],
-    )
-    def test_outer_dynamic_shape_padding(self, shape, alignment_bytes, enable_pad):
-        """
-        When only the outermost dim is dynamic shape, the output can still be padded up
-        based on padding configuration.
-        """
-        num_inputs = 2
-        input_tensors = [
-            torch.randn(shape, dtype=torch.float32) for _ in range(num_inputs)
-        ]
-
-        config_patches = {
-            "comprehensive_padding": enable_pad,
-            "pad_dynamic_shapes": True,
-            "cpu_backend": "triton",
-            "padding_alignment_bytes": alignment_bytes,
-            "pad_outputs": True,
-            "padding_stride_threshold": 0,
-        }
-        with config.patch(config_patches):
-            torch._dynamo.mark_dynamic(input_tensors[0], 0)
-            torch._dynamo.mark_dynamic(input_tensors[1], 0)
-            compiled = torch.compile(torch.add)
-            result, _ = run_and_get_code(compiled, *input_tensors)
-
-        expected_stride = get_padded_stride(
-            result.shape, alignment_bytes, enable_pad, result.dtype.itemsize
-        )
-        self.assertEqual(result.stride(), expected_stride)
-
-    @parametrize(
-        "shape,perm,alignment_bytes,enable_pad",
-        [
-            ((500, 10, 1), (2, 1, 0), 32, False),
-            ((500, 20, 1), (2, 1, 0), 32, True),
-            ((30, 10, 20), (2, 1, 0), 64, True),
-            ((30, 10, 20), (2, 1, 0), 64, False),
-            ((500, 10, 1), (1, 2, 0), 32, False),
-            ((500, 20, 1), (1, 2, 0), 32, True),
-            ((30, 10, 20), (1, 2, 0), 64, True),
-            ((30, 10, 20), (1, 2, 0), 64, False),
-        ],
-    )
-    def test_perm_outer_dynamic_shape_padding(
-        self, shape, perm, alignment_bytes, enable_pad
-    ):
-        """
-        When only the outermost dim is dynamic shape, the output can still be padded up
-        based on padding configuration. Test when this occurs after a permute op.
-        """
-
-        def permute_contig(x):
-            return torch.permute(x, perm).contiguous()
-
-        num_inputs = 1
-        input_tensors = [
-            torch.randn(shape, dtype=torch.float32) for _ in range(num_inputs)
-        ]
-
-        config_patches = {
-            "comprehensive_padding": enable_pad,
-            "pad_dynamic_shapes": True,
-            "cpu_backend": "triton",
-            "padding_alignment_bytes": alignment_bytes,
-            "pad_outputs": True,
-            "padding_stride_threshold": 0,
-            "triton.use_block_ptr": True,
-        }
-        with config.patch(config_patches):
-            torch._dynamo.mark_dynamic(input_tensors[0], 2)
-            compiled = torch.compile(permute_contig)
-            result, _ = run_and_get_code(compiled, *input_tensors)
-
-        expected_stride = get_padded_stride(
-            result.shape, alignment_bytes, enable_pad, result.dtype.itemsize
-        )
-        self.assertEqual(result.stride(), expected_stride)
-
-    @parametrize(
-        "shape,alignment_bytes,enable_pad",
-        [
-            ((512, 1), 32, False),
-            ((512, 1), 32, True),
-            ((32, 30), 64, False),
-            ((32, 30), 64, True),
-            ((512, 100, 1), 32, False),
-            ((512, 100, 1), 32, True),
-            ((32, 50, 30), 64, False),
-            ((32, 50, 30), 64, True),
-        ],
-    )
-    def test_dynamic_shape_padding(self, shape, alignment_bytes, enable_pad):
-        """
-        When only the outermost dim is dynamic shape, the output can still be padded up
-        based on padding configuration.
-        """
-        num_inputs = 2
-        input_tensors = [
-            torch.randn(shape, dtype=torch.float32) for _ in range(num_inputs)
-        ]
-
-        config_patches = {
-            "comprehensive_padding": enable_pad,
-            "pad_dynamic_shapes": enable_pad,
-            "cpu_backend": "triton",
-            "padding_alignment_bytes": alignment_bytes,
-            "pad_outputs": True,
-            "padding_stride_threshold": 0,
-        }
-        with config.patch(config_patches):
-            compiled = torch.compile(torch.add, dynamic=True)
-            result, _ = run_and_get_code(compiled, *input_tensors)
-
-        expected_stride = get_padded_stride(
-            result.shape, alignment_bytes, enable_pad, result.dtype.itemsize
-        )
-        self.assertEqual(result.stride(), expected_stride)
-
 
 if __name__ == "__main__":
-    if HAS_GPU:
+    if HAS_CUDA:
+        torch.set_float32_matmul_precision("high")
+        torch.set_default_device("cuda")
         run_tests()

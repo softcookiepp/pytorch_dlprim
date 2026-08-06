@@ -2,30 +2,31 @@
 import copy
 import sys
 from collections import OrderedDict
+from typing import Dict, List, Optional, Tuple
 
 import torch
 from torch import distributed as dist
-from torch.distributed.device_mesh import init_device_mesh
+from torch.distributed._tensor import (
+    DeviceMesh,
+    distribute_module,
+    DTensor,
+    init_device_mesh,
+    Replicate,
+    Shard,
+)
+from torch.distributed._tensor.debug import CommDebugMode
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
     CPUOffload,
     FullyShardedDataParallel as FSDP,
     ShardingStrategy,
 )
-from torch.distributed.tensor import (
-    DeviceMesh,
-    distribute_module,
-    DTensor,
-    Replicate,
-    Shard,
-)
-from torch.distributed.tensor.debug import CommDebugMode
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
     parallelize_module,
     RowwiseParallel,
 )
 from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
-from torch.testing._internal.common_fsdp import FSDPTestContinuous
+from torch.testing._internal.common_fsdp import FSDPTest
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
     run_tests,
@@ -35,7 +36,6 @@ from torch.testing._internal.distributed._tensor.common_dtensor import (
     MLPModule,
     RMSNormPython,
 )
-
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -48,11 +48,9 @@ if TEST_WITH_DEV_DBG_ASAN:
     )
     sys.exit(0)
 
-device_type = acc.type if (acc := torch.accelerator.current_accelerator()) else "cpu"
-
 
 class SimpleModel(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.net1 = torch.nn.Linear(5, 8)
         self.relu = torch.nn.ReLU()
@@ -63,11 +61,11 @@ class SimpleModel(torch.nn.Module):
         return self.net3(self.net2(self.relu(self.net1(x))))
 
     @staticmethod
-    def get_sharded_param_names() -> list[str]:
+    def get_sharded_param_names() -> List[str]:
         return ["net1.weight", "net1.bias", "net2.weight"]
 
     @staticmethod
-    def get_non_sharded_param_names() -> list[str]:
+    def get_non_sharded_param_names() -> List[str]:
         return ["net3.weight", "net3.bias"]
 
 
@@ -84,18 +82,17 @@ def distribute_rmsnorm(module, device_mesh):
     )
 
 
-class TestTPFSDPIntegration(FSDPTestContinuous):
+class TestTPFSDPIntegration(FSDPTest):
     def _get_params_and_sharding_info(
         self,
         model: SimpleModel,
-        sharded_param_names: list[str],
+        sharded_param_names: List[str],
         tensor_parallel_size: int,
-    ) -> tuple[dict[str, int], dict[str, tuple[torch.Size, int]]]:
+    ) -> Tuple[Dict[str, int], Dict[str, Tuple[torch.Size, int]]]:
         """ """
-        if type(model) is not SimpleModel:
-            raise AssertionError(
-                "Expects a `SimpleModel` since the sharding cases on the model definition"
-            )
+        assert (
+            type(model) is SimpleModel
+        ), "Expects a `SimpleModel` since the sharding cases on the model definition"
         param_name_to_numel = OrderedDict()
         param_name_to_sharding_info = OrderedDict()
         for param_name, param in model.named_parameters():
@@ -121,7 +118,7 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         """
         # 2-D mesh is [dp, tp]
         twod_mesh = DeviceMesh(
-            device_type=device_type,
+            device_type="cuda",
             mesh=torch.arange(0, self.world_size).view(-1, tensor_parallel_size),
         )
 
@@ -133,8 +130,8 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         self,
         tp_fsdp_model: FSDP,
         tp_pg: dist.ProcessGroup,
-        param_name_to_numel: dict[str, int],
-        non_sharded_param_names: list[str],
+        param_name_to_numel: Dict[str, int],
+        non_sharded_param_names: List[str],
     ) -> None:
         """
         Syncs the tensor parallel parameters' gradients following the data
@@ -143,14 +140,13 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         """
         tp_world_size = tp_pg.size()
         fsdp_world_size = self.world_size // tp_world_size
-        if not (
+        assert (
             type(tp_fsdp_model) is FSDP
             and len([m for m in tp_fsdp_model.modules() if type(m) is FSDP]) == 1
-        ):
-            raise AssertionError(
-                "The following logic assumes a single top-level-only FSDP wrapping "
-                "the model with TP already applied"
-            )
+        ), (
+            "The following logic assumes a single top-level-only FSDP wrapping "
+            "the model with TP already applied"
+        )
         for flat_param in tp_fsdp_model.params:
             splits = tuple(param_name_to_numel.values())
             # Create a mask over the gradient elements to manually reduce
@@ -169,7 +165,7 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
                 self.rank // tp_world_size
             ]
             grad_device = flat_param.grad.device
-            grad = flat_param.grad.detach().clone().to(self.rank)
+            grad = flat_param.grad.detach().clone().cuda(self.rank)
             dist.all_reduce(grad, op=dist.ReduceOp.SUM, group=tp_pg)
             grad = grad.to(grad_device)
             flat_param.grad[~sharded_mask] = grad[~sharded_mask]
@@ -180,11 +176,11 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         self,
         model: FSDP,
         uses_tp: bool,
-        param_name_to_numel: dict[str, int],
-        param_name_to_sharding_info: dict[str, tuple[torch.Size, int]],
-        tp_pg: dist.ProcessGroup | None,
-        fsdp_pg: dist.ProcessGroup | None,
-        sharded_param_names: list[str] | None,
+        param_name_to_numel: Dict[str, int],
+        param_name_to_sharding_info: Dict[str, Tuple[torch.Size, int]],
+        tp_pg: Optional[dist.ProcessGroup],
+        fsdp_pg: Optional[dist.ProcessGroup],
+        sharded_param_names: Optional[List[str]],
     ) -> torch.Tensor:
         """
         Returns all unsharded gradients as a single flattened tensor. This
@@ -193,16 +189,14 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         local_grads_as_flattened = (
             torch.cat(
                 [
-                    (
-                        torch.flatten(param.grad)
-                        if param.grad is not None
-                        else torch.zeros_like(torch.flatten(param))
-                    )
+                    torch.flatten(param.grad)
+                    if param.grad is not None
+                    else torch.zeros_like(torch.flatten(param))
                     for param in model.parameters()
                 ]
             )
             .contiguous()
-            .to(self.rank)
+            .cuda(self.rank)
         )
         all_grads_as_flattened = torch.cat(
             [torch.empty_like(local_grads_as_flattened) for _ in range(fsdp_pg.size())]
@@ -255,7 +249,7 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         tensor_parallel_size = 2
         LR = 3e-5
         torch.manual_seed(0)
-        model = SimpleModel().to(self.rank)
+        model = SimpleModel().cuda(self.rank)
         tp_fsdp_model = copy.deepcopy(model)
         sharded_param_names = SimpleModel.get_sharded_param_names()
         non_sharded_param_names = SimpleModel.get_non_sharded_param_names()
@@ -271,10 +265,10 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         input_seed = self.rank
         torch.manual_seed(input_seed + 1)
         inp_size = [2, 3, 5]
-        inp = torch.rand(*inp_size).to(self.rank)
+        inp = torch.rand(*inp_size).cuda(self.rank)
         self.assertEqual(model(inp), tp_fsdp_model(inp))  # sanity check
 
-        mesh_1d = init_device_mesh(device_type, (self.world_size,))
+        mesh_1d = init_device_mesh("cuda", (self.world_size,))
         fsdp_model = FSDP(
             model,
             cpu_offload=cpu_offload,
@@ -283,7 +277,7 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
             use_orig_params=use_orig_params,
         )
         mesh_2d = init_device_mesh(
-            device_type,
+            "cuda",
             (self.world_size // tensor_parallel_size, tensor_parallel_size),
             mesh_dim_names=["dp", "tp"],
         )
@@ -298,14 +292,8 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
             sequence_parallelize_plan,
         )
         tp_pg = mesh_2d["tp"].get_group(mesh_dim=0)
-        if not isinstance(tp_fsdp_model.net1.weight, DTensor):
-            raise AssertionError(
-                f"Expected DTensor, got {type(tp_fsdp_model.net1.weight)}"
-            )
-        if not isinstance(tp_fsdp_model.net2.weight, DTensor):
-            raise AssertionError(
-                f"Expected DTensor, got {type(tp_fsdp_model.net2.weight)}"
-            )
+        assert isinstance(tp_fsdp_model.net1.weight, DTensor)
+        assert isinstance(tp_fsdp_model.net2.weight, DTensor)
         tp_fsdp_model = FSDP(
             tp_fsdp_model,
             cpu_offload=cpu_offload,
@@ -355,7 +343,7 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         fsdp_optim.step()
         tp_fsdp_optim.step()
         torch.manual_seed(input_seed + 16)
-        inp = torch.rand(*inp_size).to(self.rank)
+        inp = torch.rand(*inp_size).cuda(self.rank)
         fsdp_out = fsdp_model(inp)
         tp_fsdp_out = tp_fsdp_model(inp)
         self.assertEqual(fsdp_out, tp_fsdp_out)
@@ -366,19 +354,19 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         Tests TP + FSDP extension with correct gradient (i.e. no ACT)
         """
         mesh_2d = init_device_mesh(
-            device_type, (self.world_size // 2, 2), mesh_dim_names=["dp", "tp"]
+            "cuda", (self.world_size // 2, 2), mesh_dim_names=["dp", "tp"]
         )
 
         class TestModel(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
-                self.mlp = MLPModule(device_type)
+                self.mlp = MLPModule("cuda")
                 self.mlp_norm = RMSNormPython(10)
 
             def forward(self, x):
                 return self.mlp(self.mlp_norm(x))
 
-        model = TestModel().to(self.rank)
+        model = TestModel().cuda(self.rank)
 
         # Shard with TP and test gradient
         tp_mesh = mesh_2d["tp"]
@@ -396,7 +384,7 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         comm_mode = CommDebugMode()
 
         with comm_mode:
-            fsdp_2d_model(torch.rand(2, 10).to(self.rank)).sum().backward()
+            fsdp_2d_model(torch.rand(2, 10).cuda(self.rank)).sum().backward()
 
         funcol = torch.ops.c10d_functional
         c10d_ops = torch.ops.c10d
@@ -418,7 +406,7 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
     @skip_if_lt_x_gpu(4)
     def test_fsdp_tp_sync_module_state(self):
         mesh_2d = init_device_mesh(
-            device_type, (self.world_size // 2, 2), mesh_dim_names=["dp", "tp"]
+            "cuda", (self.world_size // 2, 2), mesh_dim_names=["dp", "tp"]
         )
         tp_mesh = mesh_2d["tp"]
         dp_mesh = mesh_2d["dp"]
@@ -427,7 +415,7 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
         torch.manual_seed(mesh_2d.get_rank())
 
         class TestModel(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 replicated_dt = DTensor.from_local(
                     torch.randn(8, 8), tp_mesh, [Replicate()], run_check=False
@@ -436,7 +424,7 @@ class TestTPFSDPIntegration(FSDPTestContinuous):
                     torch.randn(8, 8), tp_mesh, [Replicate()], run_check=False
                 )
                 self.param = torch.nn.Parameter(replicated_dt)
-                self.buf = torch.nn.Buffer(replicated_buffer_dt)
+                self.register_buffer("buf", replicated_buffer_dt)
 
             def forward(self, x):
                 return self.param + self.buffer + 1

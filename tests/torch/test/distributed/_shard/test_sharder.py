@@ -10,13 +10,13 @@ from torch.distributed._shard.sharder import Sharder
 from torch.distributed._shard.sharding_plan import ShardingPlan
 from torch.distributed._shard.sharding_spec import ChunkShardingSpec
 from torch.testing._internal.common_distributed import requires_nccl, skip_if_lt_x_gpu
+
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
 from torch.testing._internal.distributed._shard.sharded_tensor import (
     ShardedTensorTestBase,
     TEST_GPU_NUM,
     with_comms,
 )
-
 
 if TEST_WITH_DEV_DBG_ASAN:
     print(
@@ -55,10 +55,7 @@ class CustomShardedEBC(nn.Module):
         # create embedding bags base on the spec
         self.embedding_bags: nn.ModuleDict = nn.ModuleDict()
 
-        if not (self.split_idx < ebc.num_bags):
-            raise AssertionError(
-                f"Expected split_idx < num_bags, got {self.split_idx} vs {ebc.num_bags}"
-            )
+        assert self.split_idx < ebc.num_bags
         for i in range(ebc.num_bags):
             bag_key = f"embedding_bag_{i}"
             if i < self.split_idx:
@@ -103,7 +100,7 @@ class TestCustomSharder(ShardedTensorTestBase):
     @requires_nccl()
     def test_custom_sharder(self):
         class MyModule(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.ebc = CustomEmbeddingBagCollection(10, 10, 8)
 

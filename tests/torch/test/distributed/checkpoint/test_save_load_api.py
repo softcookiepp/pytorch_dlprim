@@ -2,10 +2,9 @@
 import os
 from unittest.mock import patch
 
-import torch
 import torch.distributed.checkpoint as dcp
 import torch.nn as nn
-from torch.distributed.device_mesh import init_device_mesh
+from torch.distributed._tensor.device_mesh import init_device_mesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.testing._internal.common_utils import run_tests
 from torch.testing._internal.distributed._tensor.common_dtensor import (
@@ -17,7 +16,7 @@ from torch.testing._internal.distributed.checkpoint_utils import with_temp_dir
 
 
 class MyTestModule(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.net1 = nn.Sequential(nn.Linear(8, 16), nn.ReLU())
         self.net2 = nn.Sequential(nn.Linear(16, 32), nn.ReLU())
@@ -37,23 +36,25 @@ class TestSaveAndLoadAPI(DTensorTestBase):
     @skip_if_lt_x_gpu(4)
     @with_temp_dir
     def test_auto_detect(self):
-        model = FSDP(MyTestModule().to(self.device_type))
+        model = FSDP(MyTestModule().cuda())
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         model = FSDP(model, device_mesh=device_mesh)
         dcp.save(model.state_dict(), checkpoint_id=os.path.join(self.temp_dir, "first"))
-        dcp.load(model.state_dict(), checkpoint_id=os.path.join(self.temp_dir, "first"))
+        sd = dcp.load(
+            model.state_dict(), checkpoint_id=os.path.join(self.temp_dir, "first")
+        )
 
         with patch.object(
             dcp.FileSystemReader, "validate_checkpoint_id", return_value=False
-        ):
+        ) as m1:
             with patch.object(
                 dcp.FileSystemWriter, "validate_checkpoint_id", return_value=False
-            ):
+            ) as m2:
                 dcp.save(
                     model.state_dict(),
                     checkpoint_id=os.path.join(self.temp_dir, "second"),
                 )
-                dcp.load(
+                sd = dcp.load(
                     model.state_dict(),
                     checkpoint_id=os.path.join(self.temp_dir, "second"),
                 )
@@ -61,25 +62,7 @@ class TestSaveAndLoadAPI(DTensorTestBase):
         with self.assertRaisesRegex(RuntimeError, "Cannot detect"):
             dcp.save(model.state_dict(), checkpoint_id="abc://abc.abc")
         with self.assertRaisesRegex(RuntimeError, "Cannot detect"):
-            dcp.load(model.state_dict(), checkpoint_id="abc://abc.abc")
-
-    @with_comms
-    @skip_if_lt_x_gpu(2)
-    def test_assert_same_keys(self):
-        """Test the `_assert_same_keys` function."""
-        model = MyTestModule()
-        state_dict = model.state_dict()
-        # Check across ranks; expect true
-        dcp.utils._assert_same_keys(state_dict)
-
-        # Introduces difference; expect false
-        if self.rank == 0:
-            state_dict["abc"] = torch.rand(1)
-        else:
-            state_dict["def"] = torch.rand(1)
-
-        with self.assertRaises(AssertionError):
-            dcp.utils._assert_same_keys(state_dict)
+            sd = dcp.load(model.state_dict(), checkpoint_id="abc://abc.abc")
 
 
 if __name__ == "__main__":

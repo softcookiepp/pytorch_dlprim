@@ -5,7 +5,6 @@
 #include <torch/torch.h>
 
 #include <torch/csrc/autograd/FunctionsManual.h>
-#include <torch/csrc/autograd/engine.h>
 #include <torch/csrc/autograd/functions/basic_ops.h>
 
 #include <test/cpp/api/support.h>
@@ -584,7 +583,7 @@ TEST(CustomAutogradTest, MarkDirty) {
     }
   };
 
-  // Clone here because modifying leaves inplace is not allowed
+  // Clone here because modifying leafs inplace is not allowed
   auto x = torch::randn({5, 5}, torch::requires_grad()).clone();
   auto version_before = x._version();
   auto out = MyFunction::apply(x);
@@ -1199,7 +1198,7 @@ TEST(CustomAutogradTest, BackwardWithCreateGraphWarns) {
   auto z = x * x;
   {
     WarningCapture warnings;
-    z.backward(torch::ones({5, 5}), std::nullopt, true);
+    z.backward(torch::ones({5, 5}), c10::nullopt, true);
     ASSERT_TRUE(
         warnings.str().find("Using backward() with create_graph=True") !=
         std::string::npos);
@@ -1207,7 +1206,7 @@ TEST(CustomAutogradTest, BackwardWithCreateGraphWarns) {
 
   {
     WarningCapture warnings;
-    torch::autograd::backward({z}, {torch::ones({5, 5})}, std::nullopt, true);
+    torch::autograd::backward({z}, {torch::ones({5, 5})}, c10::nullopt, true);
     ASSERT_TRUE(
         warnings.str().find("Using backward() with create_graph=True") !=
         std::string::npos);
@@ -1289,6 +1288,12 @@ std::tuple<torch::Tensor, torch::Tensor, int64_t> ret_tuple_non_tensor(
 }
 
 torch::Tensor view_op(const torch::Tensor& self) {
+  return self.alias();
+}
+
+torch::Tensor view_op_with_extra_arg(
+    const torch::Tensor& self,
+    const torch::Tensor& other) {
   return self.alias();
 }
 
@@ -1528,9 +1533,35 @@ TEST(TestAutogradNotImplementedFallback, ViewOp) {
   // Test inplace on view
   auto t = torch::tensor({1.}, {torch::kFloat32}).set_requires_grad(true);
 
-  // this works as we can properly replay the view given by the user
-  v1.add_(t);
+  // raise on rebase_history when it refreshes grad_fn
+  ASSERT_THROWS_WITH(
+      v1.add_(t), "which does not have a derivative implemented is forbidden");
+  // base should not be aware of the views, so this is still okay
   b1.add_(t);
+  ASSERT_THROWS_WITH(
+      v1.grad_fn(),
+      "which does not have a derivative implemented is forbidden");
+}
+
+TEST(TestAutogradNotImplementedFallback, ViewOpWithExtraArg) {
+  REGISTER_TEST_OP(
+      "view_op_with_extra_arg",
+      "_test::view_op_with_extra_arg(Tensor(a) self, Tensor other) -> Tensor(a)",
+      view_op_with_extra_arg);
+  auto opHandle = c10::Dispatcher::singleton().findSchemaOrThrow(
+      "_test::view_op_with_extra_arg", "");
+  auto op = [&](const torch::Tensor& _1, const torch::Tensor& _2) {
+    return callOpUnboxed<
+        torch::Tensor,
+        const torch::Tensor&,
+        const torch::Tensor&>(opHandle, _1, _2);
+  };
+  assertBasicChecks(op);
+  auto a = torch::tensor({1.}, {torch::kFloat32});
+  auto b = torch::tensor({2.}, {torch::kFloat32});
+  auto out1 = op(a, b);
+  ASSERT_TRUE(out1.is_view());
+  ASSERT_EQ(out1._base().unsafeGetTensorImpl(), a.unsafeGetTensorImpl());
 }
 
 TEST(TestAutogradNotImplementedFallback, RetTensorVectorView) {
@@ -1635,36 +1666,6 @@ TEST(TestAutogradNotImplementedFallback, TensorlistOp) {
       torch::autograd::grad({out}, {vec[1]}), "is not implemented");
 
   ASSERT_TRUE(at::allclose(op(a, vec), tensorlist_op(a, vec)));
-}
-
-static std::string test_format_error(const std::string& s) {
-  return s;
-}
-
-TEST(TestAutogradUtils, ValidateOutputsReduce) {
-  auto input = torch::ones({}, {torch::kFloat32});
-  auto grad = torch::ones({2, 3}, {torch::kFloat32});
-
-  std::vector<std::optional<InputMetadata>> input_metadata;
-  input_metadata.emplace_back(InputMetadata(input));
-  std::vector<torch::Tensor> grads;
-  grads.emplace_back(grad);
-
-  torch::autograd::validate_outputs(input_metadata, grads, test_format_error);
-  ASSERT_TRUE(at::allclose(grads[0], grad.sum()));
-}
-
-TEST(TestAutogradUtils, ValidateOutputsBasic) {
-  auto input = torch::zeros({2, 3}, {torch::kFloat32});
-  auto grad = torch::ones({2, 3}, {torch::kFloat32});
-
-  std::vector<std::optional<InputMetadata>> input_metadata;
-  input_metadata.emplace_back(InputMetadata(input));
-  std::vector<torch::Tensor> grads;
-  grads.emplace_back(grad);
-
-  torch::autograd::validate_outputs(input_metadata, grads, test_format_error);
-  ASSERT_TRUE(at::allclose(grad, torch::ones({2, 3})));
 }
 
 // TODO add these tests if needed

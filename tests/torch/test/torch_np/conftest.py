@@ -22,9 +22,7 @@ class Inaccessible:
 
 
 def pytest_sessionstart(session):
-    # Use default=False to handle case when option isn't registered
-    # (e.g., when pytest is run from the root directory)
-    if session.config.getoption("--nonp", default=False):
+    if session.config.getoption("--nonp"):
         sys.modules["numpy"] = Inaccessible()
 
 
@@ -74,10 +72,7 @@ def pytest_generate_tests(metafunc):
 
 
 def pytest_collection_modifyitems(config, items):
-    # Use default=False to handle case when option isn't registered
-    # (e.g., when pytest is run from the root directory)
-    # See: https://github.com/pytorch/pytorch/issues/171563
-    if not config.getoption("--runslow", default=False):
+    if not config.getoption("--runslow"):
         skip_slow = pytest.mark.skip(reason="slow test, use --runslow to run")
         for item in items:
             if "slow" in item.keywords:

@@ -3,14 +3,13 @@ import logging
 import sys
 import zipfile
 from pathlib import Path
-
-# Use asterisk symbol so developer doesn't need to import here when they add tests for upgraders.
-from test.jit.fixtures_srcs.fixtures_src import *  # noqa: F403
 from typing import Set
 
 import torch
-from torch.jit.mobile import _export_operator_list, _load_for_lite_interpreter
 
+# Use asterisk symbol so developer doesn't need to import here when they add tests for upgraders.
+from test.jit.fixtures_srcs.fixtures_src import *  # noqa: F403
+from torch.jit.mobile import _export_operator_list, _load_for_lite_interpreter
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -173,7 +172,7 @@ def get_output_model_version(script_module: torch.nn.Module) -> int:
 Loop through all test modules. If the corresponding model doesn't exist in
 `test/jit/fixtures`, generate one. For the following reason, a model won't be exported:
 
-1. The test module doesn't cover the changed operator. For example, test_versioned_div_tensor_example_v4
+1. The test module doens't cover the changed operator. For example, test_versioned_div_tensor_example_v4
 is supposed to test the operator aten::div.Tensor. If the model doesn't include this operator, it will fail.
 The error message includes the actual operator list from the model.
 

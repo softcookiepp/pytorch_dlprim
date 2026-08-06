@@ -1,4 +1,5 @@
 import torch
+
 from torch.export import Dim
 
 
@@ -19,7 +20,7 @@ class SimpleModule(torch.nn.Module):
     a simple module to be compiled
     """
 
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.fc = torch.nn.Linear(4, 6)
         self.relu = torch.nn.ReLU()
@@ -86,7 +87,7 @@ def compile_model(device, data):
 
 def main():
     data = {}
-    for device in ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]:
+    for device in ["cuda", "cpu"]:
         compile_model(device, data)
     torch.jit.script(TensorSerializer(data)).save("script_data.pt")
 

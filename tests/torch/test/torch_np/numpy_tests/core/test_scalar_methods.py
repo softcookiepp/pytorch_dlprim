@@ -3,14 +3,16 @@
 """
 Test the scalar constructors, which also do type-coercion
 """
-
 import fractions
 import functools
+import sys
 import types
-from typing import Any
+from typing import Any, Type
+
 from unittest import skipIf as skipif, SkipTest
 
 import pytest
+
 from pytest import raises as assert_raises
 
 from torch.testing._internal.common_utils import (
@@ -123,8 +125,7 @@ class TestAsIntegerRatio(TestCase):
     def test_roundtrip(self, ftype, frac_vals, exp_vals):
         for frac, exp in zip(frac_vals, exp_vals):
             f = np.ldexp(ftype(frac), exp)
-            if f.dtype != ftype:
-                raise AssertionError(f"Expected f.dtype == {ftype}, got {f.dtype}")
+            assert f.dtype == ftype
             n, d = f.as_integer_ratio()
 
             try:
@@ -145,10 +146,7 @@ class TestIsInteger(TestCase):
     def test_special(self, code, str_value):
         cls = np.dtype(code).type
         value = cls(str_value)
-        if value.is_integer():
-            raise AssertionError(
-                f"Expected value.is_integer() to be False for {str_value}"
-            )
+        assert not value.is_integer()
 
     @parametrize(
         "code", "efd" + "Bbhil"
@@ -156,10 +154,7 @@ class TestIsInteger(TestCase):
     def test_true(self, code: str) -> None:
         float_array = np.arange(-5, 5).astype(code)
         for value in float_array:
-            if not value.is_integer():
-                raise AssertionError(
-                    f"Expected value.is_integer() to be True for {value}"
-                )
+            assert value.is_integer()
 
     @parametrize("code", "bhil")  # np.typecodes["Float"])
     def test_false(self, code: str) -> None:
@@ -168,13 +163,11 @@ class TestIsInteger(TestCase):
         for value in float_array:
             if value == 0:
                 continue
-            if value.is_integer():
-                raise AssertionError(
-                    f"Expected value.is_integer() to be False for {value}"
-                )
+            assert not value.is_integer()
 
 
 @skip(reason="XXX: implementation details of the type system differ")
+@skipif(sys.version_info < (3, 9), reason="Requires python 3.9")
 @instantiate_parametrized_tests
 class TestClassGetItem(TestCase):
     @parametrize(
@@ -188,43 +181,28 @@ class TestClassGetItem(TestCase):
             np.floating,
         ],
     )
-    def test_abc(self, cls: type[np.number]) -> None:
+    def test_abc(self, cls: Type[np.number]) -> None:
         alias = cls[Any]
-        if not isinstance(alias, types.GenericAlias):
-            raise AssertionError(
-                f"Expected alias to be GenericAlias, got {type(alias)}"
-            )
-        if alias.__origin__ is not cls:
-            raise AssertionError(
-                f"Expected alias.__origin__ is {cls}, got {alias.__origin__}"
-            )
+        assert isinstance(alias, types.GenericAlias)
+        assert alias.__origin__ is cls
 
     def test_abc_complexfloating(self) -> None:
         alias = np.complexfloating[Any, Any]
-        if not isinstance(alias, types.GenericAlias):
-            raise AssertionError(
-                f"Expected alias to be GenericAlias, got {type(alias)}"
-            )
-        if alias.__origin__ is not np.complexfloating:
-            raise AssertionError(
-                f"Expected alias.__origin__ is np.complexfloating, got {alias.__origin__}"
-            )
+        assert isinstance(alias, types.GenericAlias)
+        assert alias.__origin__ is np.complexfloating
 
     @parametrize("arg_len", range(4))
     def test_abc_complexfloating_subscript_tuple(self, arg_len: int) -> None:
         arg_tup = (Any,) * arg_len
         if arg_len in (1, 2):
-            if not np.complexfloating[arg_tup]:
-                raise AssertionError(
-                    "Expected np.complexfloating[arg_tup] to be truthy"
-                )
+            assert np.complexfloating[arg_tup]
         else:
             match = f"Too {'few' if arg_len == 0 else 'many'} arguments"
             with pytest.raises(TypeError, match=match):
                 np.complexfloating[arg_tup]
 
     @parametrize("cls", [np.generic])
-    def test_abc_non_numeric(self, cls: type[np.generic]) -> None:
+    def test_abc_non_numeric(self, cls: Type[np.generic]) -> None:
         with pytest.raises(TypeError):
             cls[Any]
 
@@ -238,15 +216,23 @@ class TestClassGetItem(TestCase):
     def test_subscript_tuple(self, arg_len: int) -> None:
         arg_tup = (Any,) * arg_len
         if arg_len == 1:
-            if not np.number[arg_tup]:
-                raise AssertionError("Expected np.number[arg_tup] to be truthy")
+            assert np.number[arg_tup]
         else:
             with pytest.raises(TypeError):
                 np.number[arg_tup]
 
     def test_subscript_scalar(self) -> None:
-        if not np.number[Any]:
-            raise AssertionError("Expected np.number[Any] to be truthy")
+        assert np.number[Any]
+
+
+@instantiate_parametrized_tests
+class TestClassGetitemMisc(TestCase):
+    @skipif(sys.version_info >= (3, 9), reason="Requires python 3.8")
+    @parametrize("cls", [np.number, np.complexfloating, np.int64])
+    def test_class_getitem_38(self, cls: Type[np.number]) -> None:
+        match = "Type subscription requires python >= 3.9"
+        with pytest.raises(TypeError):  # , match=match):
+            cls[Any]
 
 
 @skip(reason="scalartype(...).bit_count() not implemented")
@@ -254,36 +240,19 @@ class TestClassGetItem(TestCase):
 class TestBitCount(TestCase):
     # derived in part from the cpython test "test_bit_count"
 
-    @parametrize(
-        "itype",
-        [np.int8, np.int16, np.int32, np.int64]
-        + [np.uint8, np.uint16, np.uint32, np.uint64],
-    )
+    @parametrize("itype", np.sctypes["int"] + np.sctypes["uint"])
     def test_small(self, itype):
         for a in range(max(np.iinfo(itype).min, 0), 128):
             msg = f"Smoke test for {itype}({a}).bit_count()"
-            if itype(a).bit_count() != a.bit_count():
-                raise AssertionError(msg)
+            assert itype(a).bit_count() == bin(a).count("1"), msg
 
     def test_bit_count(self):
         for exp in [10, 17, 63]:
             a = 2**exp
-            if np.uint64(a).bit_count() != 1:
-                raise AssertionError(
-                    f"Expected bit_count == 1, got {np.uint64(a).bit_count()}"
-                )
-            if np.uint64(a - 1).bit_count() != exp:
-                raise AssertionError(
-                    f"Expected bit_count == {exp}, got {np.uint64(a - 1).bit_count()}"
-                )
-            if np.uint64(a ^ 63).bit_count() != 7:
-                raise AssertionError(
-                    f"Expected bit_count == 7, got {np.uint64(a ^ 63).bit_count()}"
-                )
-            if np.uint64((a - 1) ^ 510).bit_count() != exp - 8:
-                raise AssertionError(
-                    f"Expected bit_count == {exp - 8}, got {np.uint64((a - 1) ^ 510).bit_count()}"
-                )
+            assert np.uint64(a).bit_count() == 1
+            assert np.uint64(a - 1).bit_count() == exp
+            assert np.uint64(a ^ 63).bit_count() == 7
+            assert np.uint64((a - 1) ^ 510).bit_count() == exp - 8
 
 
 if __name__ == "__main__":

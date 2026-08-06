@@ -8,7 +8,6 @@ import torch
 from torch.package import PackageExporter, PackageImporter, sys_importer
 from torch.testing._internal.common_utils import IS_FBCODE, IS_SANDCASTLE, run_tests
 
-
 try:
     from torchvision.models import resnet18
 
@@ -59,7 +58,7 @@ class ModelTest(PackageTestCase):
         self.assertEqual(r2(input), ref)
 
         # functions exist also to get at the private modules in each package
-        torchvision = i.import_module("torchvision")  # noqa: F841
+        torchvision = i.import_module("torchvision")
 
         f2 = BytesIO()
         # if we are doing transfer learning we might want to re-save
@@ -97,8 +96,8 @@ class ModelTest(PackageTestCase):
         # how they want to save it but the 'server' can always
         # use the same API to load the package.
 
-        # The convention is for each model to provide a
-        # 'model' package with a 'load' function that actually
+        # The convension is for each model to provide a
+        # 'model' package with a 'load' function that actual
         # reads the model out of the archive.
 
         # How the load function is implemented is up to the
@@ -123,7 +122,7 @@ class ModelTest(PackageTestCase):
                 import torch_package_importer as resources
 
                 # server knows to call model.load() to get the model,
-                # maybe in the future it passes options as arguments by convention
+                # maybe in the future it passes options as arguments by convension
                 def load():
                     return resources.load_pickle('model', 'pickled')
                 """

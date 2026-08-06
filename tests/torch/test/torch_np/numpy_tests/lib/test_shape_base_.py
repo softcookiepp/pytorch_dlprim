@@ -2,6 +2,7 @@
 
 import functools
 import sys
+
 from unittest import expectedFailure as xfail, skipIf as skipif
 
 from pytest import raises as assert_raises
@@ -13,7 +14,7 @@ from torch.testing._internal.common_utils import (
     TEST_WITH_TORCHDYNAMO,
     TestCase,
     xfailIfTorchDynamo,
-    xpassIfTorchDynamo_np,
+    xpassIfTorchDynamo,
 )
 
 
@@ -37,6 +38,7 @@ if TEST_WITH_TORCHDYNAMO:
         vsplit,
     )
     from numpy.random import rand, randint
+
     from numpy.testing import assert_, assert_array_equal, assert_equal
 
 else:
@@ -84,9 +86,9 @@ class TestTakeAlongAxis(TestCase):
         a = rand(3, 4, 5)
 
         funcs = [
-            (np.sort, np.argsort, {}),
-            (_add_keepdims(np.min), _add_keepdims(np.argmin), {}),
-            (_add_keepdims(np.max), _add_keepdims(np.argmax), {}),
+            (np.sort, np.argsort, dict()),
+            (_add_keepdims(np.min), _add_keepdims(np.argmin), dict()),
+            (_add_keepdims(np.max), _add_keepdims(np.argmax), dict()),
             #  FIXME           (np.partition, np.argpartition, dict(kth=2)),
         ]
 
@@ -152,7 +154,7 @@ class TestPutAlongAxis(TestCase):
 
             assert_equal(i_min, i_max)
 
-    @xpassIfTorchDynamo_np  # (
+    @xpassIfTorchDynamo  # (
     # reason="RuntimeError: Expected index [1, 2, 5] to be smaller than self [3, 4, 1] apart from dimension 1")
     def test_broadcast(self):
         """Test that non-indexing dimensions are broadcast in both directions"""
@@ -162,7 +164,7 @@ class TestPutAlongAxis(TestCase):
         assert_equal(take_along_axis(a, ai, axis=1), 20)
 
 
-@xpassIfTorchDynamo_np  # (reason="apply_along_axis not implemented")
+@xpassIfTorchDynamo  # (reason="apply_along_axis not implemented")
 class TestApplyAlongAxis(TestCase):
     def test_simple(self):
         a = np.ones((20, 10), "d")
@@ -311,22 +313,10 @@ class TestExpandDims(TestCase):
 
     def test_axis_tuple(self):
         a = np.empty((3, 3, 3))
-        if np.expand_dims(a, axis=(0, 1, 2)).shape != (1, 1, 1, 3, 3, 3):
-            raise AssertionError(
-                f"Expected shape (1, 1, 1, 3, 3, 3), got {np.expand_dims(a, axis=(0, 1, 2)).shape}"
-            )
-        if np.expand_dims(a, axis=(0, -1, -2)).shape != (1, 3, 3, 3, 1, 1):
-            raise AssertionError(
-                f"Expected shape (1, 3, 3, 3, 1, 1), got {np.expand_dims(a, axis=(0, -1, -2)).shape}"
-            )
-        if np.expand_dims(a, axis=(0, 3, 5)).shape != (1, 3, 3, 1, 3, 1):
-            raise AssertionError(
-                f"Expected shape (1, 3, 3, 1, 3, 1), got {np.expand_dims(a, axis=(0, 3, 5)).shape}"
-            )
-        if np.expand_dims(a, axis=(0, -3, -5)).shape != (1, 1, 3, 1, 3, 3):
-            raise AssertionError(
-                f"Expected shape (1, 1, 3, 1, 3, 3), got {np.expand_dims(a, axis=(0, -3, -5)).shape}"
-            )
+        assert np.expand_dims(a, axis=(0, 1, 2)).shape == (1, 1, 1, 3, 3, 3)
+        assert np.expand_dims(a, axis=(0, -1, -2)).shape == (1, 3, 3, 3, 1, 1)
+        assert np.expand_dims(a, axis=(0, 3, 5)).shape == (1, 3, 3, 1, 3, 1)
+        assert np.expand_dims(a, axis=(0, -3, -5)).shape == (1, 1, 3, 1, 3, 3)
 
     def test_axis_out_of_range(self):
         s = (2, 3, 4, 5)
@@ -716,14 +706,12 @@ class TestSqueeze(TestCase):
         res = np.squeeze(a)
         assert_equal(res, 1.5)
         assert_equal(res.ndim, 0)
-        if type(res) is not np.ndarray:
-            raise AssertionError(f"Expected type(res) is np.ndarray, got {type(res)}")
+        assert type(res) is np.ndarray
 
     @xfailIfTorchDynamo
     def test_basic_2(self):
         aa = np.ones((3, 1, 4, 1, 1))
-        if aa.squeeze().tensor._base is not aa.tensor:
-            raise AssertionError("Expected aa.squeeze().tensor._base is aa.tensor")
+        assert aa.squeeze().tensor._base is aa.tensor
 
     def test_squeeze_axis(self):
         A = [[[1, 1, 1], [2, 2, 2], [3, 3, 3]]]
@@ -743,14 +731,8 @@ class TestSqueeze(TestCase):
         # Ticket #133
         a = np.array([3])
         b = np.array(3)
-        if type(a.squeeze()) is not np.ndarray:
-            raise AssertionError(
-                f"Expected type(a.squeeze()) is np.ndarray, got {type(a.squeeze())}"
-            )
-        if type(b.squeeze()) is not np.ndarray:
-            raise AssertionError(
-                f"Expected type(b.squeeze()) is np.ndarray, got {type(b.squeeze())}"
-            )
+        assert type(a.squeeze()) is np.ndarray
+        assert type(b.squeeze()) is np.ndarray
 
     @skip(reason="XXX: order='F' not implemented")
     def test_squeeze_contiguous(self):
@@ -761,7 +743,7 @@ class TestSqueeze(TestCase):
         assert_(a.flags.f_contiguous)
         assert_(b.flags.f_contiguous)
 
-    @xpassIfTorchDynamo_np  # (reason="XXX: noop in torch, while numpy raises")
+    @xpassIfTorchDynamo  # (reason="XXX: noop in torch, while numpy raises")
     def test_squeeze_axis_handling(self):
         with assert_raises(ValueError):
             np.squeeze(np.array([[1], [2], [3]]), axis=0)
@@ -818,10 +800,7 @@ class TestKron(TestCase):
         expected_shape = np.multiply(normalised_shape_a, normalised_shape_b)
 
         k = np.kron(a, b)
-        if not np.array_equal(k.shape, expected_shape):
-            raise AssertionError(
-                f"Unexpected shape from kron: expected {expected_shape}, got {k.shape}"
-            )
+        assert np.array_equal(k.shape, expected_shape), "Unexpected shape from kron"
 
 
 class TestTile(TestCase):

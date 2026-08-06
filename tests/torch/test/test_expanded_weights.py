@@ -25,11 +25,7 @@ from torch.testing._internal.common_device_type import (
 )
 from torch.testing._internal.common_methods_invocations import op_db, SampleInput
 from torch.testing._internal.common_modules import module_db, modules
-from torch.testing._internal.common_nn import (
-    get_new_module_tests,
-    module_tests,
-    TestBase,
-)
+from torch.testing._internal.common_nn import module_tests, new_module_tests, TestBase
 from torch.testing._internal.common_utils import (
     freeze_rng_state,
     make_tensor,
@@ -68,19 +64,12 @@ class TestExpandedWeightHelperFunction(TestCase):
             self.assertEqual(res, expected)
 
             self.assertEqual(len(expanded_args), 2)
-            if (
-                expanded_args[0] is not args[0]
-            ):  # avoids property checks in assertEquals
-                raise AssertionError("expanded_args[0] should be args[0]")
-            if (
-                expanded_args[1] is not args[1]
-            ):  # avoids property checks in assertEquals
-                raise AssertionError("expanded_args[1] should be args[1]")
+            assert expanded_args[0] is args[0]  # avoids property checks in assertEquals
+            assert expanded_args[1] is args[1]  # avoids property checks in assertEquals
             self.assertEqual(len(expanded_kwargs), 1)
-            if (
-                expanded_kwargs["bias"] is not args[2]
-            ):  # avoids property checks in assertEquals
-                raise AssertionError("expanded_kwargs['bias'] should be args[2]")
+            assert (
+                expanded_kwargs["bias"] is args[2]
+            )  # avoids property checks in assertEquals
 
     def test_forward_helper_failure_args(self, device):
         weight = torch.randn(5, 4, device=device)
@@ -686,7 +675,7 @@ class TestExpandedWeightModule(TestCase):
             expected_grads = [torch.stack(grad) for grad in zip(*expected_grads)]
             if not batch_first:
                 expected_grads[-1] = expected_grads[-1].transpose(0, 1)
-        self.assertEqual(actual_res, expected_res, atol=atol, rtol=rtol)
+        self.assertEqual(actual_res, expected_res)
         [
             self.assertEqual(actual, expected, atol=atol, rtol=rtol)
             for (actual, expected) in zip(actual_grads, expected_grads)
@@ -738,8 +727,10 @@ class TestExpandedWeightModule(TestCase):
             for expected_grad in expected_grads
             if expected_grad is not None
         )
-        for actual, expected in zip(actual_grads, expected_grads):
+        assert [
             self.assertEqual(actual, 2 * expected)
+            for (actual, expected) in zip(actual_grads, expected_grads)
+        ]
 
     def _do_test_rnn_packed_sequence(
         self, module, input, args=None, kwargs=None, atol=None, rtol=None
@@ -781,7 +772,7 @@ class TestExpandedWeightModule(TestCase):
                 expected_grads.append(out_grads)
 
             expected_grads = [torch.stack(grad) for grad in zip(*expected_grads)]
-            self.assertEqual(actual_res, expected_res, atol=atol, rtol=rtol)
+            self.assertEqual(actual_res, expected_res)
             [
                 self.assertEqual(actual, expected, atol=atol, rtol=rtol)
                 for (actual, expected) in zip(actual_grads, expected_grads)
@@ -803,8 +794,7 @@ class TestExpandedWeightModule(TestCase):
 
             def forward(self, *inps):
                 ret = self.m(*inps)
-                if not isinstance(ret, tuple):
-                    raise AssertionError(f"expected tuple, got {type(ret)}")
+                assert isinstance(ret, tuple)
                 return ret[0]
 
         def batch_hidden(h):
@@ -813,7 +803,11 @@ class TestExpandedWeightModule(TestCase):
             return h.unsqueeze(1).repeat(new_h_shape)
 
         module_cls = module_info.module_cls
-        atol, rtol = (1e-3, 1e-4) if dtype == torch.float32 else (None, None)
+        atol, rtol = (
+            (1e-4, 1e-5)
+            if module_cls == torch.nn.GRU and dtype == torch.float32
+            else (None, None)
+        )
         module_inputs = module_info.module_inputs_func(
             module_info,
             device=device,
@@ -899,7 +893,7 @@ class TestExpandedWeightModule(TestCase):
 
     def test_per_sample_api_compute_batch_size(self):
         class CustomModule(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.linear = nn.Linear(5, 5)
 
@@ -932,7 +926,7 @@ class TestExpandedWeightModule(TestCase):
             elem2: torch.Tensor
 
         class CustomModule(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.linear = nn.Linear(5, 5)
 
@@ -1017,7 +1011,7 @@ def filter_supported_tests(t):
 # TODO: Once all of these use ModuleInfo, replace with ModuleInfo tests
 # These currently use the legacy nn tests
 supported_tests = [
-    t for t in module_tests + get_new_module_tests() if filter_supported_tests(t)
+    t for t in module_tests + new_module_tests if filter_supported_tests(t)
 ]
 for test_param in supported_tests:
     if "constructor" not in test_param:

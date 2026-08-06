@@ -1,15 +1,11 @@
 # Owner(s): ["module: dynamo"]
-from typing import NamedTuple, TYPE_CHECKING
+from typing import Callable, Dict, List, NamedTuple, Optional
 
 import torch
+
 import torch._dynamo
 from torch._dynamo.test_case import run_tests, TestCase
 from torch._dynamo.testing import CompileCounter, same
-
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
 
 """
 This is an example of a pure-python version of autograd implemented by
@@ -30,14 +26,14 @@ def fresh_name() -> str:
 
 
 class Variable:
-    def __init__(self, value: torch.Tensor, name: str | None = None):
+    def __init__(self, value: torch.Tensor, name: str = None):
         self.value = value
         self.name = name or fresh_name()
 
     # We need to start with some tensors whose values were not computed
     # inside the autograd. This function constructs leaf nodes.
     @staticmethod
-    def constant(value: torch.Tensor, name: str | None = None):
+    def constant(value: torch.Tensor, name: str = None):
         return Variable(value, name)
 
     def __repr__(self):
@@ -51,23 +47,23 @@ class Variable:
     def __add__(self, rhs: "Variable") -> "Variable":
         return operator_add(self, rhs)
 
-    def sum(self, name: str | None = None) -> "Variable":
+    def sum(self, name: Optional[str] = None) -> "Variable":
         return operator_sum(self, name)
 
-    def expand(self, sizes: list[int]) -> "Variable":
+    def expand(self, sizes: List[int]) -> "Variable":
         return operator_expand(self, sizes)
 
 
 class TapeEntry(NamedTuple):
     # names of the inputs to the original computation
-    inputs: list[str]
+    inputs: List[str]
     # names of the outputs of the original computation
-    outputs: list[str]
+    outputs: List[str]
     # apply chain rule
-    propagate: "Callable[list[Variable], list[Variable]]"
+    propagate: "Callable[List[Variable], List[Variable]]"
 
 
-gradient_tape: list[TapeEntry] = []
+gradient_tape: List[TapeEntry] = []
 
 
 def reset_tape():
@@ -76,17 +72,17 @@ def reset_tape():
     _name = 0
 
 
-def grad(L, desired_results: list[Variable]) -> list[Variable]:
+def grad(L, desired_results: List[Variable]) -> List[Variable]:
     # this map holds dL/dX for all values X
-    dL_d: dict[str, Variable] = {}
+    dL_d: Dict[str, Variable] = {}
     # It starts by initializing the 'seed' dL/dL, which is 1
     dL_d[L.name] = Variable(torch.ones(()))
     # print(f'd{L.name} ------------------------')
 
     # look up dL_dentries. If a variable is never used to compute the loss,
     # we consider its gradient None, see the note below about zeros for more information.
-    def gather_grad(entries: list[str]):
-        return [dL_d.get(entry) for entry in entries]
+    def gather_grad(entries: List[str]):
+        return [dL_d[entry] if entry in dL_d else None for entry in entries]
 
     # propagate the gradient information backward
     for entry in reversed(gradient_tape):
@@ -131,7 +127,7 @@ def operator_mul(self: Variable, rhs: Variable) -> Variable:
     outputs = [r.name]
 
     # define backprop
-    def propagate(dL_doutputs: list[Variable]):
+    def propagate(dL_doutputs: List[Variable]):
         (dL_dr,) = dL_doutputs
 
         dr_dself = rhs  # partial derivative of r = self*rhs
@@ -154,7 +150,7 @@ def operator_add(self: Variable, rhs: Variable) -> Variable:
     r = Variable(self.value + rhs.value)
     # print(f'{r.name} = {self.name} + {rhs.name}')
 
-    def propagate(dL_doutputs: list[Variable]):
+    def propagate(dL_doutputs: List[Variable]):
         (dL_dr,) = dL_doutputs
         dr_dself = 1.0
         dr_drhs = 1.0
@@ -168,11 +164,11 @@ def operator_add(self: Variable, rhs: Variable) -> Variable:
     return r
 
 
-def operator_sum(self: Variable, name: str | None) -> "Variable":
+def operator_sum(self: Variable, name: Optional[str]) -> "Variable":
     r = Variable(torch.sum(self.value), name=name)
     # print(f'{r.name} = {self.name}.sum()')
 
-    def propagate(dL_doutputs: list[Variable]):
+    def propagate(dL_doutputs: List[Variable]):
         (dL_dr,) = dL_doutputs
         size = self.value.size()
         return [dL_dr.expand(*size)]
@@ -183,12 +179,12 @@ def operator_sum(self: Variable, name: str | None) -> "Variable":
     return r
 
 
-def operator_expand(self: Variable, sizes: list[int]) -> "Variable":
-    assert self.value.dim() == 0  # noqa: S101 - only works for scalars
+def operator_expand(self: Variable, sizes: List[int]) -> "Variable":
+    assert self.value.dim() == 0  # only works for scalars
     r = Variable(self.value.expand(sizes))
     # print(f'{r.name} = {self.name}.expand({sizes})')
 
-    def propagate(dL_doutputs: list[Variable]):
+    def propagate(dL_doutputs: List[Variable]):
         (dL_dr,) = dL_doutputs
         return [dL_dr.sum()]
 

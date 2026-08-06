@@ -1,21 +1,25 @@
 # Owner(s): ["oncall: jit"]
-# ruff: noqa: F841
 
 import os
 import sys
+
 from typing import Any, List
 
 import torch
-from torch.testing._internal.common_utils import (
-    raise_on_run_directly,
-    skipIfTorchDynamo,
-)
+from torch.testing._internal.common_utils import skipIfTorchDynamo
 from torch.testing._internal.jit_utils import JitTestCase, make_global
 
 
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(pytorch_test_dir)
+
+if __name__ == "__main__":
+    raise RuntimeError(
+        "This test file is not meant to be run directly, use:\n\n"
+        "\tpython test/test_jit.py TESTNAME\n\n"
+        "instead."
+    )
 
 
 class TestWith(JitTestCase):
@@ -444,7 +448,7 @@ class TestWith(JitTestCase):
             This class is missing __enter__ and __exit__ methods.
             """
 
-            def __init__(self) -> None:
+            def __init__(self):
                 self.count = 1
 
         @torch.jit.script
@@ -453,7 +457,7 @@ class TestWith(JitTestCase):
             This class has an __enter__ method with an incorrect signature.
             """
 
-            def __init__(self) -> None:
+            def __init__(self):
                 self.count = 1
 
             def __enter__(self, incr: int):  # noqa: PLE0302
@@ -468,7 +472,7 @@ class TestWith(JitTestCase):
             This class has an __exit__ method with an incorrect signature.
             """
 
-            def __init__(self) -> None:
+            def __init__(self):
                 self.count = 1
 
             def __enter__(self):
@@ -483,7 +487,7 @@ class TestWith(JitTestCase):
             This class has an __exit__ method with unsupported argument types.
             """
 
-            def __init__(self) -> None:
+            def __init__(self):
                 self.count = 1
 
             def __enter__(self):
@@ -643,7 +647,3 @@ class TestWith(JitTestCase):
         # Nested record function should have child "aten::add"
         nested_child_events = nested_function_event.cpu_children
         self.assertTrue("aten::add" in (child.name for child in nested_child_events))
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

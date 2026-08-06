@@ -72,7 +72,7 @@ def test_fwd(inputs,call,device, *extra_args, print_results = False):
 		print(y_dev)
 		print(y_dev.shape)
 
-def test_fwd_bwd_op(inputs,call,device,randgen=torch.randn,paramgen = None):
+def test_fwd_bwd_op(inputs,call,device,randgen=torch.randn, paramgen = None):
 	xs_cpu = []
 	xs_dev = []
 	p_names = set()

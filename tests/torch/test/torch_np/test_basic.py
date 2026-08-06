@@ -8,10 +8,12 @@ import numpy as _np
 from pytest import raises as assert_raises
 
 import torch
+
 import torch._numpy as w
 import torch._numpy._ufuncs as _ufuncs
 import torch._numpy._util as _util
 from torch._numpy.testing import assert_allclose, assert_equal
+
 from torch.testing._internal.common_cuda import TEST_CUDA
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
@@ -75,24 +77,21 @@ class TestOneArr(TestCase):
         t = torch.Tensor([[1.0, 2, 3], [4, 5, 6]])
         ta = func(t)
 
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
+        assert isinstance(ta, w.ndarray)
 
     @parametrize("func", one_arg_funcs)
     def test_asarray_list(self, func):
         lst = [[1.0, 2, 3], [4, 5, 6]]
         la = func(lst)
 
-        if not isinstance(la, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(la)}")
+        assert isinstance(la, w.ndarray)
 
     @parametrize("func", one_arg_funcs)
     def test_asarray_array(self, func):
         a = w.asarray([[1.0, 2, 3], [4, 5, 6]])
         la = func(a)
 
-        if not isinstance(la, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(la)}")
+        assert isinstance(la, w.ndarray)
 
 
 one_arg_axis_funcs = [
@@ -117,24 +116,21 @@ class TestOneArrAndAxis(TestCase):
     def test_andaxis_tensor(self, func, axis):
         t = torch.Tensor([[1.0, 2, 3], [4, 5, 6]])
         ta = func(t, axis=axis)
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
+        assert isinstance(ta, w.ndarray)
 
     @parametrize("func", one_arg_axis_funcs)
     @parametrize("axis", [0, 1, -1, None])
     def test_andaxis_list(self, func, axis):
         t = [[1.0, 2, 3], [4, 5, 6]]
         ta = func(t, axis=axis)
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
+        assert isinstance(ta, w.ndarray)
 
     @parametrize("func", one_arg_axis_funcs)
     @parametrize("axis", [0, 1, -1, None])
     def test_andaxis_array(self, func, axis):
         t = w.asarray([[1.0, 2, 3], [4, 5, 6]])
         ta = func(t, axis=axis)
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
+        assert isinstance(ta, w.ndarray)
 
 
 @instantiate_parametrized_tests
@@ -144,39 +140,34 @@ class TestOneArrAndAxesTuple(TestCase):
     def test_andtuple_tensor(self, func, axes):
         t = torch.ones((1, 2, 3))
         ta = func(t, axes=axes)
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
+        assert isinstance(ta, w.ndarray)
 
         # a np.transpose -specific test
         if axes is None:
             newshape = (3, 2, 1)
         else:
             newshape = tuple(t.shape[axes[i]] for i in range(w.ndim(t)))
-        if ta.shape != newshape:
-            raise AssertionError(f"Expected shape {newshape}, got {ta.shape}")
+        assert ta.shape == newshape
 
     @parametrize("func", [w.transpose])
     @parametrize("axes", [(0, 2, 1), (1, 2, 0), None])
     def test_andtuple_list(self, func, axes):
         t = [[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]]  # shape = (1, 2, 3)
         ta = func(t, axes=axes)
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
+        assert isinstance(ta, w.ndarray)
 
     @parametrize("func", [w.transpose])
     @parametrize("axes", [(0, 2, 1), (1, 2, 0), None])
     def test_andtuple_array(self, func, axes):
         t = w.asarray([[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]])
         ta = func(t, axes=axes)
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
+        assert isinstance(ta, w.ndarray)
 
         if axes is None:
             newshape = (3, 2, 1)
         else:
             newshape = tuple(t.shape[axes[i]] for i in range(t.ndim))
-        if ta.shape != newshape:
-            raise AssertionError(f"Expected shape {newshape}, got {ta.shape}")
+        assert ta.shape == newshape
 
 
 arr_shape_funcs = [
@@ -204,10 +195,8 @@ class TestOneArrAndShape(TestCase):
 
         shape_dict = {self.shape_arg_name.get(func, "shape"): self.shape}
         ta = func(t, **shape_dict)
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
-        if ta.shape != self.shape:
-            raise AssertionError(f"Expected shape {self.shape}, got {ta.shape}")
+        assert isinstance(ta, w.ndarray)
+        assert ta.shape == self.shape
 
     @parametrize("func", arr_shape_funcs)
     def test_andshape_list(self, func):
@@ -215,10 +204,8 @@ class TestOneArrAndShape(TestCase):
 
         shape_dict = {self.shape_arg_name.get(func, "shape"): self.shape}
         ta = func(t, **shape_dict)
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
-        if ta.shape != self.shape:
-            raise AssertionError(f"Expected shape {self.shape}, got {ta.shape}")
+        assert isinstance(ta, w.ndarray)
+        assert ta.shape == self.shape
 
     @parametrize("func", arr_shape_funcs)
     def test_andshape_array(self, func):
@@ -226,10 +213,8 @@ class TestOneArrAndShape(TestCase):
 
         shape_dict = {self.shape_arg_name.get(func, "shape"): self.shape}
         ta = func(t, **shape_dict)
-        if not isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(ta)}")
-        if ta.shape != self.shape:
-            raise AssertionError(f"Expected shape {self.shape}, got {ta.shape}")
+        assert isinstance(ta, w.ndarray)
+        assert ta.shape == self.shape
 
 
 one_arg_scalar_funcs = [(w.size, _np.size), (w.shape, _np.shape), (w.ndim, _np.ndim)]
@@ -245,10 +230,8 @@ class TestOneArrToScalar(TestCase):
         ta = func(t)
         tn = np_func(_np.asarray(t))
 
-        if isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected scalar result, got {type(ta)}")
-        if ta != tn:
-            raise AssertionError(f"Expected {tn}, got {ta}")
+        assert not isinstance(ta, w.ndarray)
+        assert ta == tn
 
     @parametrize("func, np_func", one_arg_scalar_funcs)
     def test_toscalar_list(self, func, np_func):
@@ -256,10 +239,8 @@ class TestOneArrToScalar(TestCase):
         ta = func(t)
         tn = np_func(t)
 
-        if isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected scalar result, got {type(ta)}")
-        if ta != tn:
-            raise AssertionError(f"Expected {tn}, got {ta}")
+        assert not isinstance(ta, w.ndarray)
+        assert ta == tn
 
     @parametrize("func, np_func", one_arg_scalar_funcs)
     def test_toscalar_array(self, func, np_func):
@@ -267,10 +248,8 @@ class TestOneArrToScalar(TestCase):
         ta = func(t)
         tn = np_func(t)
 
-        if isinstance(ta, w.ndarray):
-            raise AssertionError(f"Expected scalar result, got {type(ta)}")
-        if ta != tn:
-            raise AssertionError(f"Expected {tn}, got {ta}")
+        assert not isinstance(ta, w.ndarray)
+        assert ta == tn
 
 
 shape_funcs = [w.zeros, w.empty, w.ones, functools.partial(w.full, fill_value=42)]
@@ -286,10 +265,8 @@ class TestShapeLikeToArray(TestCase):
     def test_shape(self, func):
         a = func(self.shape)
 
-        if not isinstance(a, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(a)}")
-        if a.shape != self.shape:
-            raise AssertionError(f"Expected shape {self.shape}, got {a.shape}")
+        assert isinstance(a, w.ndarray)
+        assert a.shape == self.shape
 
 
 seq_funcs = [w.atleast_1d, w.atleast_2d, w.atleast_3d, w.broadcast_arrays]
@@ -309,8 +286,7 @@ class TestSequenceOfArrays(TestCase):
         unpack = {w.broadcast_arrays: True}.get(func, False)
         res = ta[0] if unpack else ta
 
-        if not isinstance(res, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(res)}")
+        assert isinstance(res, w.ndarray)
 
     @parametrize("func", seq_funcs)
     def test_single_list(self, func):
@@ -320,8 +296,7 @@ class TestSequenceOfArrays(TestCase):
         unpack = {w.broadcast_arrays: True}.get(func, False)
         res = la[0] if unpack else la
 
-        if not isinstance(res, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(res)}")
+        assert isinstance(res, w.ndarray)
 
     @parametrize("func", seq_funcs)
     def test_single_array(self, func):
@@ -331,8 +306,7 @@ class TestSequenceOfArrays(TestCase):
         unpack = {w.broadcast_arrays: True}.get(func, False)
         res = la[0] if unpack else la
 
-        if not isinstance(res, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(res)}")
+        assert isinstance(res, w.ndarray)
 
     @parametrize("func", seq_funcs)
     def test_several(self, func):
@@ -343,14 +317,9 @@ class TestSequenceOfArrays(TestCase):
         )
 
         result = func(*arys)
-        if not isinstance(result, (tuple, list)):
-            raise AssertionError(f"Expected tuple or list, got {type(result)}")
-        if len(result) != len(arys):
-            raise AssertionError(f"Expected {len(arys)} results, got {len(result)}")
-        if not all(isinstance(_, w.ndarray) for _ in result):
-            raise AssertionError(
-                f"Expected all items to be w.ndarray, got {[type(x) for x in result]}"
-            )
+        assert isinstance(result, (tuple, list))
+        assert len(result) == len(arys)
+        assert all(isinstance(_, w.ndarray) for _ in result)
 
 
 seq_to_single_funcs = [
@@ -377,8 +346,7 @@ class TestSequenceOfArraysToSingle(TestCase):
         )
 
         result = func(arys)
-        if not isinstance(result, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(result)}")
+        assert isinstance(result, w.ndarray)
 
 
 single_to_seq_funcs = (
@@ -399,36 +367,24 @@ class TestArrayToSequence(TestCase):
         t = torch.Tensor([[1, 2, 3], [4, 5, 6]])
         ta = func(t)
 
-        if not isinstance(ta, tuple):
-            raise AssertionError(f"Expected tuple, got {type(ta)}")
-        if not all(isinstance(x, w.ndarray) for x in ta):
-            raise AssertionError(
-                f"Expected all items to be w.ndarray, got {[type(x) for x in ta]}"
-            )
+        assert isinstance(ta, tuple)
+        assert all(isinstance(x, w.ndarray) for x in ta)
 
     @parametrize("func", single_to_seq_funcs)
     def test_asarray_list(self, func):
         lst = [[1, 2, 3], [4, 5, 6]]
         la = func(lst)
 
-        if not isinstance(la, tuple):
-            raise AssertionError(f"Expected tuple, got {type(la)}")
-        if not all(isinstance(x, w.ndarray) for x in la):
-            raise AssertionError(
-                f"Expected all items to be w.ndarray, got {[type(x) for x in la]}"
-            )
+        assert isinstance(la, tuple)
+        assert all(isinstance(x, w.ndarray) for x in la)
 
     @parametrize("func", single_to_seq_funcs)
     def test_asarray_array(self, func):
         a = w.asarray([[1, 2, 3], [4, 5, 6]])
         la = func(a)
 
-        if not isinstance(la, tuple):
-            raise AssertionError(f"Expected tuple, got {type(la)}")
-        if not all(isinstance(x, w.ndarray) for x in la):
-            raise AssertionError(
-                f"Expected all items to be w.ndarray, got {[type(x) for x in la]}"
-            )
+        assert isinstance(la, tuple)
+        assert all(isinstance(x, w.ndarray) for x in la)
 
 
 funcs_and_args = [
@@ -452,8 +408,7 @@ class TestPythonArgsToArray(TestCase):
     @parametrize("func, args", funcs_and_args)
     def test_argstoarray_simple(self, func, args):
         a = func(*args)
-        if not isinstance(a, w.ndarray):
-            raise AssertionError(f"Expected w.ndarray, got {type(a)}")
+        assert isinstance(a, w.ndarray)
 
 
 class TestNormalizations(TestCase):
@@ -489,8 +444,7 @@ class TestCopyTo(TestCase):
         dst = w.empty(4)
         src = w.arange(4)
         w.copyto(dst, src)
-        if not (dst == src).all():
-            raise AssertionError("Expected dst to match src after copyto")
+        assert (dst == src).all()
 
     def test_copytobcast(self):
         dst = w.empty((4, 2))
@@ -503,8 +457,7 @@ class TestCopyTo(TestCase):
         # broadcast src against dst
         dst = w.empty((2, 4))
         w.copyto(dst, src)
-        if not (dst == src).all():
-            raise AssertionError("Expected dst to match src after broadcast copyto")
+        assert (dst == src).all()
 
     def test_copyto_typecast(self):
         dst = w.empty(4, dtype=int)
@@ -515,8 +468,7 @@ class TestCopyTo(TestCase):
 
         # force the type cast
         w.copyto(dst, src, casting="unsafe")
-        if not (dst == src).all():
-            raise AssertionError("Expected dst to match src after type cast copyto")
+        assert (dst == src).all()
 
 
 class TestDivmod(TestCase):
@@ -532,10 +484,8 @@ class TestDivmod(TestCase):
         assert_equal(rem, x1 % x2)
 
         out1, out2 = out
-        if quot is not out1:
-            raise AssertionError("Expected quot to be out1")
-        if rem is not out2:
-            raise AssertionError("Expected rem to be out2")
+        assert quot is out[0]
+        assert rem is out[1]
 
     def test_divmod_out_list(self):
         x1 = [4, 5, 6]
@@ -545,10 +495,8 @@ class TestDivmod(TestCase):
 
         quot, rem = w.divmod(x1, x2, out=out)
 
-        if quot is not out[0]:
-            raise AssertionError("Expected quot to be out[0]")
-        if rem is not out[1]:
-            raise AssertionError("Expected rem to be out[1]")
+        assert quot is out[0]
+        assert rem is out[1]
 
     @xfail  # ("out1, out2 not implemented")
     def test_divmod_pos_only(self):
@@ -559,10 +507,8 @@ class TestDivmod(TestCase):
 
         quot, rem = w.divmod(x1, x2, out1, out2)
 
-        if quot is not out1:
-            raise AssertionError("Expected quot to be out1")
-        if rem is not out2:
-            raise AssertionError("Expected rem to be out2")
+        assert quot is out1
+        assert rem is out2
 
     def test_divmod_no_out(self):
         # check that the out= machinery handles no out at all
@@ -593,17 +539,10 @@ class TestDefaultDtype(TestCase):
         x = w.empty(3)
         z = x + 1j * x
 
-        if x.dtype.torch_dtype != torch.float64:
-            raise AssertionError(f"Expected torch.float64, got {x.dtype.torch_dtype}")
-        if z.dtype.torch_dtype != torch.complex128:
-            raise AssertionError(
-                f"Expected torch.complex128, got {z.dtype.torch_dtype}"
-            )
+        assert x.dtype.torch_dtype == torch.float64
+        assert z.dtype.torch_dtype == torch.complex128
 
-        if w.arange(3).dtype.torch_dtype != torch.int64:
-            raise AssertionError(
-                f"Expected torch.int64, got {w.arange(3).dtype.torch_dtype}"
-            )
+        assert w.arange(3).dtype.torch_dtype == torch.int64
 
     @parametrize("dt", ["pytorch", "float32", torch.float32])
     def test_set_default_float(self, dt):
@@ -613,14 +552,8 @@ class TestDefaultDtype(TestCase):
             x = w.empty(3)
             z = x + 1j * x
 
-            if x.dtype.torch_dtype != torch.float32:
-                raise AssertionError(
-                    f"Expected torch.float32, got {x.dtype.torch_dtype}"
-                )
-            if z.dtype.torch_dtype != torch.complex64:
-                raise AssertionError(
-                    f"Expected torch.complex64, got {z.dtype.torch_dtype}"
-                )
+            assert x.dtype.torch_dtype == torch.float32
+            assert z.dtype.torch_dtype == torch.complex64
 
         finally:
             # restore the
@@ -630,21 +563,15 @@ class TestDefaultDtype(TestCase):
 @skip(_np.__version__ <= "1.23", reason="from_dlpack is new in NumPy 1.23")
 class TestExport(TestCase):
     def test_exported_objects(self):
-        exported_fns = {
+        exported_fns = (
             x
             for x in dir(w)
             if inspect.isfunction(getattr(w, x))
             and not x.startswith("_")
             and x != "set_default_dtype"
-        }
-        if _np.__version__ > "2":
-            # The following methods are removed in NumPy 2.
-            # See https://numpy.org/devdocs/numpy_2_0_migration_guide.html#main-namespace
-            exported_fns -= {"product", "round_", "sometrue", "cumproduct", "alltrue"}
-
-        diff = exported_fns.difference(set(dir(_np)))
-        if len(diff) != 0:
-            raise AssertionError(str(diff))
+        )
+        diff = set(exported_fns).difference(set(dir(_np)))
+        assert len(diff) == 0, str(diff)
 
 
 class TestCtorNested(TestCase):
@@ -656,16 +583,9 @@ class TestCtorNested(TestCase):
 class TestMisc(TestCase):
     def test_ndarrays_to_tensors(self):
         out = _util.ndarrays_to_tensors(((w.asarray(42), 7), 3))
-        if len(out) != 2:
-            raise AssertionError(f"Expected 2 outputs, got {len(out)}")
-        if not isinstance(out[0], tuple) or len(out[0]) != 2:
-            raise AssertionError(
-                f"Expected out[0] to be tuple of len 2, got {type(out[0])} len {len(out[0])}"
-            )
-        if not isinstance(out[0][0], torch.Tensor):
-            raise AssertionError(
-                f"Expected out[0][0] to be torch.Tensor, got {type(out[0][0])}"
-            )
+        assert len(out) == 2
+        assert isinstance(out[0], tuple) and len(out[0]) == 2
+        assert isinstance(out[0][0], torch.Tensor)
 
     @skip(not TEST_CUDA, reason="requires cuda")
     def test_f16_on_cuda(self):

@@ -52,14 +52,14 @@ class SourceTests(torch._dynamo.test_case.TestCase):
 
     def test_supported_nodes(self):
         class Model(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.x = torch.randn(10, 10)
 
             def forward(self):
                 if (
                     torch.utils._pytree.SUPPORTED_NODES[CausalLMOutputWithPast].type
-                    is int
+                    == int
                 ):
                     x = torch.sin(self.x)
                 else:
@@ -72,7 +72,8 @@ class SourceTests(torch._dynamo.test_case.TestCase):
             lambda x, _: CausalLMOutputWithPast(),
         )
 
-        torch.export.export(Model(), (), strict=True)
+        # breakpoint()
+        torch.export.export(Model(), ())
 
 
 if __name__ == "__main__":

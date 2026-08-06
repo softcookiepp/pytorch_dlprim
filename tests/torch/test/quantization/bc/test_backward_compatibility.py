@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+from typing import Set
 
 # torch
 import torch
@@ -11,6 +12,7 @@ import torch.ao.nn.quantized as nnq
 import torch.ao.nn.quantized.dynamic as nnqd
 import torch.ao.quantization.quantize_fx as quantize_fx
 import torch.nn as nn
+
 from torch.ao.quantization import MinMaxObserver, PerChannelMinMaxObserver
 from torch.fx import GraphModule
 from torch.testing._internal.common_quantization import skipIfNoFBGEMM
@@ -20,11 +22,7 @@ from torch.testing._internal.common_quantized import (
 )
 
 # Testing utils
-from torch.testing._internal.common_utils import (
-    IS_AVX512_VNNI_SUPPORTED,
-    raise_on_run_directly,
-    TestCase,
-)
+from torch.testing._internal.common_utils import IS_AVX512_VNNI_SUPPORTED, TestCase
 from torch.testing._internal.quantization_torch_package_models import (
     LinearReluFunctional,
 )
@@ -45,8 +43,10 @@ def get_filenames(self, subname):
     test_file = os.path.realpath(sys.modules[module_id].__file__)
     base_name = os.path.join(os.path.dirname(test_file), "../serialized", munged_id)
 
+    subname_output = ""
     if subname:
         base_name += "_" + subname
+        subname_output = f" ({subname})"
 
     input_file = base_name + ".input.pt"
     state_dict_file = base_name + ".state_dict.pt"
@@ -68,7 +68,7 @@ def get_filenames(self, subname):
 
 
 class TestSerialization(TestCase):
-    """Test backward compatibility for serialization and numerics"""
+    """Test backward compatiblity for serialization and numerics"""
 
     # Copy and modified from TestCase.assertExpected
     def _test_op(
@@ -114,8 +114,7 @@ class TestSerialization(TestCase):
             torch.save(qmodule(input_tensor), expected_file)
 
         input_tensor = torch.load(input_file)
-        # weights_only = False as sometimes get ScriptObject here
-        qmodule.load_state_dict(torch.load(state_dict_file, weights_only=False))
+        qmodule.load_state_dict(torch.load(state_dict_file))
         qmodule_scripted = torch.jit.load(scripted_module_file)
         qmodule_traced = torch.jit.load(traced_module_file)
         expected = torch.load(expected_file)
@@ -144,7 +143,7 @@ class TestSerialization(TestCase):
         """
         (
             input_file,
-            _,
+            state_dict_file,
             scripted_module_file,
             traced_module_file,
             expected_file,
@@ -195,7 +194,7 @@ class TestSerialization(TestCase):
             input_file,
             state_dict_file,
             _,
-            _,
+            traced_module_file,
             expected_file,
             _package_file,
             _get_attr_targets_file,
@@ -219,7 +218,7 @@ class TestSerialization(TestCase):
         """
         (
             input_file,
-            _,
+            state_dict_file,
             _scripted_module_file,
             _traced_module_file,
             expected_file,
@@ -242,7 +241,7 @@ class TestSerialization(TestCase):
             mq = quantize_fx.convert_fx(mp)
             return mq
 
-        def _get_get_attr_target_strings(m: GraphModule) -> set[str]:
+        def _get_get_attr_target_strings(m: GraphModule) -> Set[str]:
             results = set()
             for node in m.graph.nodes:
                 if node.op == "get_attr":
@@ -268,7 +267,7 @@ class TestSerialization(TestCase):
         # load input tensor
         input_tensor = torch.load(input_file)
         expected_output_tensor = torch.load(expected_file)
-        expected_get_attrs = torch.load(get_attr_targets_file, weights_only=False)
+        expected_get_attrs = torch.load(get_attr_targets_file)
 
         # load model from package and verify output and get_attr targets match
         imp = torch.package.PackageImporter(package_file)
@@ -516,7 +515,7 @@ class TestSerialization(TestCase):
     )
     def test_lstm(self):
         class LSTMModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.lstm = nnqd.LSTM(input_size=3, hidden_size=7, num_layers=1).to(
                     dtype=torch.float
@@ -546,7 +545,7 @@ class TestSerialization(TestCase):
 
     def test_default_qat_qconfig(self):
         class Model(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.linear = nn.Linear(5, 5)
                 self.relu = nn.ReLU()
@@ -569,7 +568,3 @@ class TestSerialization(TestCase):
     def test_linear_relu_package_quantization_transforms(self):
         m = LinearReluFunctional(4).eval()
         self._test_package(m, input_size=(1, 1, 4, 4), generate=False)
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_quantization.py")

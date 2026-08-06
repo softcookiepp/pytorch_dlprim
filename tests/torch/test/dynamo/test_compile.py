@@ -12,7 +12,7 @@ from torch._dynamo.testing import CompileCounter
 
 
 class ToyModel(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.linear = torch.nn.Linear(10, 10)
         self.relu = torch.nn.ReLU()
@@ -46,10 +46,7 @@ class InPlaceCompilationTests(TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdirname:
             torch.save(model, os.path.join(tmpdirname, "model.pt"))
-            # weights_only=False as this is a legacy use case that loads a module
-            loaded_model = torch.load(
-                os.path.join(tmpdirname, "model.pt"), weights_only=False
-            )
+            loaded_model = torch.load(os.path.join(tmpdirname, "model.pt"))
             loaded_model(torch.randn(1, 10))
 
     def test_state_dict_save(self):
@@ -61,8 +58,7 @@ class InPlaceCompilationTests(TestCase):
             torch.save(model.state_dict(), os.path.join(tmpdirname, "model.pt"))
             loaded_model = ToyModel()
             loaded_model.load_state_dict(
-                # weights_only=False as this is a legacy use case that loads a module
-                torch.load(os.path.join(tmpdirname, "model.pt"), weights_only=False)
+                torch.load(os.path.join(tmpdirname, "model.pt"))
             )
             loaded_model(torch.randn(1, 10))
 
@@ -81,11 +77,11 @@ class InPlaceCompilationTests(TestCase):
         torch._dynamo.reset()
 
         @torch._dynamo.on_compile_start
-        def start_callback(_):
+        def start_callback():
             print("Compilation started.")
 
         @torch._dynamo.on_compile_end
-        def end_callback(_):
+        def end_callback():
             print("Compilation ended.")
 
         mod = ToyModel()
@@ -98,31 +94,18 @@ class InPlaceCompilationTests(TestCase):
 
         self.assertEqual(printed_output, "Compilation started.\nCompilation ended.")
 
-    def test_compile_eager_options(self):
-        @torch.compile(backend="eager", options={"foo": 2})
-        def f(x):
-            return x + x
-
-        f(torch.randn(3))
-
-        @torch.compile(backend="aot_eager", options={"foo": 2})
-        def g(x):
-            return x + x
-
-        g(torch.randn(3))
-
     def test_compilation_callback_with_graph_break(self):
         torch._dynamo.reset()
         counter = 0
 
         @torch._dynamo.on_compile_start
-        def start_callback(_):
+        def start_callback():
             nonlocal counter
             counter += 1
             print(f"Counter = {counter}")
 
         @torch._dynamo.on_compile_end
-        def end_callback(_):
+        def end_callback():
             nonlocal counter
             counter += 1
             print(f"Counter = {counter}")
@@ -143,133 +126,6 @@ class InPlaceCompilationTests(TestCase):
             printed_output, "Counter = 1\nCounter = 2\nCounter = 3\nCounter = 4"
         )
 
-    def test_compilation_constant_hasattr_fail(self):
-        @torch.compile(backend="eager")
-        def fn(x):
-            return x.max()
-
-        # We should fallback to normal mode, and throw a AttributeError, not a internal dynamo exception
-        with self.assertRaises(AttributeError):
-            fn(None)
-
-    def test_compilation_evnum_hasattr_fail(self):
-        from enum import Enum
-
-        class TestEnum(Enum):
-            VALID = 1
-
-        @torch.compile(backend="eager")
-        def fn(x):
-            return x.max()
-
-        # We should fallback to normal mode, and throw a AttributeError, not a internal dynamo exception
-        with self.assertRaises(AttributeError):
-            fn(TestEnum.VALID)
-
-    def test_compilation_name_error(self):
-        @torch.compile(backend="eager")
-        def fn(x):
-            x = x + 1
-            does_not_exist()  # noqa: F821
-            return x
-
-        x = torch.randn(10, 10)
-        with self.assertRaises(NameError):
-            fn(x)
-
-    def test_compilation_tensor_invalid_method(self):
-        @torch.compile(backend="eager")
-        def fn(x):
-            y = torch.tensor(x)
-            return y.doesnotexist()
-
-        x = torch.randn(10, 10)
-
-        with self.assertRaises(AttributeError):
-            fn(x)
-
-    def test_torch_script_compilation(self):
-        @torch.jit.script
-        def fn(x: torch.Tensor) -> torch.Tensor:
-            return x
-
-        a = torch.randn(1, 1)
-        out = torch.compile(fn, backend="eager")(a)
-        self.assertEqual(out, a)
-
-    def test_compile_script_module_error(self):
-        model = torch.nn.Sequential(torch.nn.Linear(3, 3))
-        model.eval()
-        scripted = torch.jit.script(model)
-        with self.assertRaisesRegex(
-            RuntimeError, "torch.compile does not support compiling torch.jit.script"
-        ):
-            torch.compile(scripted, backend="eager")
-
-    def test_compile_frozen_module_error(self):
-        model = torch.nn.Sequential(torch.nn.Linear(3, 3))
-        model.eval()
-        scripted = torch.jit.script(model)
-        with self.assertWarns(DeprecationWarning):
-            frozen = torch.jit.freeze(scripted)
-        with self.assertRaisesRegex(
-            RuntimeError, "torch.compile does not support compiling torch.jit.script"
-        ):
-            torch.compile(frozen, backend="eager")
-
-    def test_compile_frozen_module_inductor_error(self):
-        model = torch.nn.Sequential(torch.nn.Linear(3, 3))
-        model.eval()
-        scripted = torch.jit.script(model)
-        with self.assertWarns(DeprecationWarning):
-            frozen = torch.jit.freeze(scripted)
-        with self.assertRaisesRegex(
-            RuntimeError, "torch.compile does not support compiling torch.jit.script"
-        ):
-            torch.compile(frozen, backend="inductor")
-
-    def test_inline_script_module_graph_break(self):
-        class OuterModule(torch.nn.Module):
-            def __init__(self, sub):
-                super().__init__()
-                self.sub = sub
-
-            def forward(self, x):
-                return self.sub(x)
-
-        inner = torch.nn.Linear(3, 3)
-        scripted_inner = torch.jit.script(inner)
-        outer = OuterModule(scripted_inner)
-
-        cnt = torch._dynamo.testing.CompileCounter()
-        compiled = torch.compile(outer, backend=cnt)
-        inputs = torch.randn(2, 3)
-        compiled(inputs)
-        # ScriptModule submodule causes a graph break
-        self.assertEqual(cnt.frame_count, 0)
-
-    def test_to_sparse_to_dense_with_graph_break(self):
-        def fn(x):
-            x = x.to_sparse()
-            x = x.to_dense()
-            return x
-
-        x = torch.tensor([[1.0]])
-        c_fn = torch.compile(fn, backend="eager")
-
-        output = fn(x)
-        c_output = c_fn(x)
-        self.assertEqual(output, c_output)
-
-    def test_list_bad_access(self):
-        @torch.compile(backend="eager")
-        def fn(x, y):
-            a = [x]
-            return a[y]
-
-        with self.assertRaises(IndexError):
-            fn(torch.randn(10), 99)
-
 
 # The private variants of the below functions are extensively tested
 # So as long as the signatures match we're good
@@ -281,17 +137,9 @@ class PublicTorchCompilerTests(TestCase):
         public_sig = inspect.signature(public_fn)
         private_sig = inspect.signature(private_fn)
 
-        matching = public_sig == private_sig
-        matching |= len(public_sig.parameters) < len(private_sig.parameters) and all(
-            public == private
-            for public, private in zip(
-                public_sig.parameters.items(), private_sig.parameters.items()
-            )
-        )
-
         self.assertEqual(
-            matching,
-            True,
+            public_sig,
+            private_sig,
             f"Signatures do not match for function {public_fn_name}() \n Public: {public_sig} \n Private: {private_sig}",
         )
 
@@ -306,51 +154,6 @@ class PublicTorchCompilerTests(TestCase):
 
         for fn_name in function_names:
             self.check_signature(fn_name, fn_name, torch._dynamo)
-
-
-class FullgraphTests(TestCase):
-    def test_fullgraph_warns_on_frame_skip_with_dispatch_mode(self):
-        from torch.utils._python_dispatch import TorchDispatchMode
-
-        class SkipMode(TorchDispatchMode):
-            def __torch_dispatch__(self, func, types, args=(), kwargs=None):
-                return func(*args, **kwargs)
-
-        def fn(x):
-            return x + 1
-
-        x = torch.randn(5)
-        with SkipMode():
-            with self.assertWarnsRegex(UserWarning, "found no compiled frames"):
-                torch.compile(fn, backend="eager", fullgraph=True)(x)
-
-    def test_fullgraph_warns_on_frame_skip_dynamo_disabled(self):
-        def fn(x):
-            return x + 1
-
-        x = torch.randn(5)
-        with torch._dynamo.config.patch(disable=True):
-            with self.assertWarnsRegex(UserWarning, "found no compiled frames"):
-                torch.compile(fn, backend="eager", fullgraph=True)(x)
-
-    def test_fullgraph_empty_graph_no_error(self):
-        def fn(x):
-            return len(x)
-
-        x = torch.randn(5)
-        result = torch.compile(fn, backend="eager", fullgraph=True)(x)
-        self.assertEqual(result, 5)
-
-    def test_fullgraph_exported_module_no_error(self):
-        class M(torch.nn.Module):
-            def forward(self, x):
-                return x + 1
-
-        m = M()
-        x = torch.randn(5)
-        exported = torch.export.export(m, (x,))
-        result = exported.module()(x)
-        self.assertEqual(result, x + 1)
 
 
 if __name__ == "__main__":

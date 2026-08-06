@@ -24,7 +24,6 @@ import tqdm
 
 import torch
 
-
 ALL_TESTS = []
 GPUS = torch.cuda.device_count()
 
@@ -137,7 +136,7 @@ ALL_TESTS = ALL_TESTS[start:end]
 # or as specified by the user
 progress = 0
 if not args.ci:
-    logfile = open("result.log", "w")  # noqa:SIM115
+    logfile = open("result.log", "w")
     progressbar = tqdm.tqdm(total=len(ALL_TESTS))
 else:
     logfile = sys.stdout
@@ -157,11 +156,9 @@ async def run1(coroutine_id):
         gpuid = coroutine_id % GPUS
     else:
         gpu_assignments = args.gpus.split(":")
-        if args.nproc != len(gpu_assignments):
-            raise AssertionError(
-                f"Please specify GPU assignment for each process, separated by : "
-                f"(got {len(gpu_assignments)} assignments for {args.nproc} processes)"
-            )
+        assert args.nproc == len(
+            gpu_assignments
+        ), "Please specify GPU assignment for each process, separated by :"
         gpuid = gpu_assignments[coroutine_id]
 
     while progress < len(ALL_TESTS):

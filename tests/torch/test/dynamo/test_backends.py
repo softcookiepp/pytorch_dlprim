@@ -1,26 +1,22 @@
 # Owner(s): ["module: dynamo"]
 import unittest
-from unittest.mock import MagicMock, patch
 
 import torch
+
 import torch._dynamo
-import torch._dynamo.backends
 import torch._dynamo.test_case
 from torch._dynamo.backends.debugging import ExplainWithBackend
-from torch._dynamo.backends.registry import lookup_backend
+from torch._dynamo.backends.onnxrt import has_onnxruntime
 from torch._dynamo.backends.tvm import has_tvm
 from torch._dynamo.testing import same
 from torch.fx._lazy_graph_module import _force_skip_lazy_graph_module
-from torch.testing._internal.common_device_type import (
-    instantiate_device_type_tests,
-    onlyHPU,
-)
-from torch.testing._internal.common_utils import skipIfHpu
-from torch.testing._internal.triton_utils import requires_cuda_and_triton
+from torch.testing._internal.inductor_utils import HAS_CUDA
+
+requires_cuda = unittest.skipUnless(HAS_CUDA, "requires cuda")
 
 
 class Seq(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.layers = torch.nn.Sequential(
             torch.nn.Linear(10, 10),
@@ -100,72 +96,46 @@ class TestOptimizations(torch._dynamo.test_case.TestCase):
         self.assertTrue(same(r1, r2))
         self.assertTrue(same(r1, r3))
 
-    def _check_backend_works(self, backend, device, boxed=True, options=None):
+    def _check_backend_works(self, backend, options=None):
         model = Seq().eval()
-        model.to(device)
-
-        if not boxed:
-            compiled_model = torch.compile(model, backend=backend, options=options)
-        else:
-
-            def boxed_assert(gm, *example_args):
-                fn = lookup_backend(backend)(gm, *example_args)
-                if not fn._boxed_call:
-                    raise AssertionError("Expected fn._boxed_call to be True")
-                return fn
-
-            compiled_model = torch.compile(model, backend=boxed_assert, options=options)
-
-        input1 = torch.randn(2, 10, device=device, requires_grad=True)
-        input2 = input1.detach().clone().requires_grad_(True)
-
-        r1 = model(input1)
-        r2 = compiled_model(input2)
+        input = torch.randn(2, 10)
+        r1 = model(input)
+        r2 = torch.compile(model, backend=backend, options=options)(input)
         self.assertTrue(same(r1, r2.float(), tol=0.01))
 
-        r1.sum().backward()
-        r2.sum().backward()
-        self.assertTrue(same(input1.grad, input2.grad.float(), tol=0.01))
+    def test_eager(self):
+        self._check_backend_works("eager")
 
-        # Clean up compilation state before test returns to avoid false positive
-        # memory leak detection (leak check runs before tearDown)
-        torch._dynamo.reset()
+    def test_eager_noexcept(self):
+        self._check_backend_works("eager_noexcept")
 
-    def test_eager(self, device):
-        self._check_backend_works("eager", device, boxed=False)
-
-    def test_eager_noexcept(self, device):
-        self._check_backend_works("eager_noexcept", device, boxed=False)
-
-    @skipIfHpu
     @_force_skip_lazy_graph_module()
-    def test_torchscript(self, device):
-        self._check_backend_works("ts", device, boxed=False)
+    def test_torchscript(self):
+        self._check_backend_works("ts")
 
-    def test_aot_eager(self, device):
-        self._check_backend_works("aot_eager", device)
+    def test_aot_eager(self):
+        self._check_backend_works("aot_eager")
 
-    def test_aot_eager_decomp_partition(self, device):
-        self._check_backend_works("aot_eager_decomp_partition", device)
+    def test_aot_eager_decomp_partition(self):
+        self._check_backend_works("aot_eager_decomp_partition")
 
-    @skipIfHpu
     @_force_skip_lazy_graph_module()
-    def test_aot_ts(self, device):
-        self._check_backend_works("aot_ts", device)
+    def test_aot_ts(self):
+        self._check_backend_works("aot_ts")
 
-    @requires_cuda_and_triton
-    def test_aot_cudagraphs(self, device):
-        self._check_backend_works("cudagraphs", device)
+    @requires_cuda
+    def test_aot_cudagraphs(self):
+        self._check_backend_works("cudagraphs")
+
+    @unittest.skipIf(not has_onnxruntime(), "requires onnxruntime")
+    def test_onnxrt(self):
+        self._check_backend_works("onnxrt")
 
     @unittest.skipIf(not has_tvm(), "requires tvm")
-    def test_tvm(self, device):
-        self._check_backend_works("tvm", device)
-        self._check_backend_works("tvm", device, options={"scheduler": None})
-        self._check_backend_works("tvm", device, options={"opt_level": 0})
-
-    @onlyHPU
-    def test_intel_gaudi_backend(self, device):
-        self._check_backend_works("hpu_backend", device)
+    def test_tvm(self):
+        self._check_backend_works("tvm")
+        self._check_backend_works("tvm", options={"scheduler": None})
+        self._check_backend_works("tvm", options={"opt_level": 0})
 
     def test_list_backends(self):
         self.assertIn("inductor", torch._dynamo.list_backends())
@@ -187,19 +157,20 @@ class NormalizeIRTests(torch._dynamo.test_case.TestCase):
 
         ref = fn(a, b)
 
-        optimized_fn = torch.compile(fn, backend="aot_eager")
+        optimized_fn = torch._dynamo.optimize("aot_eager")(fn)
         res = optimized_fn(a, b)
         self.assertTrue(same(ref, res))
 
 
-class MPSSupportedTest(torch._dynamo.test_case.TestCase):
+class MPSNotSupportedTest(torch._dynamo.test_case.TestCase):
     @unittest.skipIf(not torch.backends.mps.is_available(), "requires mps")
-    def test_mps_supported(self):
+    def test_mps_not_supported(self):
         model = Seq().to("mps")
         example_input = torch.randn(1, 10).to("mps")
-        rc_eager = model(example_input)
-        rc = torch.compile(model, backend="inductor")(example_input)
-        self.assertEqual(rc, rc_eager)
+        self.assertRaises(
+            RuntimeError,
+            lambda: torch.compile(model, backend="inductor")(example_input),
+        )
 
 
 class TestExplainWithBackend(torch._dynamo.test_case.TestCase):
@@ -246,8 +217,8 @@ class TestExplainWithBackend(torch._dynamo.test_case.TestCase):
         self.assertIn("Break Reasons", explain_str)
 
         # Verify that for the given functions above, we report the correct number of graphs, graph breaks, and ops
-        self.assertEqual(2, explain_output.graph_count)
-        self.assertEqual(1, explain_output.graph_break_count)
+        self.assertEqual(8, explain_output.graph_count)
+        self.assertEqual(7, explain_output.graph_break_count)
         self.assertEqual(8, explain_output.op_count)
 
 
@@ -256,18 +227,10 @@ class TestCustomBackendAPI(torch._dynamo.test_case.TestCase):
 
     def test_register_backend_api(self):
         from torch._dynamo import register_backend
-        from torch._dynamo.backends import registry as backend_registry
 
         backend_run = False
-        backend_name = "my_custom_backend"
 
-        def cleanup_backend():
-            backend_registry._COMPILER_FNS.pop(backend_name, None)
-            backend_registry._BACKENDS.pop(backend_name, None)
-
-        self.addCleanup(cleanup_backend)
-
-        @register_backend(name=backend_name)
+        @register_backend
         def my_custom_backend(gm, example_inputs):
             nonlocal backend_run
             backend_run = True
@@ -301,8 +264,9 @@ class TestCustomBackendAPI(torch._dynamo.test_case.TestCase):
         self.assertTrue(backend_run)
 
     def test_lookup_backend(self):
-        from torch._dynamo import lookup_backend
+        from torch._dynamo import list_backends, lookup_backend
 
+        backends = list_backends()
         backend_run = False
 
         def my_compiler(gm, example_inputs):
@@ -330,102 +294,6 @@ class TestCustomBackendAPI(torch._dynamo.test_case.TestCase):
         opt_f(torch.randn(3, 3))
         self.assertTrue(backend_run)
 
-    def test_lookup_custom_backend(self):
-        from torch._dynamo import list_backends
-
-        backends_group = "torch_dynamo_backends"
-        name = "mycustombackend"
-
-        mock_3_10 = MagicMock()
-        mock_3_10.load.return_value = lambda: "mocked 3.10"
-
-        def mock_eps(group=None):
-            if group != backends_group:
-                raise AssertionError(f"Expected group {backends_group}, got {group}")
-            mock_group = MagicMock()
-            mock_group.names = [name]
-            mock_group[name] = mock_3_10
-            return mock_group
-
-        with patch("importlib.metadata.entry_points", mock_eps):
-            from torch._dynamo.backends import registry
-
-            orig_backends = dict(registry._BACKENDS)
-            orig_compiler_fns = dict(registry._COMPILER_FNS)
-
-            def restore_registry():
-                registry._BACKENDS.clear()
-                registry._BACKENDS.update(orig_backends)
-                registry._COMPILER_FNS.clear()
-                registry._COMPILER_FNS.update(orig_compiler_fns)
-                registry._lazy_import.cache_clear()
-                registry._discover_entrypoint_backends.cache_clear()
-
-            self.addCleanup(restore_registry)
-
-            registry._lazy_import.cache_clear()
-            registry._discover_entrypoint_backends.cache_clear()
-
-            backends = list_backends()
-            if name not in backends:
-                raise AssertionError(f"Expected {name} in backends, got {backends}")
-
-    def test_backend_recompilation(self):
-        def fn(x):
-            return x + x
-
-        input = torch.tensor(2.0)
-
-        opt_fn = torch.compile(
-            fn, backend="inductor", options={"_raise_error_for_testing": False}
-        )
-        opt_fn(input)
-        with self.assertRaises(torch._dynamo.exc.BackendCompilerFailed):
-            opt_fn = torch.compile(
-                fn, backend="inductor", options={"_raise_error_for_testing": True}
-            )
-            opt_fn(input)
-
-    def test_backend_graph_freeze(self):
-        from functorch.compile import make_boxed_func
-        from torch._dynamo.backends.common import aot_autograd
-
-        backend_run = False
-
-        def my_compiler(gm, example_inputs):
-            nonlocal backend_run
-            if tracing_context := torch._guards.TracingContext.try_get():
-                fw_metadata = tracing_context.fw_metadata
-                params_flat = tracing_context.params_flat
-                self.assertTrue(fw_metadata is not None)
-                self.assertTrue(params_flat is not None)
-                self.assertTrue(len(params_flat) == 2)
-            backend_run = True
-            return make_boxed_func(gm.forward)
-
-        my_backend = aot_autograd(fw_compiler=my_compiler)
-
-        class MyClass(torch.nn.Module):
-            def __init__(self, *args, **kwargs) -> None:
-                super().__init__(*args, **kwargs)
-                self.p1 = torch.nn.Parameter(torch.randn(2, 3))
-                self.p2 = torch.nn.Parameter(torch.randn(2, 3))
-
-            @torch._dynamo.config.patch("prepare_freezing", True)
-            def forward(self, x):
-                t = self.p1 + x
-                out = t / self.p2
-                return out
-
-        mod = MyClass()
-
-        opt_mod = torch.compile(mod, backend=my_backend)
-        opt_mod(torch.randn(2, 3))
-        self.assertTrue(backend_run)
-
-
-devices = ["cpu", "cuda", "hpu", "xpu"]
-instantiate_device_type_tests(TestOptimizations, globals(), only_for=devices)
 
 if __name__ == "__main__":
     from torch._dynamo.test_case import run_tests

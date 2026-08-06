@@ -8,9 +8,8 @@ from textwrap import dedent
 from typing import Dict, List
 
 import torch
-from torch.testing._internal.common_utils import IS_MACOS, raise_on_run_directly
+from torch.testing._internal.common_utils import IS_MACOS
 from torch.testing._internal.jit_utils import execWrapper, JitTestCase
-
 
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -40,7 +39,7 @@ class TestComplex(JitTestCase):
 
     def test_pickle(self):
         class ComplexModule(torch.jit.ScriptModule):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.a = 3 + 5j
                 self.b = [2 + 3j, 3 + 4j, 0 - 3j, -4 + 0j]
@@ -194,7 +193,7 @@ class TestComplex(JitTestCase):
 
     def test_infj_nanj_pickle(self):
         class ComplexModule(torch.jit.ScriptModule):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.a = 3 + 5j
 
@@ -617,7 +616,3 @@ class TestComplex(JitTestCase):
                 scripted = torch.jit.script(op)
                 jit_result = scripted(x, y)
                 self.assertEqual(eager_result, jit_result)
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations  # type: ignore[attr-defined]
 
+import typing
+
 import torch
 from torch.fx import symbolic_trace
 
@@ -25,13 +27,13 @@ class M2(torch.nn.Module):
 
 # Non-torch annotation with no internal forward references
 class M3(torch.nn.Module):
-    def forward(self, x: list[torch.Tensor], a: A) -> torch.Tensor:
+    def forward(self, x: typing.List[torch.Tensor], a: A) -> torch.Tensor:
         return a(x[0])
 
 
 # Non-torch annotation with internal forward references
 class M4(torch.nn.Module):
-    def forward(self, x: list[torch.Tensor], a: A) -> torch.Tensor:
+    def forward(self, x: typing.List[torch.Tensor], a: A) -> torch.Tensor:
         return a(x[0])
 
 
@@ -41,20 +43,16 @@ ref = torch.add(x, x)
 
 traced1 = symbolic_trace(M1())
 res1 = traced1(x, A())
-if not torch.all(torch.eq(ref, res1)):
-    raise AssertionError("res1 does not match ref")
+assert torch.all(torch.eq(ref, res1))
 
 traced2 = symbolic_trace(M2())
 res2 = traced2(x, A())
-if not torch.all(torch.eq(ref, res2)):
-    raise AssertionError("res2 does not match ref")
+assert torch.all(torch.eq(ref, res2))
 
 traced3 = symbolic_trace(M3())
 res3 = traced3([x], A())
-if not torch.all(torch.eq(ref, res3)):
-    raise AssertionError("res3 does not match ref")
+assert torch.all(torch.eq(ref, res3))
 
 traced4 = symbolic_trace(M4())
 res4 = traced4([x], A())
-if not torch.all(torch.eq(ref, res4)):
-    raise AssertionError("res4 does not match ref")
+assert torch.all(torch.eq(ref, res4))

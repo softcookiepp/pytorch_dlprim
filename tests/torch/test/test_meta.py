@@ -1,5 +1,4 @@
 # Owner(s): ["module: decompositions"]
-# ruff: noqa: F841
 
 import itertools
 import torch
@@ -7,14 +6,12 @@ import os
 import numpy as np
 from enum import Enum
 from torch.overrides import resolve_name
-from torch.utils._dtype_abbrs import dtype_abbrs
-from torch.utils._pytree import tree_map, tree_map_only, tree_flatten, tree_unflatten
+from torch.utils._pytree import tree_map, tree_flatten, tree_unflatten
 from torch.utils import _pytree as pytree
 from torch._subclasses.meta_utils import MetaConverter, assert_metadata_eq, is_sparse_any
 import torch.utils._python_dispatch
 from torch._dispatch.python import enable_python_dispatcher
 from torch._ops import OpOverload, OpOverloadPacket
-from torch.fx.experimental import _config as exp_config
 from torch.testing import make_tensor
 from torch.testing._internal.common_utils import unMarkDynamoStrictTest
 from torch.testing._internal.common_utils import (
@@ -22,10 +19,11 @@ from torch.testing._internal.common_utils import (
     skipIfCrossRef,
     skipIfTorchDynamo,
     suppress_warnings,
+    TEST_WITH_ASAN,
     TEST_WITH_TORCHDYNAMO,
     run_tests,
-    parametrize,
-    xfailIfTorchDynamo,
+    dtype_abbrs,
+    parametrize
 )
 from torch.testing._internal.common_device_type import (
     ops,
@@ -296,7 +294,7 @@ class TestMetaConverter(TestCase):
         meta.set_(storage, 0, (), ())
         self.assertEqual(storage.size(), ssize)
 
-    @xfailIfTorchDynamo
+    @skipIfTorchDynamo("https://github.com/pytorch/torchdynamo/issues/1991")
     def test_weakref(self):
         x = torch.randn(4, 4, 4)
         m = MetaConverter()
@@ -336,7 +334,7 @@ class TestMetaConverter(TestCase):
         self.assertEqual(len(m.tensor_memo), 0)
         self.assertEqual(len(m.storage_memo), 0)
 
-    @xfailIfTorchDynamo
+    @skipIfTorchDynamo("https://github.com/pytorch/torchdynamo/issues/1991")
     def test_tensor_outlives_converter(self):
         m = MetaConverter()
         ref = weakref.ref(m)
@@ -349,9 +347,6 @@ aten = torch.ops.aten
 
 CHECK_STRIDES = {
     torch.Tensor.__getitem__,
-    aten._fft_c2c.default,
-    aten._fft_c2r.default,
-    aten._fft_r2c.default,
 }
 
 CHECK_ALL_STRIDES = {
@@ -360,6 +355,9 @@ CHECK_ALL_STRIDES = {
 
 CHECK_STRIDES_SKIPS = {
     aten._conj_physical.default,
+    aten._fft_c2c.default,
+    aten._fft_c2r.default,
+    aten._fft_r2c.default,
     aten._linalg_svd.default,
     aten.binary_cross_entropy.default,
     aten.complex.default,
@@ -368,7 +366,6 @@ CHECK_STRIDES_SKIPS = {
     aten.div.Tensor_mode,
     aten.floor_divide.default,
     aten.heaviside.default,
-    aten.ldexp.Tensor,
     aten.lerp.Scalar,
     aten.lerp.Tensor,
     aten.logaddexp.default,
@@ -567,8 +564,7 @@ def run_meta_crossref(
             meta_args = (meta_args[0], args[1]) + meta_args[2:]
         elif func is torch.Tensor.__getitem__:
             # Ensure boolean tensors use original
-            if len(args) != 2:
-                raise AssertionError(f"expected len(args) == 2, got {len(args)}")
+            assert len(args) == 2
             flat_args = pytree.tree_leaves(args[1])
             flat_meta_args, spec = tree_flatten(meta_args[1])
             flat_new_args = []
@@ -578,8 +574,8 @@ def run_meta_crossref(
         elif func in (torch.ops.aten.repeat_interleave.Tensor, torch.ops.aten.repeat_interleave.Tensor_out):
             if kwargs.get("output_size", None) is None:
                 meta_args = args
-                if func is torch.ops.aten.repeat_interleave.Tensor_out:
-                    meta_kwargs["out"] = kwargs["out"]
+            if func is torch.ops.aten.repeat_interleave.Tensor_out:
+                meta_kwargs["out"] = kwargs["out"]
         elif func in (torch.ops.aten.index.Tensor, torch.ops.aten.index.Tensor_out):
             # Don't convert boolean tensors to meta as they will have nonzero
             # called on them
@@ -678,16 +674,14 @@ meta_function_expected_failures = {
     torch.functional.unique_consecutive : {f64, i32, i64, u8, i16, f16, bf16, b8, i8, f32, u16, u32, u64},
     torch.histogram : {f64, f32},
     torch.histogramdd : {f64, f32},
+    torch.kthvalue : {f64, i32, i64, u8, i16, f16, bf16, i8, f32},
     torch.nn.functional.ctc_loss : {f64, f32},
     torch.nn.functional.gaussian_nll_loss : {f16, f64, bf16, f32},
     torch.linalg.lstsq : {f64, f32, c128, c64},
 }
 
 meta_function_expected_failures_conditional = {
-    torch.repeat_interleave: lambda dtype, *args, **kwargs: (
-        not isinstance(kwargs.get("repeats", None), int)
-        and (kwargs.get("output_size", None) is None)
-    ),
+    torch.repeat_interleave : (lambda dtype, *args, **kwargs: not isinstance(kwargs.get("repeats", None), int)),
 }
 
 """
@@ -754,6 +748,7 @@ meta_function_device_expected_failures['cuda'] = {
     torch.functional.unique: {f16},  # aten::_unique2, aten::unique_dim
     torch.functional.unique_consecutive: {f16},  # aten::unique_consecutive
     torch.geqrf: {f32, f64},  # aten::geqrf
+    torch.kthvalue: {f16},  # aten::kthvalue.values
 }
 
 meta_function_device_skips['cpu'] = {
@@ -851,6 +846,7 @@ meta_dispatch_expected_failures = {
     aten.equal.default : {c64, f16, i8, f64, c128, i64, bf16, f32, i32, b8, i16, u8},
     aten.histogram.bin_ct : {f32, f64},
     aten.histogram.bins_tensor : {f32, f64},
+    aten.kthvalue.default : {i8, f64, i64, f16, bf16, f32, i32, i16, u8},
     aten.unique_consecutive.default : {i8, f64, i64, f16, bf16, f32, i32, b8, i16, u8, u16, u32, u64},
     aten.unique_dim.default : {i8, f64, i64, f16, bf16, f32, i32, b8, i16, u8, u16, u32, u64},
     aten.upsample_nearest3d.vec : {bf16, f32, f64, u8},
@@ -897,10 +893,9 @@ meta_dispatch_device_expected_failures['cuda'] = {
     aten._unique2.default: {f16},  # aten::_unique2
     aten._use_cudnn_ctc_loss.default: {f32, f64},  # aten::_use_cudnn_ctc_loss
     aten._use_cudnn_ctc_loss.Tensor: {f32, f64},  # aten::_use_cudnn_ctc_loss.Tensor
-    aten._use_miopen_ctc_loss.default: {f32, f64},  # aten::_use_miopen_ctc_loss
-    aten._use_miopen_ctc_loss.Tensor: {f32, f64},  # aten::_use_miopen_ctc_loss.Tensor
     aten.cudnn_grid_sampler.default: {f16, f32, f64},  # aten::cudnn_grid_sampler
     aten.geqrf.default: {f32, f64},  # aten::geqrf
+    aten.kthvalue.default: {f16},  # aten::kthvalue.values
     aten.linalg_eigvalsh.out: {f32, f64},  # aten::linalg_eigvalsh.out
     aten.log_sigmoid_forward.default: {bf16, f16, f64, f32},
     aten.log_sigmoid_forward.output : {bf16, f16, f64, f32},  # aten::log_sigmoid_forward.output
@@ -1158,12 +1153,11 @@ class TestMeta(TestCase):
 
         return _fn
 
+    @unittest.skipIf(TEST_WITH_ASAN, "Skipped under ASAN")
     @skipIfCrossRef
     @suppress_warnings
     @ops(itertools.chain(op_db, foreach_op_db))
     def test_meta_outplace(self, device, dtype, op):
-        if "_scaled_mm" in op.name:
-            raise unittest.SkipTest("_scaled_mm dose not support meta device")
         skip_op_names = (
             "fft.ihfft",
             "fft.ihfft2",
@@ -1194,8 +1188,7 @@ class TestMeta(TestCase):
                     ref = func(*args, **kwargs)
 
                 # *_like functions take a Tensor as first argument
-                if not isinstance(args[0], torch.Tensor):
-                    raise AssertionError(f"expected args[0] to be Tensor, got {type(args[0])}")
+                assert isinstance(args[0], torch.Tensor)
                 with torch.random.fork_rng():
                     torch.manual_seed(123)
                     args[0] = args[0].to(device="meta")
@@ -1205,6 +1198,7 @@ class TestMeta(TestCase):
                 if op.name != "empty_like":
                     self.assertEqual(ref, meta)
 
+    @unittest.skipIf(TEST_WITH_ASAN, "Skipped under ASAN")
     @skipIfCrossRef
     @suppress_warnings
     @ops(itertools.chain(op_db, foreach_op_db))
@@ -1227,8 +1221,6 @@ class TestMeta(TestCase):
                 expected = func(*args, **kwargs)
 
     def _run_dispatch_meta_test(self, device, dtype, op, symbolic_meta, inplace, all_stride_variants=False):
-        if "_scaled_mm" in op.name:
-            raise unittest.SkipTest("_scaled_mm dose not support meta device")
         if inplace:
             func = op.get_inplace()
             if not func:
@@ -1269,18 +1261,21 @@ class TestMeta(TestCase):
                         func(*args, **kwargs, out=expected)
 
 
+    @unittest.skipIf(TEST_WITH_ASAN, "Skipped under ASAN")
     @skipIfCrossRef
     @suppress_warnings
     @ops(itertools.chain(op_db, foreach_op_db))
     def test_dispatch_meta_outplace(self, device, dtype, op):
         self._run_dispatch_meta_test(device, dtype, op, symbolic_meta=False, inplace=False)
 
+    @unittest.skipIf(TEST_WITH_ASAN, "Skipped under ASAN")
     @skipIfCrossRef
     @suppress_warnings
     @ops(itertools.chain(op_db, foreach_op_db))
     def test_dispatch_meta_inplace(self, device, dtype, op):
         self._run_dispatch_meta_test(device, dtype, op, symbolic_meta=False, inplace=True)
 
+    @unittest.skipIf(TEST_WITH_ASAN, "Skipped under ASAN")
     @skipIfCrossRef
     @suppress_warnings
     @ops(itertools.chain(op_db, foreach_op_db))
@@ -1288,12 +1283,14 @@ class TestMeta(TestCase):
         self._run_dispatch_meta_test(device, dtype, op, symbolic_meta=True, inplace=False)
 
 
+    @unittest.skipIf(TEST_WITH_ASAN, "Skipped under ASAN")
     @skipIfCrossRef
     @suppress_warnings
     @ops(itertools.chain(op_db, foreach_op_db))
     def test_dispatch_symbolic_meta_inplace(self, device, dtype, op):
         self._run_dispatch_meta_test(device, dtype, op, symbolic_meta=True, inplace=True)
 
+    @unittest.skipIf(TEST_WITH_ASAN, "Skipped under ASAN")
     @skipIfCrossRef
     @suppress_warnings
     # only test one dtype, as output stride behavior is the same for all dtypes
@@ -1303,6 +1300,7 @@ class TestMeta(TestCase):
     def test_dispatch_symbolic_meta_outplace_all_strides(self, device, dtype, op):
         self._run_dispatch_meta_test(device, dtype, op, symbolic_meta=True, inplace=False, all_stride_variants=True)
 
+    @unittest.skipIf(TEST_WITH_ASAN, "Skipped under ASAN")
     @skipIfCrossRef
     @suppress_warnings
     # only test one dtype, as output stride behavior is the same for all dtypes
@@ -1312,6 +1310,7 @@ class TestMeta(TestCase):
     def test_dispatch_symbolic_meta_inplace_all_strides(self, device, dtype, op):
         self._run_dispatch_meta_test(device, dtype, op, symbolic_meta=True, inplace=True, all_stride_variants=True)
 
+    @unittest.skipIf(TEST_WITH_ASAN, "Skipped under ASAN")
     @skipIfCrossRef
     @suppress_warnings
     # only test one dtype, as output stride behavior is the same for all dtypes
@@ -1511,7 +1510,7 @@ class TestMeta(TestCase):
     def test_fill__alias_relationship(self):
         inps = torch.rand(2**52, device='meta')
         r = torch.ops.aten.fill_(inps, 1.0)
-        # aten.fill_ returns an alias
+        # aten.fill_ returns an aliase
         self.assertEqual(id(inps), id(r))
 
         # aten.fill returns a new tensor
@@ -1637,42 +1636,6 @@ class TestMeta(TestCase):
         )
         self.assertEqual(grad_weight.to('meta'), meta_grad_weight)
 
-    def test_segment_reduce_backward(self):
-        grad = torch.ones(16, dtype=torch.float)
-        output = torch.ones(16, dtype=torch.float)
-        data = torch.ones(16, dtype=torch.float)
-        reduce_str = 'max'
-        lengths = torch.ones(16, dtype=torch.long)
-
-        out = torch.ops.aten._segment_reduce_backward(grad, output, data, reduce_str, lengths=lengths)
-        out_meta = torch.ops.aten._segment_reduce_backward(
-            grad.to(device='meta'),
-            output.to(device='meta'),
-            data.to(device='meta'),
-            reduce_str,
-            lengths=lengths.to(device='meta'),
-        )
-        self.assertEqual(out.shape, out_meta.shape)
-        self.assertEqual(out.stride(), out_meta.stride())
-        self.assertEqual(out.dtype, out_meta.dtype)
-        self.assertEqual(out.layout, out_meta.layout)
-
-        # noncontiguous
-        grad = torch.ones(16, 2, dtype=torch.float)[:, 1]
-        data = torch.ones(16, 2, dtype=torch.float)[:, 1]
-        out = torch.ops.aten._segment_reduce_backward(grad, output, data, reduce_str, lengths=lengths)
-        out_meta = torch.ops.aten._segment_reduce_backward(
-            grad.to(device='meta'),
-            output.to(device='meta'),
-            data.to(device='meta'),
-            reduce_str,
-            lengths=lengths.to(device='meta'),
-        )
-        self.assertEqual(out.shape, out_meta.shape)
-        self.assertEqual(out.stride(), out_meta.stride())
-        self.assertEqual(out.dtype, out_meta.dtype)
-        self.assertEqual(out.layout, out_meta.layout)
-
     def test_embedding_bag_dense_backward_per_sample_weights(self):
         weight = torch.randn(4, 3, requires_grad=True)
         indices = torch.tensor([1, 0, 2, 1, 3])
@@ -1698,32 +1661,6 @@ class TestMeta(TestCase):
             offsets.to('meta'), offset2bag.to('meta'), mode, padding_idx
         )
         self.assertEqual(grad_weight.to('meta'), meta_grad_weight)
-
-    def _assert_fft_meta_stride_matches_eager(self, op, *args):
-        to_meta = MetaConverter()
-        meta_args = tree_map_only(torch.Tensor, to_meta, args)
-        ref_out = op(*args)
-        meta_out = op(*meta_args)
-        self.assertEqual(ref_out.size(), meta_out.size())
-        self.assertEqual(ref_out.stride(), meta_out.stride())
-
-    @onlyCUDA
-    @unittest.skipIf(torch.version.hip, "cuFFT-specific stride behavior")
-    def test_fft_multi_dim_cufft_stride_matches_meta(self, device):
-        self._assert_fft_meta_stride_matches_eager(
-            aten._fft_c2c.default,
-            torch.randn((5, 5, 5, 5, 5), device=device, dtype=torch.complex64),
-            [1, 2, 3, 4],
-            0,
-            True,
-        )
-        self._assert_fft_meta_stride_matches_eager(
-            aten._fft_c2r.default,
-            torch.randn((5, 5, 5, 5, 3), device=device, dtype=torch.complex64),
-            [0, 1, 2, 3, 4],
-            0,
-            5,
-        )
 
     # opinfo test is using aten.fill_, it's not testing aten.fill
     @onlyCUDA
@@ -1792,190 +1729,7 @@ class TestMeta(TestCase):
             meta_tensor = torch.randn(1, device='meta')
             meta_tensor.item()
 
-    def test_triangular_solve_out(self):
-        # Get what's the expected output for the given example.
-        A = torch.randn(2, 2).triu()
-        b = torch.randn(2, 3)
-        out = torch.triangular_solve(b, A)
-
-        # Call the function again, transforming every tensor input (including the out tensor)
-        # into a meta tensor.
-        meta_out = tree_map_only(torch.Tensor, lambda t: t.to("meta"), out)
-        torch.triangular_solve(b.to("meta"), A.to("meta"), out=meta_out)
-
-        self.assertEqual(out[0].shape, meta_out[0].shape)
-        self.assertEqual(out[0].dtype, meta_out[0].dtype)
-
-        self.assertEqual(out[1].shape, meta_out[1].shape)
-        self.assertEqual(out[1].dtype, meta_out[1].dtype)
-
-    def test_meta_consistency_out_dtype_mismatch_pow_Tensor_Scalar(self):
-        S = (5,)
-
-        def run(device):
-            a = torch.rand(S, device=device, dtype=torch.float32)
-            b = 2
-            out = torch.empty(S, device=device, dtype=torch.float64)
-
-            try:
-                torch.pow(a, b, out=out)
-            except Exception as e:
-                return e
-
-        cpu_err = run("cpu")
-        meta_err = run("meta")
-
-        if cpu_err is None and meta_err is not None:
-            raise RuntimeError("cpu didn't fail, but meta did.") from meta_err
-        elif cpu_err is not None and meta_err is None:
-            raise RuntimeError("cpu failed, but meta didn't.") from cpu_err
-
-    def test_nonzero(self):
-        t = torch.randn(2, 3, 4, device='meta')
-        with exp_config.patch(meta_nonzero_assume_all_nonzero=True):
-            nz = t.nonzero()
-        self.assertEqual(nz.dtype, torch.int64)
-        self.assertEqual(nz.device.type, 'meta')
-        self.assertEqual(nz.shape, torch.Size([24, 3]))
-        self.assertEqual(nz.stride(), torch.Size([1, 24]))
-
-
-    def test_stride_for_index_Tensor(self):
-        from torch._subclasses import FakeTensorMode
-        x = torch.randn((24, 16, 32, 32)).to(memory_format=torch.channels_last)
-        x = x.view(2, 12, 16, 32, 32)
-
-        i1 = torch.arange(2).unsqueeze(-1)
-        i2 = torch.argsort(torch.rand(2, 12), dim=-1)[:, :3]
-
-        out = x[i1, i2]
-
-        mode = FakeTensorMode()
-        with mode:
-            f_x = mode.from_tensor(x)
-            f_i1 = mode.from_tensor(i1)
-            f_i2 = mode.from_tensor(i2)
-            f_out = f_x[f_i1, f_i2]
-
-        self.assertEqual(out.stride(), f_out.stride())
-
-
-    @parametrize("in_dtype", [torch.float32, torch.float16])
-    @parametrize("bias_dtype", [torch.float32, torch.float16, None])
-    def test_mixed_dtype_for_native_layer_norm_backward(self, in_dtype, bias_dtype):
-        if in_dtype == torch.float16 and bias_dtype == torch.float32:
-            self.skipTest(f"not supported input dtype is {in_dtype} and bias dtype is {bias_dtype}")
-        device = "meta"
-
-        def fn(input, weight, bias, need_grad_input):
-            outputs = torch.nn.functional.layer_norm(input, input.shape[-1:], weight, bias)
-            grad_outs = torch.ones_like(outputs)
-            grad_ins = torch.autograd.grad(outputs, need_grad_input, grad_outs)
-            return grad_ins
-
-        input = torch.randn([4, 8, 5], dtype=in_dtype, device=device, requires_grad=True)
-        need_grad_input = [input]
-
-        if bias_dtype:
-            weight = torch.randn(
-                [5], dtype=bias_dtype, device=device, requires_grad=True
-            )
-            bias = torch.randn(
-                [5], dtype=bias_dtype, device=device, requires_grad=True
-            )
-            need_grad_input.append(weight)
-            need_grad_input.append(bias)
-        else:
-            weight = None
-            bias = None
-
-        outs = fn(input, weight, bias, need_grad_input)
-        out_dtype = [t.dtype for t in outs]
-        if bias_dtype:
-            self.assertEqual(out_dtype, [in_dtype, bias_dtype, bias_dtype])
-        else:
-            self.assertEqual(out_dtype, [in_dtype,])
-
-class TestMetaKernelConv(TestCase):
-    @skipIfTorchDynamo("tests raw meta kernel, not dynamo")
-    def test_convolution_backward_meta_kernel_channels_last(self):
-        """Test the meta kernel directly (device='meta', no FakeTensorMode).
-        This exercises the @register_meta path used by torch.export, which
-        does NOT go through the FakeTensor intercept in fake_impls.py.
-        """
-        # channels_last grad_output + contiguous input/weight -> contiguous
-        grad_out = torch.empty(2, 3, 4, 4, device="meta").to(
-            memory_format=torch.channels_last
-        )
-        inp = torch.empty(2, 3, 4, 4, device="meta")
-        w = torch.empty(3, 3, 3, 3, device="meta")
-        gi, gw, _ = torch.ops.aten.convolution_backward(
-            grad_out,
-            inp,
-            w,
-            [3],
-            [1, 1],
-            [1, 1],
-            [1, 1],
-            False,
-            [0, 0],
-            1,
-            [True, True, True],
-        )
-        self.assertTrue(gi.is_contiguous())
-        self.assertTrue(gw.is_contiguous())
-
-        # contiguous grad_output + channels_last input -> channels_last
-        grad_out2 = torch.empty(2, 3, 4, 4, device="meta")
-        inp2 = torch.empty(2, 3, 4, 4, device="meta").to(
-            memory_format=torch.channels_last
-        )
-        gi2, gw2, _ = torch.ops.aten.convolution_backward(
-            grad_out2,
-            inp2,
-            w,
-            [3],
-            [1, 1],
-            [1, 1],
-            [1, 1],
-            False,
-            [0, 0],
-            1,
-            [True, True, True],
-        )
-        self.assertTrue(gi2.is_contiguous(memory_format=torch.channels_last))
-        self.assertTrue(gw2.is_contiguous(memory_format=torch.channels_last))
-
-
-
-
-class TestMetaKernelRegistrations(TestCase):
-    @skipIfTorchDynamo("tests raw meta kernel, not dynamo")
-    def test_make_dep_token(self):
-        cpu_result = torch.ops.aten._make_dep_token(device=torch.device("cpu"))
-        meta_result = torch.ops.aten._make_dep_token(device=torch.device("meta"))
-        self.assertEqual(cpu_result.shape, meta_result.shape)
-        self.assertEqual(cpu_result.dtype, meta_result.dtype)
-
-    @skipIfTorchDynamo("tests raw meta kernel, not dynamo")
-    def test_rrelu_backward_small_range(self):
-        from torch._decomp.decompositions import rrelu_with_noise_backward
-
-        x = torch.randn(5, requires_grad=True)
-        lower, upper = 0.125, 0.125 + torch.finfo(torch.float32).eps
-        noise = torch.rand(5)
-        grad = torch.ones(5)
-        cpp_result = torch.ops.aten.rrelu_with_noise_backward(
-            grad, x, noise, lower, upper, True, False
-        )
-        decomp_result = rrelu_with_noise_backward(
-            grad, x, noise, lower, upper, True, False
-        )
-        self.assertEqual(cpp_result, decomp_result)
-
-
 instantiate_device_type_tests(TestMeta, globals())
-
 
 def print_op_str_if_not_supported(op_str):
     op = OperatorName.parse(op_str)

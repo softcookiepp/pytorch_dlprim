@@ -12,11 +12,11 @@ from copy import deepcopy
 
 import torch
 import torch.nn as nn
+
 from torch.distributed.optim import (
     _apply_optimizer_in_backward,
     _get_in_backward_optimizers,
 )
-
 
 # TODO (rohan-varma): Add FSDP & DDP tests once supported
 
@@ -39,7 +39,7 @@ class ApplyOverlappedOptimizerTest(unittest.TestCase):
             with self.subTest(i):
                 _validate_params(
                     [model.parameters() for model in models],
-                    torch.testing.assert_close,
+                    torch.testing.assert_allclose,
                 )
 
             for opt in optimizers:
@@ -77,7 +77,7 @@ class ApplyOverlappedOptimizerTest(unittest.TestCase):
                 model.parameters(),
                 model_with_opt_in_bwd.parameters(),
             ],
-            torch.testing.assert_close,
+            torch.testing.assert_allclose,
         )
 
         self._run_training_loop_and_validate(
@@ -113,10 +113,10 @@ class ApplyOverlappedOptimizerTest(unittest.TestCase):
 
         for p1, p2 in zip(model_with_hook.parameters(), initial_model.parameters()):
             with self.assertRaises(AssertionError):
-                torch.testing.assert_close(p1, p2)
+                torch.testing.assert_allclose(p1, p2)
 
         for p1, p2 in zip(model_no_hook.parameters(), initial_model.parameters()):
-            torch.testing.assert_close(p1, p2)
+            torch.testing.assert_allclose(p1, p2)
 
     def test_multiple_optim_for_params(self) -> None:
         model = nn.Sequential(nn.Linear(10, 10), nn.Linear(10, 10))
@@ -144,7 +144,7 @@ class ApplyOverlappedOptimizerTest(unittest.TestCase):
     def test_get_optimizers_in_backward(self):
         # Create a simple test model
         class TestModel(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.linear1 = torch.nn.Linear(10, 5)
                 self.linear2 = torch.nn.Linear(5, 2)

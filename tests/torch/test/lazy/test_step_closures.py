@@ -5,8 +5,7 @@ from time import sleep
 
 import torch._lazy
 import torch._lazy.ts_backend
-from torch.testing._internal.common_utils import run_tests, skipIfFreeThreaded, TestCase
-
+from torch.testing._internal.common_utils import run_tests, TestCase
 
 torch._lazy.ts_backend.init()
 
@@ -14,44 +13,37 @@ torch._lazy.ts_backend.init()
 class ClosuresTest(TestCase):
     def test_synchronous(self):
         flag = Event()
-        if flag.is_set():
-            raise AssertionError("flag should not be set initially")
+        assert not flag.is_set()
 
         def closure():
             sleep(1)
-            if flag.is_set():
-                raise AssertionError("flag should not be set during closure")
+            assert not flag.is_set()
             flag.set()
 
         torch._lazy.add_step_closure(closure)
         torch._lazy.mark_step()
 
         # should not get to this part before closure is finished running
-        if not flag.is_set():
-            raise AssertionError("flag should be set after mark_step")
+        assert flag.is_set()
 
     def test_asynchronous(self):
         flag = Event()
-        if flag.is_set():
-            raise AssertionError("flag should not be set initially")
+        assert not flag.is_set()
 
         def closure():
             sleep(1)
-            if not flag.is_set():
-                raise AssertionError("flag should be set by the time closure runs")
+            assert flag.is_set()
 
         torch._lazy.add_step_closure(closure, run_async=True)
         torch._lazy.mark_step()
 
         # should get to this part and complete before closure is finished running
-        if flag.is_set():
-            raise AssertionError("flag should not be set yet (async)")
+        assert not flag.is_set()
         flag.set()
 
     def test_synchronous_exception(self):
         flag = Event()
-        if flag.is_set():
-            raise AssertionError("flag should not be set initially")
+        assert not flag.is_set()
 
         try:
 
@@ -62,20 +54,13 @@ class ClosuresTest(TestCase):
             torch._lazy.add_step_closure(closure)
             torch._lazy.mark_step()
 
-            raise AssertionError("Should not reach here")
-        except RuntimeError:
-            if not flag.is_set():
-                raise AssertionError(
-                    "Should have caught exception from closure"
-                ) from None
+            raise AssertionError  # Should not reach here
+        except RuntimeError as e:
+            assert flag.is_set(), "Should have caught exception from closure"
 
-    @skipIfFreeThreaded(
-        "Non-deterministic, fails more consistently in free threaded python",
-    )
     def test_asynchronous_exception(self):
         flag = Event()
-        if flag.is_set():
-            raise AssertionError("flag should not be set initially")
+        assert not flag.is_set()
 
         def closure1():
             flag.set()
@@ -94,13 +79,12 @@ class ClosuresTest(TestCase):
             torch._lazy.add_step_closure(closure2, run_async=True)
             torch._lazy.mark_step()
 
-            raise AssertionError("Should not reach here")
-        except RuntimeError:
+            raise AssertionError  # Should not reach here
+        except RuntimeError as e:
             # Should have caught exception from closure1
             pass
 
-        if not flag.is_set():
-            raise AssertionError("flag should still be set")
+        assert flag.is_set()
 
 
 if __name__ == "__main__":

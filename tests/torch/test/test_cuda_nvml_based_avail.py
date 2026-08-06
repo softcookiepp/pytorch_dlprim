@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 import torch
 
-
 # NOTE: Each of the tests in this module need to be run in a brand new process to ensure CUDA is uninitialized
 # prior to test initiation.
 with patch.dict(os.environ, {"PYTORCH_NVML_BASED_CUDA_CHECK": "1"}):
@@ -78,8 +77,7 @@ class TestExtendedCUDAIsAvail(TestCase):
                     in_bad_fork, TestExtendedCUDAIsAvail.SUBPROCESS_REMINDER_MSG
                 )
             else:
-                if not in_bad_fork:
-                    raise AssertionError("expected in_bad_fork to be True")
+                assert in_bad_fork
 
 
 @torch.testing._internal.common_utils.markDynamoStrictTest
@@ -128,7 +126,7 @@ class TestVisibleDeviceParses(TestCase):
             _transform_uuid_to_ordinals(["GPU-e4", "GPU-9e8d35e3"], uuids), [2, 1]
         )
         self.assertEqual(
-            _transform_uuid_to_ordinals(["GPU-9e8d35e3", "GPU-1", "GPU-47"], uuids),
+            _transform_uuid_to_ordinals("GPU-9e8d35e3,GPU-1,GPU-47".split(","), uuids),
             [1, 7, 5],
         )
         # First invalid UUID aborts parsing
@@ -139,7 +137,7 @@ class TestVisibleDeviceParses(TestCase):
             _transform_uuid_to_ordinals(["GPU-9e8d35e3", "GPU-123", "GPU-47"], uuids),
             [1],
         )
-        # First ambiguous UUID aborts parsing
+        # First ambigous UUID aborts parsing
         self.assertEqual(
             _transform_uuid_to_ordinals(["GPU-9e8d35e3", "GPU-e", "GPU-47"], uuids), [1]
         )

@@ -6,7 +6,7 @@ from torch.testing._internal.common_utils import (
     run_tests,
     TEST_WITH_TORCHDYNAMO,
     TestCase,
-    xpassIfTorchDynamo_np,
+    xpassIfTorchDynamo,
 )
 
 
@@ -21,7 +21,7 @@ else:
 
 
 class TestConstant(TestCase):
-    @xpassIfTorchDynamo_np  # (reason="tuple values")
+    @xpassIfTorchDynamo  # (reason="tuple values")
     def test_check_constant(self):
         a = np.arange(100)
         a = np.pad(a, (25, 20), "constant", constant_values=(10, 20))
@@ -369,7 +369,7 @@ class TestConstant(TestCase):
         )
         assert_allclose(test, expected)
 
-    @xpassIfTorchDynamo_np  # (reason="tuple values")
+    @xpassIfTorchDynamo  # (reason="tuple values")
     def test_check_constant_float3(self):
         a = np.arange(100, dtype=float)
         a = np.pad(a, (25, 20), "constant", constant_values=(-1.1, -1.2))
@@ -540,10 +540,10 @@ class TestConstant(TestCase):
         )
         assert_allclose(test, expected)
 
-    @xpassIfTorchDynamo_np  # (reason="tuple values")
+    @xpassIfTorchDynamo  # (reason="tuple values")
     def test_check_constant_pad_2d(self):
         arr = np.arange(4).reshape(2, 2)
-        test = np.pad(
+        test = np.lib.pad(
             arr, ((1, 2), (1, 3)), mode="constant", constant_values=((1, 2), (3, 4))
         )
         expected = np.array(
@@ -570,10 +570,7 @@ class TestConstant(TestCase):
     def test_pad_empty_dimension(self):
         arr = np.zeros((3, 0, 2))
         result = np.pad(arr, [(0,), (2,), (1,)], mode="constant")
-        if result.shape != (3, 4, 4):
-            raise AssertionError(
-                f"Expected result.shape == (3, 4, 4), got {result.shape}"
-            )
+        assert result.shape == (3, 4, 4)
 
 
 if __name__ == "__main__":

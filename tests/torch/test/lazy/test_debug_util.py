@@ -10,7 +10,6 @@ import torch._lazy.ts_backend
 import torch.nn as nn
 from torch.testing._internal.common_utils import IS_WINDOWS, run_tests, TestCase
 
-
 torch._lazy.ts_backend.init()
 
 
@@ -19,7 +18,7 @@ class DebugUtilTest(TestCase):
     def _run_linear(self):
         device = "lazy"
         model = nn.Linear(5, 5).to(device)
-        output = model(torch.randn(1, 5).to(device))  # noqa: F841
+        output = model(torch.randn(1, 5).to(device))
         torch._lazy.mark_step()
 
     def test_get_python_frames(self):

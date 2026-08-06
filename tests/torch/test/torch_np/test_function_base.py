@@ -9,7 +9,6 @@ from torch.testing._internal.common_utils import (
     TestCase,
 )
 
-
 # If we are going to trace through these, we should use NumPy
 # If testing on eager mode, we use torch._numpy
 if TEST_WITH_TORCHDYNAMO:
@@ -32,12 +31,6 @@ class TestAppend(TestCase):
 
         with pytest.raises((RuntimeError, ValueError)):
             np.append([[1, 2, 3], [4, 5, 6]], [7, 8, 9], axis=0)
-
-
-class TestMisc(TestCase):
-    def test_broadcast_shapes(self):
-        result = np.broadcast_shapes((1, 2), (2, 2))
-        assert_equal(result, (2, 2))
 
 
 if __name__ == "__main__":

@@ -28,7 +28,6 @@ from torch.testing._internal.common_utils import (
     TestCase,
 )
 
-
 NO_NCCL = not hasattr(torch.distributed, "ProcessGroupNCCL")
 
 # batched grad doesn't support data parallel
@@ -44,8 +43,8 @@ class TestDataParallel(TestCase):
         class TestModule(nn.Module):
             def __init__(self, t):
                 super().__init__()
-                self.t_rg = nn.Buffer(t)
-                self.t_not_rg = nn.Buffer(t.detach().clone())
+                self.register_buffer("t_rg", t)
+                self.register_buffer("t_not_rg", t.clone().detach())
 
             def forward(self, x):
                 return x * self.t_rg + self.t_not_rg
@@ -66,7 +65,7 @@ class TestDataParallel(TestCase):
     @skip_but_pass_in_sandcastle_if(not TEST_MULTIGPU, "multi-GPU not supported")
     def test_data_parallel_rnn(self):
         class TestModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.rnn = torch.nn.LSTM(
                     300, 1024, 1, batch_first=True, bidirectional=True
@@ -96,7 +95,7 @@ class TestDataParallel(TestCase):
         step(model_dp)
 
         for p1, p2 in zip(model.parameters(), model_dp.parameters()):
-            self.assertEqual(p1, p2)
+            self.assertTrue(p1.allclose(p2))
 
     @skip_but_pass_in_sandcastle_if(not TEST_MULTIGPU, "multi-GPU not supported")
     def test_data_parallel_lazy_linear(self):
@@ -320,7 +319,7 @@ class TestDataParallel(TestCase):
         import gc
 
         class Model(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.linear = nn.Linear(1, 1)
 
@@ -539,155 +538,26 @@ class TestDataParallel(TestCase):
     def test_scatter_gpu(self):
         self._test_scatter(torch.randn((4, 4), dtype=torch.double).cuda())
 
-    @skip_but_pass_in_sandcastle_if(not TEST_MULTIGPU, "multi-GPU not supported")
-    def test_data_parallel_complex_parameters(self):
-        # test that complex parameters are handled correctly by DataParallel
-        class ComplexModel(torch.nn.Module):
+    @skip_but_pass_in_sandcastle_if(not TEST_MULTIGPU, "At least 2 CUDA GPUS needed")
+    @skip_but_pass_in_sandcastle_if(NO_NCCL, "NCCL needed")
+    def test_data_parallel_complex(self):
+        # We expect complex parameters to be broadcast by view_as_real, e.g. move from C to R^2
+        class Cplx(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.fc1 = torch.nn.Linear(8, 16, dtype=torch.cfloat)
-                self.fc2 = torch.nn.Linear(16, 8, dtype=torch.cfloat)
+                self.cplx = torch.nn.Parameter(
+                    torch.zeros(1, 10, dtype=torch.cfloat).cuda()
+                )
 
             def forward(self, x):
-                x = self.fc1(x)
-                x = x * torch.exp(1j * x.real)  # complex nonlinearity
-                return self.fc2(x)
+                return x + self.cplx
 
-        torch.manual_seed(42)
-        model_single = ComplexModel().cuda()
-        opt_single = torch.optim.SGD(model_single.parameters(), lr=0.01)
-
-        torch.manual_seed(42)
-        model_dp_base = ComplexModel().cuda()
-        model_dp = torch.nn.DataParallel(model_dp_base)
-        opt_dp = torch.optim.SGD(model_dp_base.parameters(), lr=0.01)
-
-        num_epochs = 5
-        batch_size = 8
-
-        for epoch in range(num_epochs):
-            torch.manual_seed(epoch * 100)
-            x = torch.randn(batch_size, 8, dtype=torch.cfloat, device="cuda")
-
-            # tolerance grows with epochs due to accumulated numerical differences
-            atol = 1e-5 * (10**epoch)
-
-            out_single = model_single(x)
-            out_dp = model_dp(x)
-
-            self.assertEqual(out_single.shape, out_dp.shape)
-            self.assertEqual(out_single.dtype, out_dp.dtype)
-            self.assertTrue(
-                torch.allclose(out_single, out_dp, atol=atol),
-                f"Epoch {epoch}: outputs differ",
-            )
-
-            loss_single = out_single.abs().sum()
-            loss_dp = out_dp.abs().sum()
-
-            opt_single.zero_grad()
-            opt_dp.zero_grad()
-
-            loss_single.backward()
-            loss_dp.backward()
-
-            opt_single.step()
-            opt_dp.step()
-
-            for (n1, p1), (n2, p2) in zip(
-                model_single.named_parameters(), model_dp_base.named_parameters()
-            ):
-                self.assertEqual(p1.grad.shape, p2.grad.shape)
-                self.assertEqual(p1.grad.dtype, p2.grad.dtype)
-                self.assertTrue(
-                    torch.allclose(p1.grad, p2.grad, atol=atol),
-                    f"Epoch {epoch}: gradients differ for {n1}",
-                )
-
-            for (n1, p1), (n2, p2) in zip(
-                model_single.named_parameters(), model_dp_base.named_parameters()
-            ):
-                self.assertTrue(
-                    torch.allclose(p1.data, p2.data, atol=atol),
-                    f"Epoch {epoch}: weights differ for {n1} after optimizer step",
-                )
-
-    @skip_but_pass_in_sandcastle_if(not TEST_MULTIGPU, "multi-GPU not supported")
-    def test_data_parallel_complex_mixed_parameters(self):
-        # test that mix complex and real parameters are handled correctly by DataParallel
-        class MixedModel(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.real_fc1 = torch.nn.Linear(8, 16)
-                self.real_fc2 = torch.nn.Linear(16, 8)
-                self.complex_fc1 = torch.nn.Linear(8, 16, dtype=torch.cfloat)
-                self.complex_fc2 = torch.nn.Linear(16, 8, dtype=torch.cfloat)
-
-            def forward(self, x_real, x_complex):
-                r = torch.relu(self.real_fc1(x_real))
-                r = self.real_fc2(r)
-                c = self.complex_fc1(x_complex)
-                c = c * torch.exp(1j * c.real)
-                c = self.complex_fc2(c)
-                return r, c
-
-        torch.manual_seed(42)
-        model_single = MixedModel().cuda()
-        opt_single = torch.optim.SGD(model_single.parameters(), lr=0.01)
-
-        torch.manual_seed(42)
-        model_dp_base = MixedModel().cuda()
-        model_dp = torch.nn.DataParallel(model_dp_base)
-        opt_dp = torch.optim.SGD(model_dp_base.parameters(), lr=0.01)
-
-        num_epochs = 5
-        batch_size = 8
-
-        for epoch in range(num_epochs):
-            torch.manual_seed(epoch * 100)
-            x_real = torch.randn(batch_size, 8, device="cuda")
-            x_complex = torch.randn(batch_size, 8, dtype=torch.cfloat, device="cuda")
-
-            # tolerance grows with epochs due to accumulated numerical differences
-            atol = 1e-5 * (10**epoch)
-
-            out_r_single, out_c_single = model_single(x_real, x_complex)
-            out_r_dp, out_c_dp = model_dp(x_real, x_complex)
-
-            self.assertEqual(out_r_single.dtype, torch.float32)
-            self.assertEqual(out_c_single.dtype, torch.cfloat)
-            self.assertTrue(torch.allclose(out_r_single, out_r_dp, atol=atol))
-            self.assertTrue(torch.allclose(out_c_single, out_c_dp, atol=atol))
-
-            loss_single = out_r_single.sum() + out_c_single.abs().sum()
-            loss_dp = out_r_dp.sum() + out_c_dp.abs().sum()
-
-            opt_single.zero_grad()
-            opt_dp.zero_grad()
-
-            loss_single.backward()
-            loss_dp.backward()
-
-            opt_single.step()
-            opt_dp.step()
-
-            for (n1, p1), (n2, p2) in zip(
-                model_single.named_parameters(), model_dp_base.named_parameters()
-            ):
-                self.assertEqual(p1.grad.shape, p2.grad.shape)
-                self.assertEqual(p1.grad.dtype, p2.grad.dtype)
-                self.assertTrue(
-                    torch.allclose(p1.grad, p2.grad, atol=atol),
-                    f"Epoch {epoch}: gradients differ for {n1}",
-                )
-
-            for (n1, p1), (n2, p2) in zip(
-                model_single.named_parameters(), model_dp_base.named_parameters()
-            ):
-                self.assertTrue(
-                    torch.allclose(p1.data, p2.data, atol=atol),
-                    f"Epoch {epoch}: weights differ for {n1} after optimizer step",
-                )
+        cplx = torch.nn.DataParallel(Cplx().cuda())
+        input = torch.rand(1, 10, dtype=torch.cfloat).cuda()
+        result = cplx(input)
+        # 2 is the extra real view dimension here
+        self.assertEqual(result.size(), torch.Size([1, 10, 2]))
+        self.assertEqual(result, torch.view_as_real(input))
 
     def _test_gather(self, output_device):
         inputs = (
@@ -814,10 +684,10 @@ class TestDataParallel(TestCase):
     @skip_but_pass_in_sandcastle_if(not TEST_MULTIGPU, "multi-GPU not supported")
     def test_autocast(self):
         class Model(torch.nn.Linear):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__(8, 8)
 
-            @torch.autocast(device_type="cuda")
+            @torch.cuda.amp.autocast()
             def forward(self, input):
                 return super().forward(input)
 
@@ -889,7 +759,7 @@ class TestDataParallel(TestCase):
                     opt = torch.optim.SGD(m.parameters(), lr=0.1)
                     opt_dp = torch.optim.SGD(m_dp.parameters(), lr=0.1)
                     has_half = any(p.dtype is torch.half for p in m.parameters())
-                    tol = 3.0e-3 if has_half else 1.0e-5
+                    tol = 1.0e-3 if has_half else 1.0e-5
                 except BaseException:
                     # Prints case-specific debugging info to narrow down failing case.
                     print(
@@ -920,8 +790,8 @@ class TestDataParallel(TestCase):
                                 ),
                                 named_msg,
                             )
-                            for (param_name, p), p_dp in zip(
-                                m_child.named_parameters(), m_dp_child.parameters()
+                            for j, ((param_name, p), p_dp) in enumerate(
+                                zip(m_child.named_parameters(), m_dp_child.parameters())
                             ):
                                 named_msg = (
                                     layer_name + "." + param_name + " " + iter_msg
@@ -999,7 +869,7 @@ class TestDataParallelDeviceType(TestCase):
     @dtypes(torch.float, torch.double, torch.half)
     def test_data_parallel_module_kwargs_only(self, device, dtype):
         class Net(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.l = l
 
@@ -1019,7 +889,7 @@ class TestDataParallelDeviceType(TestCase):
     @dtypes(torch.float, torch.double, torch.half)
     def test_data_parallel_module_kwargs_only_empty_list(self, device, dtype):
         class Net(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.l = l
 
@@ -1039,7 +909,7 @@ class TestDataParallelDeviceType(TestCase):
     @dtypes(torch.float, torch.double, torch.half)
     def test_data_parallel_module_kwargs_only_empty_dict(self, device, dtype):
         class Net(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.l = l
 
@@ -1059,7 +929,7 @@ class TestDataParallelDeviceType(TestCase):
     @dtypes(torch.float, torch.double, torch.half)
     def test_data_parallel_module_kwargs_only_empty_tuple(self, device, dtype):
         class Net(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.l = l
 

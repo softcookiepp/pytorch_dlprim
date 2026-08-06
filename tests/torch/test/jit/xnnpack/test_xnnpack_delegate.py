@@ -5,14 +5,13 @@ import unittest
 import torch
 import torch._C
 
-
 torch.ops.load_library("//caffe2:xnnpack_backend")
 
 
 class TestXNNPackBackend(unittest.TestCase):
     def test_xnnpack_constant_data(self):
         class Module(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self._constant = torch.ones(4, 4, 4)
 
@@ -32,7 +31,7 @@ class TestXNNPackBackend(unittest.TestCase):
             },
         )
 
-        for _ in range(20):
+        for i in range(0, 20):
             sample_input = torch.randn(4, 4, 4)
             actual_output = scripted_module(sample_input)
             expected_output = lowered_module(sample_input)
@@ -184,10 +183,3 @@ class TestXNNPackBackend(unittest.TestCase):
                     }
                 },
             )
-
-
-if __name__ == "__main__":
-    raise RuntimeError(
-        "This test is not currently used and should be "
-        "enabled in discover_tests.py if required."
-    )

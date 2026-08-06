@@ -1,3 +1,5 @@
+from typing import Dict, List, Optional, Tuple
+
 import torch
 from torch import Tensor
 
@@ -28,33 +30,33 @@ class AndroidAPIModule(torch.jit.ScriptModule):
         return input
 
     @torch.jit.script_method
-    def eqDictStrKeyIntValue(self, input: dict[str, int]) -> dict[str, int]:
+    def eqDictStrKeyIntValue(self, input: Dict[str, int]) -> Dict[str, int]:
         return input
 
     @torch.jit.script_method
-    def eqDictIntKeyIntValue(self, input: dict[int, int]) -> dict[int, int]:
+    def eqDictIntKeyIntValue(self, input: Dict[int, int]) -> Dict[int, int]:
         return input
 
     @torch.jit.script_method
-    def eqDictFloatKeyIntValue(self, input: dict[float, int]) -> dict[float, int]:
+    def eqDictFloatKeyIntValue(self, input: Dict[float, int]) -> Dict[float, int]:
         return input
 
     @torch.jit.script_method
-    def listIntSumReturnTuple(self, input: list[int]) -> tuple[list[int], int]:
+    def listIntSumReturnTuple(self, input: List[int]) -> Tuple[List[int], int]:
         sum = 0
         for x in input:
             sum += x
         return (input, sum)
 
     @torch.jit.script_method
-    def listBoolConjunction(self, input: list[bool]) -> bool:
+    def listBoolConjunction(self, input: List[bool]) -> bool:
         res = True
         for x in input:
             res = res and x
         return res
 
     @torch.jit.script_method
-    def listBoolDisjunction(self, input: list[bool]) -> bool:
+    def listBoolDisjunction(self, input: List[bool]) -> bool:
         res = False
         for x in input:
             res = res or x
@@ -62,19 +64,19 @@ class AndroidAPIModule(torch.jit.ScriptModule):
 
     @torch.jit.script_method
     def tupleIntSumReturnTuple(
-        self, input: tuple[int, int, int]
-    ) -> tuple[tuple[int, int, int], int]:
+        self, input: Tuple[int, int, int]
+    ) -> Tuple[Tuple[int, int, int], int]:
         sum = 0
         for x in input:
             sum += x
         return (input, sum)
 
     @torch.jit.script_method
-    def optionalIntIsNone(self, input: int | None) -> bool:
+    def optionalIntIsNone(self, input: Optional[int]) -> bool:
         return input is None
 
     @torch.jit.script_method
-    def intEq0None(self, input: int) -> int | None:
+    def intEq0None(self, input: int) -> Optional[int]:
         if input == 0:
             return None
         return input
@@ -88,7 +90,7 @@ class AndroidAPIModule(torch.jit.ScriptModule):
         return torch.tensor([int(input.item())])[0]
 
     @torch.jit.script_method
-    def testAliasWithOffset(self) -> list[Tensor]:
+    def testAliasWithOffset(self) -> List[Tensor]:
         x = torch.tensor([100, 200])
         a = [x[0], x[1]]
         return a
@@ -96,12 +98,9 @@ class AndroidAPIModule(torch.jit.ScriptModule):
     @torch.jit.script_method
     def testNonContiguous(self):
         x = torch.tensor([100, 200, 300])[::2]
-        if x.is_contiguous():
-            raise AssertionError("Expected tensor to be non-contiguous")
-        if x[0] != 100:
-            raise AssertionError(f"Expected x[0] == 100, got {x[0]}")
-        if x[1] != 300:
-            raise AssertionError(f"Expected x[1] == 300, got {x[1]}")
+        assert not x.is_contiguous()
+        assert x[0] == 100
+        assert x[1] == 300
         return x
 
     @torch.jit.script_method

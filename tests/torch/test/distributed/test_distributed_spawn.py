@@ -2,10 +2,10 @@
 
 import os
 import sys
+from os import path
 
 import torch
 import torch.distributed as dist
-
 
 torch.backends.cuda.matmul.allow_tf32 = False
 
@@ -13,12 +13,15 @@ if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
 
-from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
+from torch.testing._internal.common_utils import (
+    NO_MULTIPROCESSING_SPAWN,
+    run_tests,
+    TEST_WITH_DEV_DBG_ASAN,
+)
 from torch.testing._internal.distributed.distributed_test import (
     DistributedTest,
     TestDistBackend,
 )
-
 
 if TEST_WITH_DEV_DBG_ASAN:
     print(
@@ -27,11 +30,16 @@ if TEST_WITH_DEV_DBG_ASAN:
     )
     sys.exit(0)
 
+if NO_MULTIPROCESSING_SPAWN:
+    print("Spawn not available, skipping tests.", file=sys.stderr)
+    sys.exit(0)
+
 _allowed_backends = ("gloo", "nccl", "ucc")
 if (
     "BACKEND" not in os.environ
     or "WORLD_SIZE" not in os.environ
     or "TEMP_DIR" not in os.environ
+    or not path.exists(path.join(os.environ["TEMP_DIR"], "barrier"))
 ):
     # TODO can we actually have `run_tests.py` emit the complete instructions when it prints a repro command?
     raise RuntimeError(

@@ -4,7 +4,6 @@ import sys
 
 import torch
 
-
 HEADER = """
 #include <torch/types.h>
 
@@ -64,7 +63,7 @@ def run(initializer):
 
 def main():
     initializer_parameter_map = {}
-    for initializer in INITIALIZERS:
+    for initializer in INITIALIZERS.keys():
         sys.stderr.write(f"Evaluating {initializer} ...\n")
         initializer_parameter_map[initializer] = run(initializer)
 

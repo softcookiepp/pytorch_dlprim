@@ -1,7 +1,6 @@
 # Owner(s): ["oncall: distributed"]
 
 import sys
-import unittest
 
 import torch
 import torch.nn as nn
@@ -14,12 +13,9 @@ from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
     parametrize,
     run_tests,
-    TEST_CUDA,
-    TEST_HPU,
     TEST_WITH_DEV_DBG_ASAN,
 )
 from torch.utils.checkpoint import checkpoint
-
 
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
@@ -32,14 +28,11 @@ if TEST_WITH_DEV_DBG_ASAN:
     )
     sys.exit(0)
 
-device_type = acc.type if (acc := torch.accelerator.current_accelerator()) else "cpu"
-
 
 def get_cur_mem(rank, result, prefix):
     """Collect memory allocated values in a result dict in MB"""
-    if TEST_CUDA:
-        torch._C._cuda_clearCublasWorkspaces()
-    result[prefix] = round(torch.accelerator.memory_allocated() / 1024 / 1024)
+    torch._C._cuda_clearCublasWorkspaces()
+    result[prefix] = round(torch.cuda.memory_allocated() / 1024 / 1024)
 
 
 class Model(nn.Module):
@@ -114,14 +107,16 @@ class TestFSDPMemory(FSDPTest):
 
     def _dist_train(self, with_checkpoint, expected, model_hidden_dim, iterations):
         gpu_id = self.rank
-        batch = torch.randn(size=(2, 3, 224, 224)).to(device_type)
+        world_size = self.world_size
+
+        batch = torch.randn(size=(2, 3, 224, 224)).cuda()
 
         model = create_model(
             with_fsdp=True,
             with_checkpoint=with_checkpoint,
             model_hidden_dim=model_hidden_dim,
         )
-        model = model.to(device_type)
+        model = model.cuda()
         model = FSDP(model)
 
         # We enable momentum so that after the first iteration, the optimizer state is added
@@ -137,7 +132,7 @@ class TestFSDPMemory(FSDPTest):
             get_cur_mem(gpu_id, results, f"iter {iteration}: after fwd")
 
             out = sum(o.sum() for o in out[0])
-            fake_loss = criterion(out, torch.tensor(0.0).to(device_type))
+            fake_loss = criterion(out, torch.tensor(0.0).cuda())
             get_cur_mem(gpu_id, results, f"iter {iteration}: after loss")
 
             fake_loss.backward()
@@ -162,7 +157,6 @@ class TestFSDPMemory(FSDPTest):
         output = cmp(results, expected)
         self.assertEqual(output, "")
 
-    @unittest.skipIf(TEST_HPU, "Memory will be different for CUDA and HPU, skipping")
     @skip_if_lt_x_gpu(2)
     @parametrize("ckpt", ["no_ckpt", "ckpt"])
     def test_fsdp_memory(self, ckpt):
@@ -171,8 +165,8 @@ class TestFSDPMemory(FSDPTest):
 
         model = create_model(
             with_fsdp=False, with_checkpoint=False, model_hidden_dim=model_hidden_dim
-        ).to(device_type)
-        model_size_mb = round(torch.accelerator.memory_allocated() / 1024 / 1024)
+        ).cuda()
+        model_size_mb = round(torch.cuda.memory_allocated() / 1024 / 1024)
         del model
 
         sharded_model_size_mb = int(model_size_mb / self.world_size)
@@ -234,5 +228,7 @@ class TestFSDPMemory(FSDPTest):
 
 
 instantiate_parametrized_tests(TestFSDPMemory)
+
+
 if __name__ == "__main__":
     run_tests()

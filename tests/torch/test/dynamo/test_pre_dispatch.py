@@ -1,5 +1,6 @@
 # Owner(s): ["module: dynamo"]
 import torch
+
 import torch._dynamo
 import torch._dynamo.test_case
 
@@ -15,7 +16,7 @@ class PreDispatchTests(torch._dynamo.test_case.TestCase):
         f_compiled = torch.compile(f, backend="pre_dispatch_eager")
 
         a_ref = torch.randn(4, requires_grad=True)
-        a_test = a_ref.detach().clone().requires_grad_(True)
+        a_test = a_ref.clone().detach().requires_grad_(True)
 
         out_ref = f(a_ref)
         out_test = f_compiled(a_test)
@@ -38,7 +39,7 @@ class PreDispatchTests(torch._dynamo.test_case.TestCase):
         f_compiled = torch.compile(f, backend="pre_dispatch_eager")
 
         a_ref = torch.randn(4, requires_grad=True)
-        a_test = a_ref.detach().clone().requires_grad_(True)
+        a_test = a_ref.clone().detach().requires_grad_(True)
 
         out_ref = f(a_ref)
         out_test = f_compiled(a_test)
@@ -58,7 +59,7 @@ class PreDispatchTests(torch._dynamo.test_case.TestCase):
         f_compiled = torch.compile(f, backend="pre_dispatch_eager")
 
         a_ref = torch.randn(4, device="cpu", requires_grad=True)
-        a_test = a_ref.detach().clone().requires_grad_(True)
+        a_test = a_ref.clone().detach().requires_grad_(True)
 
         out_ref = f(a_ref)
         out_test = f_compiled(a_test)

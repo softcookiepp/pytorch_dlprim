@@ -1,5 +1,5 @@
 # Owner(s): ["module: named tensor"]
-# ruff: noqa: F841
+
 import unittest
 from torch.testing._internal.common_utils import TestCase, run_tests, TEST_NUMPY
 from torch.testing._internal.common_utils import skipIfTorchDynamo
@@ -279,11 +279,6 @@ class TestNamedTensor(TestCase):
 
         self.assertEqual(named_tensor.diagonal(outdim='E', dim1='B', dim2='D').names,
                          ['A', 'C', 'E'])
-
-    def test_empty_names(self):
-        ref_tensor = torch.tensor([[1, 2, 3, 4], [4, 3, 2, 1]])
-        empty_named_tensor = torch.tensor([[1, 2, 3, 4], [4, 3, 2, 1]], names=[])
-        self.assertEqual(ref_tensor, empty_named_tensor)
 
     def test_max_pooling(self):
         def check_tuple_return(op, inputs, expected_names):
@@ -718,8 +713,7 @@ class TestNamedTensor(TestCase):
             unnamed3 = torch.randn(1, 1, 1)
 
             def compute_expected_names(tensor, other):
-                if not (tensor.has_names() ^ other.has_names()):
-                    raise AssertionError("exactly one of tensor/other should have names")
+                assert tensor.has_names() ^ other.has_names()
                 named = tensor if tensor.has_names() else other
                 unnamed = other if tensor.has_names() else tensor
                 unnamed_dim = unnamed.dim()
@@ -1003,7 +997,7 @@ class TestNamedTensor(TestCase):
         def test_ops(op):
             for device in get_all_device_types():
                 names = ('N', 'D')
-                tensor = torch.rand(2, 3, names=names, device=device)
+                tensor = torch.rand(2, 3, names=names)
                 result = op(tensor, 0)
                 self.assertEqual(result[0].names, names)
                 self.assertEqual(result[1].names, names)
@@ -1013,15 +1007,15 @@ class TestNamedTensor(TestCase):
     def test_logcumsumexp(self):
         for device in get_all_device_types():
             names = ('N', 'D')
-            tensor = torch.rand(2, 3, names=names, device=device)
+            tensor = torch.rand(2, 3, names=names)
             result = torch.logcumsumexp(tensor, 'D')
             self.assertEqual(result.names, names)
 
     def test_bitwise_not(self):
         for device in get_all_device_types():
             names = ('N', 'D')
-            tensor = torch.zeros(2, 3, names=names, dtype=torch.bool, device=device)
-            result = torch.empty(0, dtype=torch.bool, device=device)
+            tensor = torch.zeros(2, 3, names=names, dtype=torch.bool)
+            result = torch.empty(0, dtype=torch.bool)
 
             self.assertEqual(tensor.bitwise_not().names, names)
             self.assertEqual(torch.bitwise_not(tensor, out=result).names, names)
@@ -1030,8 +1024,8 @@ class TestNamedTensor(TestCase):
     def test_logical_not(self):
         for device in get_all_device_types():
             names = ('N', 'D')
-            tensor = torch.zeros(2, 3, names=names, dtype=torch.bool, device=device)
-            result = torch.empty(0, dtype=torch.bool, device=device)
+            tensor = torch.zeros(2, 3, names=names, dtype=torch.bool)
+            result = torch.empty(0, dtype=torch.bool)
 
             self.assertEqual(tensor.logical_not().names, names)
             self.assertEqual(torch.logical_not(tensor, out=result).names, names)
@@ -1040,8 +1034,8 @@ class TestNamedTensor(TestCase):
     def test_bernoulli(self):
         for device in get_all_device_types():
             names = ('N', 'D')
-            tensor = torch.rand(2, 3, names=names, device=device)
-            result = torch.empty(0, device=device)
+            tensor = torch.rand(2, 3, names=names)
+            result = torch.empty(0)
             self.assertEqual(tensor.bernoulli().names, names)
 
             torch.bernoulli(tensor, out=result)

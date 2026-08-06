@@ -4,6 +4,7 @@ from functools import partial
 from textwrap import dedent
 
 import torch
+
 from torch.testing import FileCheck
 from torch.testing._internal.common_device_type import (
     instantiate_device_type_tests,
@@ -32,7 +33,6 @@ from torch.testing._internal.jit_utils import (
     disable_autodiff_subgraph_inlining,
     is_lambda,
 )
-
 
 # variant testing is only done with torch.float and torch.cfloat to avoid
 #   excessive test times and maximize signal to noise ratio
@@ -119,8 +119,7 @@ class TestJit(JitCommonTestCase):
                     )
                     raise Exception(variant_error_info) from e  # noqa: TRY002
 
-        if not tested:
-            raise AssertionError("JIT Test does not execute any logic")
+        assert tested, "JIT Test does not execute any logic"
 
     def indiv_variant_test_jit(
         self, device, dtype, op, sample, func_type, variant, has_fake_function
@@ -189,7 +188,7 @@ class TestJit(JitCommonTestCase):
             # Note: only runs in float32 because schema isn't affected by dtype,
             #   so running it on all dtypes is would be excessive
             if dtype == torch.float32:
-                # TODO: no reason why we can't run this with tracing graph
+                # TODO: no reason why we cant run this with tracing graph
                 if support_script and op.name != "rsub":
                     check_alias_annotation(
                         name,
@@ -336,7 +335,7 @@ class TestJit(JitCommonTestCase):
                     try:
                         inp = clone_input_helper(sample.input)
                         scripted(inp)
-                    except Exception:
+                    except Exception as e:
                         continue
                     self.fail(
                         "Inplace operation on integer tensor that should be promoted to float didn't fail!"

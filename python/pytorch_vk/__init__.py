@@ -72,6 +72,10 @@ class _OCL:
 	@staticmethod
 	def is_available():
 		return True
+		
+	@staticmethod
+	def current_device():
+		return 0
 
 def synchronize(dev):
 	_OCL.synchronize(Dev)

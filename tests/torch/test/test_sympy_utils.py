@@ -1,44 +1,28 @@
 # Owner(s): ["oncall: pt2"]
 
-import functools
 import itertools
-import math
-import pickle
 import sys
-from collections.abc import Callable
 
 import sympy
-
-import torch
-import torch.fx as fx
-from sympy.core.relational import is_ge, is_gt, is_le, is_lt
+from typing import Callable, List, Tuple, Type
 from torch.testing._internal.common_device_type import skipIf
 from torch.testing._internal.common_utils import (
+    TEST_Z3,
     instantiate_parametrized_tests,
     parametrize,
     run_tests,
-    TEST_Z3,
     TestCase,
 )
-from torch.utils._sympy.functions import (
-    FloorDiv,
-    Identity,
-    OpaqueUnaryFn_cos,
-    BitwiseFn_bitwise_and,
-    simple_floordiv_gcd,
-)
-from torch.utils._sympy.interp import sympy_interp
-from torch.utils._sympy.numbers import int_oo, IntInfinity, NegativeIntInfinity
-from torch.utils._sympy.reference import (
-    PythonReferenceAnalysis,
-    ReferenceAnalysis,
-    TensorReferenceAnalysis,
-)
-from torch.utils._sympy.singleton_int import SingletonInt
+from torch.utils._sympy.functions import FloorDiv
 from torch.utils._sympy.solve import INEQUALITY_TYPES, mirror_rel_op, try_solve
-from torch.utils._sympy.value_ranges import ValueRanges
-from torch._inductor.bounds import ValueRangeAnalysis
-from torch._inductor.index_propagation import TypedExpr
+from torch.utils._sympy.value_ranges import ValueRangeAnalysis, ValueRanges
+from torch.utils._sympy.reference import ReferenceAnalysis, PythonReferenceAnalysis
+from torch.utils._sympy.interp import sympy_interp
+from torch.utils._sympy.singleton_int import SingletonInt
+from sympy.core.relational import is_ge, is_le, is_gt, is_lt
+import functools
+import torch.fx as fx
+
 
 
 UNARY_OPS = [
@@ -53,26 +37,10 @@ UNARY_OPS = [
     "ceil",
 ]
 BINARY_OPS = [
-    "truediv",
-    "floordiv",
+    "truediv", "floordiv",
     # "truncdiv",  # TODO
     # NB: pow is float_pow
-    "add",
-    "mul",
-    "sub",
-    "pow",
-    "pow_by_natural",
-    "minimum",
-    "maximum",
-    "mod",
-    "bitwise_and",
-    "bitwise_or",
-    "bitwise_xor",
-]
-BITWISE_OPS = [
-    "bitwise_and",
-    "bitwise_or",
-    "bitwise_xor",
+    "add", "mul", "sub", "pow", "pow_by_natural", "minimum", "maximum", "mod"
 ]
 
 UNARY_BOOL_OPS = ["not_"]
@@ -154,74 +122,6 @@ def generate_range(vals):
         yield ValueRanges(a1, a2)
 
 
-class TestNumbers(TestCase):
-    def test_int_infinity(self):
-        self.assertIsInstance(int_oo, IntInfinity)
-        self.assertIsInstance(-int_oo, NegativeIntInfinity)
-        self.assertTrue(int_oo.is_integer)
-        # is tests here are for singleton-ness, don't use it for comparisons
-        # against numbers
-        self.assertIs(int_oo + int_oo, int_oo)
-        self.assertIs(int_oo + 1, int_oo)
-        self.assertIs(int_oo - 1, int_oo)
-        self.assertIs(-int_oo - 1, -int_oo)
-        self.assertIs(-int_oo + 1, -int_oo)
-        self.assertIs(-int_oo + (-int_oo), -int_oo)
-        self.assertIs(-int_oo - int_oo, -int_oo)
-        self.assertIs(1 + int_oo, int_oo)
-        self.assertIs(1 - int_oo, -int_oo)
-        self.assertIs(int_oo * int_oo, int_oo)
-        self.assertIs(2 * int_oo, int_oo)
-        self.assertIs(int_oo * 2, int_oo)
-        self.assertIs(-1 * int_oo, -int_oo)
-        self.assertIs(-int_oo * int_oo, -int_oo)
-        self.assertIs(2 * -int_oo, -int_oo)
-        self.assertIs(-int_oo * 2, -int_oo)
-        self.assertIs(-1 * -int_oo, int_oo)
-        self.assertIs(int_oo / 2, sympy.oo)
-        self.assertIs(-(-int_oo), int_oo)  # noqa: B002
-        self.assertIs(abs(int_oo), int_oo)
-        self.assertIs(abs(-int_oo), int_oo)
-        self.assertIs(int_oo**2, int_oo)
-        self.assertIs((-int_oo) ** 2, int_oo)
-        self.assertIs((-int_oo) ** 3, -int_oo)
-        self.assertEqual(int_oo**-1, 0)
-        self.assertEqual((-int_oo) ** -1, 0)
-        self.assertIs(int_oo**int_oo, int_oo)
-        self.assertTrue(int_oo == int_oo)
-        self.assertFalse(int_oo != int_oo)
-        self.assertTrue(-int_oo == -int_oo)
-        self.assertFalse(int_oo == 2)
-        self.assertTrue(int_oo != 2)
-        self.assertFalse(int_oo == sys.maxsize)
-        self.assertTrue(int_oo >= sys.maxsize)
-        self.assertTrue(int_oo >= 2)
-        self.assertTrue(int_oo >= -int_oo)
-
-    def test_relation(self):
-        self.assertIs(sympy.Add(2, int_oo), int_oo)
-        self.assertFalse(-int_oo > 2)
-
-    def test_lt_self(self):
-        self.assertFalse(int_oo < int_oo)
-        self.assertIs(min(-int_oo, -4), -int_oo)
-        self.assertIs(min(-int_oo, -int_oo), -int_oo)
-
-    def test_float_cast(self):
-        self.assertEqual(float(int_oo), math.inf)
-        self.assertEqual(float(-int_oo), -math.inf)
-
-    def test_mixed_oo_int_oo(self):
-        # Arbitrary choice
-        self.assertTrue(int_oo < sympy.oo)
-        self.assertFalse(int_oo > sympy.oo)
-        self.assertTrue(sympy.oo > int_oo)
-        self.assertFalse(sympy.oo < int_oo)
-        self.assertIs(max(int_oo, sympy.oo), sympy.oo)
-        self.assertTrue(-int_oo > -sympy.oo)
-        self.assertIs(min(-int_oo, -sympy.oo), -sympy.oo)
-
-
 class TestValueRanges(TestCase):
     @parametrize("fn", UNARY_OPS)
     @parametrize("dtype", ("int", "float"))
@@ -246,10 +146,6 @@ class TestValueRanges(TestCase):
     @parametrize("dtype", ("int", "float"))
     def test_binary_ref(self, fn, dtype):
         to_dtype = {"int": sympy.Integer, "float": sympy.Float}
-        # Don't test bitwise methods since value range analysis on a singleton
-        # range may not return a singleton result.
-        if fn in BITWISE_OPS:
-            return
         # Don't test float on int only methods
         if dtype == "float" and fn in ["pow_by_natural", "mod"]:
             return
@@ -275,20 +171,6 @@ class TestValueRanges(TestCase):
             ValueRangeAnalysis.mul(ValueRanges.wrap(0), ValueRanges.unknown()),
             ValueRanges.wrap(0),
         )
-        self.assertEqual(
-            ValueRangeAnalysis.mul(ValueRanges.wrap(0.0), ValueRanges.unknown()),
-            ValueRanges.wrap(0.0),
-        )
-
-    def test_trunc_infinite(self):
-        self.assertEqual(
-            ValueRangeAnalysis.trunc(ValueRanges.wrap(sympy.Float('inf'))),
-            ValueRanges.wrap(sympy.Float('inf')),
-        )
-        self.assertEqual(
-            ValueRangeAnalysis.trunc(ValueRanges.wrap(sympy.Float('-inf'))),
-            ValueRanges.wrap(sympy.Float('-inf')),
-        )
 
     @parametrize("fn", UNARY_BOOL_OPS)
     def test_unary_bool_ref_range(self, fn):
@@ -309,7 +191,7 @@ class TestValueRanges(TestCase):
                 else:
                     self.assertEqual(len(unique), 2)
 
-    @parametrize("fn", BINARY_BOOL_OPS + BITWISE_OPS)
+    @parametrize("fn", BINARY_BOOL_OPS)
     def test_binary_bool_ref_range(self, fn):
         vals = [sympy.false, sympy.true]
         for a, b in itertools.product(generate_range(vals), repeat=2):
@@ -367,109 +249,9 @@ class TestValueRanges(TestCase):
                         if r.is_finite:
                             self.assertIn(r, ref_r)
 
-    # stronger test specially for bitwise ops
-    @parametrize("fn", BITWISE_OPS)
-    def test_bitwise_ref_range(self, fn):
-        # N^4 complexity
-        vals = range(-4, 5)
-        for a, b in itertools.product(generate_range(vals), repeat=2):
-            with self.subTest(a=a, b=b):
-                for a0, b0 in itertools.product(vals, repeat=2):
-                    if a0 not in a or b0 not in b:
-                        continue
-                    with self.subTest(a0=a0, b0=b0):
-                        ref_r = getattr(ValueRangeAnalysis, fn)(a, b)
-                        r = getattr(ReferenceAnalysis, fn)(a0, b0)
-                        self.assertIn(r, ref_r)
-
-        # test that bitwise ops can take bool arguments
-        bool_vals = [
-            (3, sympy.true),
-            (3, sympy.false),
-            (sympy.true, 3),
-            (sympy.false, 3),
-            (sympy.true, sympy.true),
-            (sympy.true, sympy.false),
-            (sympy.false, sympy.true),
-            (sympy.false, sympy.false),
-        ]
-        for a, b in bool_vals:
-            with self.subTest(a=a, b=b):
-                ref_r = getattr(ValueRangeAnalysis, fn)(a, b)
-                r = getattr(ReferenceAnalysis, fn)(a, b)
-                self.assertIn(r, ref_r)
-
-
-    def test_python_mod(self):
-        """Test python_mod value range analysis."""
-        # Test with positive divisor
-        # x % 4 should be in [0, 3]
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(4, 4))
-        self.assertEqual(r, ValueRanges(0, 3))
-
-        # Test with range of positive divisors
-        # x % [2, 10] should be in [0, 9]
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(2, 10))
-        self.assertEqual(r, ValueRanges(0, 9))
-
-        # Test with negative divisor
-        # x % -4 should be in [-3, 0]
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(-4, -4))
-        self.assertEqual(r, ValueRanges(-3, 0))
-
-        # Test with range of negative divisors
-        # x % [-10, -2] should be in [-9, 0]
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(-10, -2))
-        self.assertEqual(r, ValueRanges(-9, 0))
-
-        # Test with mixed divisor range (assuming y != 0)
-        # x % [-5, 5] should be in [-4, 4]
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(-5, 5))
-        self.assertEqual(r, ValueRanges(-4, 4))
-
-        # Test with infinite bounds
-        # x % [1, int_oo] should be in [0, int_oo - 1] = [0, int_oo]
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(1, int_oo))
-        self.assertEqual(r.lower, 0)
-        self.assertEqual(r.upper, int_oo)  # int_oo - 1 == int_oo
-
-        # x % [-int_oo, -1] should be in [-int_oo + 1, 0] = [-int_oo, 0]
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(-int_oo, -1))
-        self.assertEqual(r.lower, -int_oo)  # -int_oo + 1 == -int_oo
-        self.assertEqual(r.upper, 0)
-
-        # x % [-int_oo, int_oo] should be in [-int_oo + 1, int_oo - 1] = [-int_oo, int_oo]
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(-int_oo, int_oo))
-        self.assertEqual(r.lower, -int_oo)  # -int_oo + 1 == -int_oo
-        self.assertEqual(r.upper, int_oo)  # int_oo - 1 == int_oo
-
-        # x % [0, int_oo] should be in [0, int_oo - 1] = [0, int_oo]
-        # (assuming y != 0 at runtime, lower bound should be 0, not 1)
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-int_oo, int_oo), ValueRanges(0, int_oo))
-        self.assertEqual(r.lower, 0)
-        self.assertEqual(r.upper, int_oo)  # int_oo - 1 == int_oo
-
-        # Test edge case: y = [1, 1] -> result is always 0
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(1, 1))
-        self.assertEqual(r, ValueRanges(0, 0))
-
-        # Test edge case: y = [-1, -1] -> result is always 0
-        r = ValueRangeAnalysis.python_mod(ValueRanges(-100, 100), ValueRanges(-1, -1))
-        self.assertEqual(r, ValueRanges(0, 0))
-
-        # Test that actual values fall within computed range
-        for x in range(-20, 21):
-            for y in [1, 2, 3, 4, 5, -1, -2, -3, -4, -5]:
-                result = x % y
-                y_range = ValueRanges(y, y)
-                r = ValueRangeAnalysis.python_mod(ValueRanges(x, x), y_range)
-                self.assertIn(result, r, f"x={x}, y={y}, result={result}, range={r}")
-
 
 class TestSympyInterp(TestCase):
-    @parametrize(
-        "fn", UNARY_OPS + BINARY_OPS + UNARY_BOOL_OPS + BINARY_BOOL_OPS + COMPARE_OPS
-    )
+    @parametrize("fn", UNARY_OPS + BINARY_OPS + UNARY_BOOL_OPS + BINARY_BOOL_OPS + COMPARE_OPS)
     def test_interp(self, fn):
         # SymPy does not implement truncation for Expressions
         if fn in ("div", "truncdiv", "minimum", "maximum", "mod"):
@@ -479,14 +261,12 @@ class TestSympyInterp(TestCase):
         if fn == "pow_by_natural":
             is_integer = True
 
-        x = sympy.Dummy("x", integer=is_integer)
-        y = sympy.Dummy("y", integer=is_integer)
+        x = sympy.Dummy('x', integer=is_integer)
+        y = sympy.Dummy('y', integer=is_integer)
 
         vals = CONSTANTS
         if fn in {*UNARY_BOOL_OPS, *BINARY_BOOL_OPS}:
             vals = [True, False]
-        elif fn in BITWISE_OPS:
-            vals = vals + [True, False]
         arity = 1
         if fn in {*BINARY_OPS, *BINARY_BOOL_OPS, *COMPARE_OPS}:
             arity = 2
@@ -502,16 +282,12 @@ class TestSympyInterp(TestCase):
                 sargs = [sympy.sympify(a) for a in args]
                 sympy_expr = getattr(ReferenceAnalysis, fn)(*symbols)
                 ref_r = getattr(ReferenceAnalysis, fn)(*sargs)
-                # Yes, I know this is a long-winded way of saying xreplace; the
+                # Yes, I know this is a longwinded way of saying xreplace; the
                 # point is to test sympy_interp
-                r = sympy_interp(
-                    ReferenceAnalysis, dict(zip(symbols, sargs)), sympy_expr
-                )
+                r = sympy_interp(ReferenceAnalysis, dict(zip(symbols, sargs)), sympy_expr)
                 self.assertEqual(ref_r, r)
 
-    @parametrize(
-        "fn", UNARY_OPS + BINARY_OPS + UNARY_BOOL_OPS + BINARY_BOOL_OPS + COMPARE_OPS
-    )
+    @parametrize("fn", UNARY_OPS + BINARY_OPS + UNARY_BOOL_OPS + BINARY_BOOL_OPS + COMPARE_OPS)
     def test_python_interp_fx(self, fn):
         # These never show up from symbolic_shapes
         if fn in ("log", "exp"):
@@ -524,8 +300,6 @@ class TestSympyInterp(TestCase):
         vals = CONSTANTS
         if fn in {*UNARY_BOOL_OPS, *BINARY_BOOL_OPS}:
             vals = [True, False]
-        elif fn in BITWISE_OPS:
-            vals = vals + [True, False]
 
         arity = 1
         if fn in {*BINARY_OPS, *BINARY_BOOL_OPS, *COMPARE_OPS}:
@@ -535,8 +309,8 @@ class TestSympyInterp(TestCase):
         if fn == "pow_by_natural":
             is_integer = True
 
-        x = sympy.Dummy("x", integer=is_integer)
-        y = sympy.Dummy("y", integer=is_integer)
+        x = sympy.Dummy('x', integer=is_integer)
+        y = sympy.Dummy('y', integer=is_integer)
 
         symbols = [x]
         if arity == 2:
@@ -563,132 +337,31 @@ class TestSympyInterp(TestCase):
                     sympy_expr = getattr(ReferenceAnalysis, fn)(*symbols)
 
                 if arity == 1:
-
                     def trace_f(px):
-                        return sympy_interp(
-                            PythonReferenceAnalysis, {x: px}, sympy_expr
-                        )
-
+                        return sympy_interp(PythonReferenceAnalysis, {x: px}, sympy_expr)
                 else:
-
                     def trace_f(px, py):
-                        return sympy_interp(
-                            PythonReferenceAnalysis, {x: px, y: py}, sympy_expr
-                        )
+                        return sympy_interp(PythonReferenceAnalysis, {x: px, y: py}, sympy_expr)
 
                 gm = fx.symbolic_trace(trace_f)
 
                 self.assertEqual(
-                    sympy_interp(
-                        PythonReferenceAnalysis, dict(zip(symbols, args)), sympy_expr
-                    ),
-                    gm(*args),
+                    sympy_interp(PythonReferenceAnalysis, dict(zip(symbols, args)), sympy_expr),
+                    gm(*args)
                 )
 
-    @parametrize(
-        "fn", UNARY_OPS + BINARY_OPS + UNARY_BOOL_OPS + BINARY_BOOL_OPS + COMPARE_OPS
-    )
-    def test_tensor_interp(self, fn):
-        # Skip operations not implemented or not applicable for tensors
-        if fn in ("div", "truncdiv", "int_truediv", "mod", "round_decimal"):
-            return
 
-        is_integer = None
-        if fn == "pow_by_natural":
-            is_integer = True
-
-        x = sympy.Symbol("x", integer=is_integer)
-        y = sympy.Symbol("y", integer=is_integer)
-
-        vals = CONSTANTS
-        if fn in {*UNARY_BOOL_OPS, *BINARY_BOOL_OPS}:
-            vals = [True, False]
-        elif fn in BITWISE_OPS:
-            vals = vals + [True, False]
-
-        arity = 1
-        if fn in {*BINARY_OPS, *BINARY_BOOL_OPS, *COMPARE_OPS}:
-            arity = 2
-
-        symbols = [x]
-        if arity == 2:
-            symbols = [x, y]
-
-        for args in itertools.product(vals, repeat=arity):
-            if arity == 1 and not valid_unary(fn, *args):
-                continue
-            elif arity == 2 and not valid_binary(fn, *args):
-                continue
-
-            with self.subTest(args=args):
-                tensor_args = [
-                    torch.tensor(
-                        a, dtype=torch.double if isinstance(a, float) else torch.int64
-                    )
-                    for a in args
-                ]
-
-                try:
-                    tensor_fn = getattr(TensorReferenceAnalysis, fn)
-                    sympy_expr = getattr(ReferenceAnalysis, fn)(*symbols)
-                    direct_result = tensor_fn(*tensor_args)
-                    interp_result = sympy_interp(
-                        TensorReferenceAnalysis,
-                        dict(zip(symbols, tensor_args)),
-                        sympy_expr,
-                    )
-
-                    # Ensure both results are of the same dtype for comparison
-                    if direct_result.dtype != interp_result.dtype:
-                        if (
-                            direct_result.dtype == torch.bool
-                            or interp_result.dtype == torch.bool
-                        ):
-                            direct_result = direct_result.to(torch.bool)
-                            interp_result = interp_result.to(torch.bool)
-                        else:
-                            direct_result = direct_result.to(torch.double)
-                            interp_result = interp_result.to(torch.double)
-
-                    self.assertTrue(
-                        torch.allclose(
-                            direct_result, interp_result, rtol=1e-5, atol=1e-8
-                        ),
-                        f"Mismatch for {fn}{args}: direct={direct_result}, interp={interp_result}",
-                    )
-
-                    if fn in UNARY_BOOL_OPS + BINARY_BOOL_OPS + COMPARE_OPS:
-                        self.assertEqual(direct_result.dtype, torch.bool)
-                        self.assertEqual(interp_result.dtype, torch.bool)
-
-                    if fn in (
-                        "floor_to_int",
-                        "ceil_to_int",
-                        "round_to_int",
-                        "trunc_to_int",
-                    ):
-                        self.assertEqual(direct_result.dtype, torch.int64)
-                        self.assertEqual(interp_result.dtype, torch.int64)
-
-                except NotImplementedError:
-                    print(f"Operation {fn} not implemented for TensorReferenceAnalysis")
-                except Exception as e:
-                    self.fail(f"Unexpected error for {fn}{args}: {str(e)}")
-
-
-def type_name_fn(type: type) -> str:
+def type_name_fn(type: Type) -> str:
     return type.__name__
-
 
 def parametrize_relational_types(*types):
     def wrapper(f: Callable):
         return parametrize("op", types or RELATIONAL_TYPES, name_fn=type_name_fn)(f)
-
     return wrapper
 
 
 class TestSympySolve(TestCase):
-    def _create_integer_symbols(self) -> list[sympy.Symbol]:
+    def _create_integer_symbols(self) -> List[sympy.Symbol]:
         return sympy.symbols("a b c", integer=True)
 
     def test_give_up(self):
@@ -745,13 +418,7 @@ class TestSympySolve(TestCase):
         self.assertEqual(r_expr, mirror(rhs, lhs))
         self.assertEqual(r_rhs, lhs)
 
-    def _test_cases(
-        self,
-        cases: list[tuple[sympy.Basic, sympy.Basic]],
-        thing: sympy.Basic,
-        op: type[sympy.Rel],
-        **kwargs,
-    ):
+    def _test_cases(self, cases: List[Tuple[sympy.Basic, sympy.Basic]], thing: sympy.Basic, op: Type[sympy.Rel], **kwargs):
         for source, expected in cases:
             r = try_solve(source, thing, **kwargs)
 
@@ -815,15 +482,14 @@ class TestSympySolve(TestCase):
             (op(a * -5, b - 5), -(b - 5) / 5),
         ]
         mirror_op = mirror_rel_op(op)
-        if mirror_op is None:
-            raise AssertionError("mirror_op should not be None")
+        assert mirror_op is not None
 
         self._test_cases(cases, a, op)
         self._test_cases(mirror_cases, a, mirror_op)
 
     @parametrize_relational_types()
     def test_floordiv(self, op):
-        from sympy import Eq, Ge, Gt, Le, Lt, Ne
+        from sympy import Eq, Ne, Gt, Ge, Lt, Le
 
         a, b, c = sympy.symbols("a b c")
         pos = sympy.Symbol("pos", positive=True)
@@ -844,7 +510,7 @@ class TestSympySolve(TestCase):
             Le: (Le(FloorDiv(a, pos), integer), (integer + 1) * pos),
         }[op]
 
-        cases: list[tuple[sympy.Basic, sympy.Basic]] = [
+        cases: List[Tuple[sympy.Basic, sympy.Basic]] = [
             # 'b' is not strictly positive
             (op(FloorDiv(a, b), integer), None),
             # 'c' is not strictly positive
@@ -863,12 +529,10 @@ class TestSympySolve(TestCase):
             r_op = op
 
         self._test_cases([special_case, *cases], a, r_op)
-        self._test_cases(
-            [(special_case[0], None), *cases], a, r_op, floordiv_inequality=False
-        )
+        self._test_cases([(special_case[0], None), *cases], a, r_op, floordiv_inequality=False)
 
     def test_floordiv_eq_simplify(self):
-        from sympy import Eq, Le, Lt
+        from sympy import Eq, Lt, Le
 
         a = sympy.Symbol("a", positive=True, integer=True)
 
@@ -928,35 +592,6 @@ class TestSympySolve(TestCase):
         # i.e. the transformation is sound.
         r = solver.check()
         self.assertEqual(r, z3.unsat)
-
-    def test_simple_floordiv_gcd(self):
-        x, y, z = sympy.symbols("x y z")
-
-        # positive tests
-        self.assertEqual(simple_floordiv_gcd(x, x), x)
-        self.assertEqual(simple_floordiv_gcd(128 * x, 2304), 128)
-        self.assertEqual(simple_floordiv_gcd(128 * x + 128 * y, 2304), 128)
-        self.assertEqual(simple_floordiv_gcd(128 * x + 128 * y + 8192 * z, 9216), 128)
-        self.assertEqual(simple_floordiv_gcd(49152 * x, 96 * x), 96 * x)
-        self.assertEqual(simple_floordiv_gcd(96 * x, 96 * x), 96 * x)
-        self.assertEqual(simple_floordiv_gcd(x * y, x), x)
-        self.assertEqual(simple_floordiv_gcd(384 * x * y, x * y), x * y)
-        self.assertEqual(simple_floordiv_gcd(256 * x * y, 8 * x), 8 * x)
-
-        # negative tests
-        self.assertEqual(simple_floordiv_gcd(x * y + x + y + 1, x + 1), 1)
-
-
-class TestSympyFunctions(TestCase):
-    def test_pickle(self):
-        x = OpaqueUnaryFn_cos(sympy.Symbol("a"))
-        r = pickle.loads(pickle.dumps(x))
-        self.assertEqual(x, r)
-
-        x = BitwiseFn_bitwise_and(sympy.Symbol("a"), sympy.Symbol("b"))
-        r = pickle.loads(pickle.dumps(x))
-        self.assertEqual(x, r)
-
 
 class TestSingletonInt(TestCase):
     def test_basic(self):
@@ -1040,44 +675,6 @@ class TestSingletonInt(TestCase):
             j1 * j2
 
         self.assertEqual(j1.free_symbols, set())
-
-class TestIdentity(TestCase):
-    def test_expand_identity(self):
-        """
-        Test removing an identity via expansion.
-        """
-        x = sympy.Symbol("x")
-        arg = x + sympy.S.One
-        expr = Identity(arg)
-        expanded = expr.expand(identity=True)
-        self.assertEqual(expanded.count(Identity), 0)
-        self.assertEqual(expanded, arg)
-
-    def test_cast_identity_int(self):
-        num = 1
-        expr = Identity(num)
-        self.assertEqual(num, int(expr))
-
-    def test_cast_identity_float(self):
-        num = 1.1
-        expr = Identity(num)
-        self.assertEqual(num, float(expr))
-
-    def test_cast_identity_illegal(self):
-        sym = Identity(sympy.Symbol("x"))
-        self.assertRaises(TypeError, int, sym)
-        self.assertRaises(TypeError, float, sym)
-
-        tup = (0, 1, 2)
-        tup_I = Identity(tup)
-        self.assertRaises(TypeError, int, tup_I)
-        self.assertRaises(TypeError, float, tup_I)
-
-class TestTypedExpr(TestCase):
-    def test_typed_expr(self):
-        I = Identity(1)
-        typed_I = TypedExpr(I, torch.int32)
-        self.assertEqual(typed_I.expr, 1)
 
 
 instantiate_parametrized_tests(TestValueRanges)

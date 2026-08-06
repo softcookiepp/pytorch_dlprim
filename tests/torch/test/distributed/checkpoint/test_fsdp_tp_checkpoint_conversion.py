@@ -2,17 +2,19 @@
 import torch
 import torch.distributed.checkpoint as dist_cp
 from torch.distributed._shard.sharded_tensor import ShardedTensor
+
 from torch.distributed._state_dict_utils import _all_gather_sharded_tensor
-from torch.distributed.device_mesh import init_device_mesh
+from torch.distributed._tensor import DTensor, init_device_mesh, Replicate
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.fully_sharded_data_parallel import StateDictType
-from torch.distributed.tensor import DTensor, Replicate
+
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
     parallelize_module,
     RowwiseParallel,
 )
 from torch.testing._internal.common_utils import run_tests
+
 from torch.testing._internal.distributed._tensor.common_dtensor import (
     DTensorTestBase,
     MLPModule,
@@ -30,7 +32,7 @@ class TestFsdpTpCheckpointConversion(DTensorTestBase):
     def test_fsdp_to_tp(self):
         CHECKPOINT_DIR = self.temp_dir
 
-        model = MLPModule(self.device_type).to(self.rank)
+        model = MLPModule(self.device_type).cuda(self.rank)
         # create a FSDP wrapped model
         fsdp_model = FSDP(model, use_orig_params=True)
 
@@ -41,7 +43,7 @@ class TestFsdpTpCheckpointConversion(DTensorTestBase):
         fsdp_state_dict = fsdp_model.state_dict()
 
         # save fsdp_state_dict to storage
-        dist_cp.save(
+        dist_cp.save_state_dict(
             state_dict=fsdp_state_dict,
             storage_writer=dist_cp.FileSystemWriter(CHECKPOINT_DIR),
         )
@@ -49,7 +51,7 @@ class TestFsdpTpCheckpointConversion(DTensorTestBase):
         # create a TP wrapped model
         mesh_shape = (self.world_size,)
         device_mesh = init_device_mesh(self.device_type, mesh_shape)
-        model = MLPModule(self.device_type).to(self.rank)
+        model = MLPModule(self.device_type).cuda(self.rank)
         # Parallelize the module based on the given Parallel Style.
         parallelize_plan = {
             "net1": ColwiseParallel(),
@@ -60,7 +62,7 @@ class TestFsdpTpCheckpointConversion(DTensorTestBase):
 
         # Update the parameters so tp_model.state_dict() will be different from fsdp_model.state_dict().
         torch.manual_seed(0)
-        inp = torch.rand(20, 10).to(self.rank)
+        inp = torch.rand(20, 10).cuda(self.rank)
         output = tp_model(inp)
         output.sum().backward()
         optimizer.step()
@@ -80,13 +82,14 @@ class TestFsdpTpCheckpointConversion(DTensorTestBase):
                 ).to_local()
                 self.assertNotEqual(fsdp_redistributed, tp_redistributed)
 
-        dist_cp.load(
+        dist_cp.load_state_dict(
             state_dict=tp_state_dict,
             storage_reader=dist_cp.FileSystemReader(CHECKPOINT_DIR),
         )
         tp_model.load_state_dict(tp_state_dict)
 
         # Check parameters are equal after loading.
+        tp_state_dict_after_load = tp_model.state_dict()
         for fsdp_item, tp_item in zip(fsdp_state_dict.items(), tp_state_dict.items()):
             fsdp_k, fsdp_v = fsdp_item
             tp_k, tp_v = tp_item

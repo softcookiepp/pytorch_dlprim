@@ -4,17 +4,14 @@ import collections
 import unittest
 
 import torch
-from torch.testing._internal.common_utils import run_tests, TestCase
-
+from torch.testing._internal.common_utils import run_tests, TEST_WITH_ASAN, TestCase
 
 try:
     import psutil
 
     HAS_PSUTIL = True
-except ModuleNotFoundError:
+except ImportError:
     HAS_PSUTIL = False
-    psutil = None
-
 
 device = torch.device("cpu")
 
@@ -27,6 +24,7 @@ class Network(torch.nn.Module):
 
 
 @unittest.skipIf(not HAS_PSUTIL, "Requires psutil to run")
+@unittest.skipIf(TEST_WITH_ASAN, "Cannot test with ASAN")
 class TestOpenMP_ParallelFor(TestCase):
     batch = 20
     channels = 1
@@ -38,8 +36,8 @@ class TestOpenMP_ParallelFor(TestCase):
         p = psutil.Process()
         # warm up for 5 runs, then things should be stable for the last 5
         last_rss = collections.deque(maxlen=5)
-        for _ in range(10):
-            for _ in range(runs):
+        for n in range(10):
+            for i in range(runs):
                 self.model(self.x)
             last_rss.append(p.memory_info().rss)
         return last_rss

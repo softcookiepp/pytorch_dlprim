@@ -21,22 +21,18 @@ from torch.testing._internal.common_utils import (
 )
 from torch.utils._pytree import tree_map
 
-
 # These functions can vary from based on platform and build (e.g. with CUDA)
 # and generally distract from rather than adding to the test.
 PRUNE_ALL = 1
 KEEP_ELLIPSES = 2
 KEEP_NAME_AND_ELLIPSES = 3
-IGNORE = 4
 
 PRUNE_FUNCTIONS = {
     "torch/utils/_pytree.py(...): tree_map": KEEP_NAME_AND_ELLIPSES,
     "torch/profiler/profiler.py(...): start": KEEP_ELLIPSES,
     "torch/profiler/profiler.py(...): stop_trace": KEEP_ELLIPSES,
     "torch/profiler/profiler.py(...): _transit_action": KEEP_ELLIPSES,
-    "<built-in method __enter__ of torch._C.DisableTorchFunctionSubclass object at 0xXXXXXXXXXXXX>": PRUNE_ALL,
     "<built-in method __exit__ of torch._C.DisableTorchFunctionSubclass object at 0xXXXXXXXXXXXX>": PRUNE_ALL,
-    "<built-in function all>": IGNORE,
     "cudaStreamIsCapturing": PRUNE_ALL,
     # These show up only on CUDA, prune them so the CUDA and CPU expected results can be the same
     "cudaGetDeviceCount": PRUNE_ALL,
@@ -120,8 +116,6 @@ class ProfilerTree:
                 if prune_level is None:
                     out.append((depth, name))
                     flatten(node.children, depth + 1, out)
-                elif prune_level == IGNORE:
-                    flatten(node.children, depth, out)
                 elif prune_level == KEEP_NAME_AND_ELLIPSES:
                     out.append((depth, name))
                     if node.children:
@@ -129,8 +123,7 @@ class ProfilerTree:
                 elif prune_level == KEEP_ELLIPSES:
                     out.append((depth, "..."))
                 else:
-                    if prune_level != PRUNE_ALL:
-                        raise AssertionError(f"Expected PRUNE_ALL, got {prune_level}")
+                    assert prune_level == PRUNE_ALL
 
             return out
 
@@ -197,16 +190,6 @@ class ProfilerTree:
                 name,
             )
 
-        # HACK: this patches around the fact that PyBind11 improperly sets the
-        # __qualname__ attribute on functions and methods; see
-        # https://github.com/pybind/pybind11/issues/5774.  This should be removed if
-        # that issue is fixed.
-        name = re.sub(
-            r"pybind11_builtins\.pybind11_detail_function_record_v[^ .]+",
-            "PyCapsule",
-            name,
-        )
-
         return re.sub("object at 0x[0-9a-fA-F]+>", "object at 0xXXXXXXXXXXXX>", name)
 
     @classmethod
@@ -227,8 +210,7 @@ class ProfilerTree:
             if parent:
                 parent_name = to_string(parent.extra_fields.callsite)
                 caller_name = to_string(extra_fields.caller)
-                if parent_name != caller_name:
-                    raise AssertionError(f"{parent_name} vs. {caller_name}")
+                assert parent_name == caller_name, f"{parent_name} vs. {caller_name}"
 
 
 @unittest.skipIf(IS_ARM64, "Not working on ARM")
@@ -277,10 +259,7 @@ class TestProfilerTree(TestCase):
 
     # TODO: Add logic for CUDA version of test
     @ProfilerTree.test
-    @unittest.skipIf(
-        torch.cuda.is_available() or torch.xpu.is_available(),
-        "Test not working for CUDA and XPU",
-    )
+    @unittest.skipIf(torch.cuda.is_available(), "Test not working for CUDA")
     def test_profiler_experimental_tree(self):
         t1, t2 = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
         with torch.profiler.profile() as p:
@@ -335,10 +314,7 @@ class TestProfilerTree(TestCase):
 
     # TODO: Add logic for CUDA version of test
     @ProfilerTree.test
-    @unittest.skipIf(
-        torch.cuda.is_available() or torch.xpu.is_available(),
-        "Test not working for CUDA and XPU",
-    )
+    @unittest.skipIf(torch.cuda.is_available(), "Test not working for CUDA")
     def test_profiler_experimental_tree_with_record_function(self):
         with torch.profiler.profile() as p:
             with torch.autograd.profiler.record_function("Top level Annotation"):
@@ -388,10 +364,7 @@ class TestProfilerTree(TestCase):
 
     # TODO: Add logic for CUDA version of test
     @ProfilerTree.test
-    @unittest.skipIf(
-        torch.cuda.is_available() or torch.xpu.is_available(),
-        "Test not working for CUDA and XPU",
-    )
+    @unittest.skipIf(torch.cuda.is_available(), "Test not working for CUDA")
     def test_profiler_experimental_tree_with_memory(self):
         t1, t2 = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
         with torch.profiler.profile(profile_memory=True) as p:
@@ -463,7 +436,6 @@ class TestProfilerTree(TestCase):
             [memory]""",
         )
 
-    @unittest.skip("https://github.com/pytorch/pytorch/issues/83606")
     @unittest.skipIf(
         TEST_WITH_CROSSREF, "crossref intercepts calls and changes the callsite."
     )
@@ -506,19 +478,8 @@ class TestProfilerTree(TestCase):
                   <built-in function len>
                   torch/autograd/__init__.py(...): _tensor_or_tensors_to_tuple
                   torch/autograd/__init__.py(...): _make_grads
-                    typing.py(...): inner
-                      typing.py(...): __hash__
-                        <built-in function hash>
-                    typing.py(...): cast
-                    <built-in function isinstance>
-                    <built-in function isinstance>
-                    <built-in function isinstance>
-                    <built-in function isinstance>
-                    <built-in function isinstance>
                     <built-in function isinstance>
                     <built-in method numel of Tensor object at 0xXXXXXXXXXXXX>
-                    <built-in function isinstance>
-                    <built-in function isinstance>
                     <built-in method ones_like of type object at 0xXXXXXXXXXXXX>
                       aten::ones_like
                         aten::empty_like
@@ -582,7 +543,7 @@ class TestProfilerTree(TestCase):
     @ProfilerTree.test
     def test_profiler_experimental_tree_with_stack_and_modules(self):
         class MyModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.layers = [
                     torch.nn.ReLU(),
@@ -631,7 +592,8 @@ class TestProfilerTree(TestCase):
                           torch/nn/modules/module.py(...): __getattr__
                           <built-in function linear>
                             aten::linear
-                              aten::view
+                              aten::reshape
+                                aten::view
                               aten::t
                                 aten::transpose
                                   aten::as_strided
@@ -677,7 +639,8 @@ class TestProfilerTree(TestCase):
                           torch/nn/modules/module.py(...): __getattr__
                           <built-in function linear>
                             aten::linear
-                              aten::view
+                              aten::reshape
+                                aten::view
                               aten::t
                                 aten::transpose
                                   aten::as_strided
@@ -727,9 +690,10 @@ class TestProfilerTree(TestCase):
               <built-in method add of type object at 0xXXXXXXXXXXXX>
                 test_profiler_tree.py(...): __torch_function__
                   torch/_tensor.py(...): __torch_function__
-                    torch/_tensor.py(...): <genexpr>
-                      <built-in function issubclass>
-                    torch/_tensor.py(...): <genexpr>
+                    <built-in function all>
+                      torch/_tensor.py(...): <genexpr>
+                        <built-in function issubclass>
+                      torch/_tensor.py(...): <genexpr>
                     <built-in method add of type object at 0xXXXXXXXXXXXX>
                       aten::add
                     torch/_tensor.py(...): _convert
@@ -743,7 +707,6 @@ class TestProfilerTree(TestCase):
                   ...""",
         )
 
-    @skipIfTorchDynamo("segfaults in 3.13+")
     @unittest.skipIf(
         TEST_WITH_CROSSREF, "crossref intercepts calls and changes the callsite."
     )
@@ -751,10 +714,6 @@ class TestProfilerTree(TestCase):
     def test_profiler_experimental_tree_with_stack_and_torch_dispatch(self):
         x = TorchDispatchTensor(torch.ones((1,)))
         y = torch.ones((1,))
-
-        # warmup round
-        with torch.profiler.profile(with_stack=True):
-            x + y
 
         with torch.profiler.profile(with_stack=True) as p:
             x + y
@@ -766,22 +725,16 @@ class TestProfilerTree(TestCase):
               torch/profiler/profiler.py(...): __enter__
                 ...
               aten::add
-                PythonSubclass
-                  torch/_library/simple_registry.py(...): find_torch_dispatch_rule
-                    torch/_library/simple_registry.py(...): find
-                      <built-in method get of dict object at 0xXXXXXXXXXXXX>
-                    torch/_library/simple_registry.py(...): find
-                      <built-in method get of dict object at 0xXXXXXXXXXXXX>
-                  test_profiler_tree.py(...): __torch_dispatch__
-                    torch/utils/_pytree.py(...): tree_map
-                      ...
-                    torch/utils/_pytree.py(...): tree_map
-                      ...
-                    torch/_ops.py(...): __call__
-                      <built-in method  of PyCapsule object at 0xXXXXXXXXXXXX>
-                        aten::add
-                    torch/utils/_pytree.py(...): tree_map
-                      ...
+                test_profiler_tree.py(...): __torch_dispatch__
+                  torch/utils/_pytree.py(...): tree_map
+                    ...
+                  torch/utils/_pytree.py(...): tree_map
+                    ...
+                  torch/_ops.py(...): __call__
+                    <built-in method  of PyCapsule object at 0xXXXXXXXXXXXX>
+                      aten::add
+                  torch/utils/_pytree.py(...): tree_map
+                    ...
               torch/profiler/profiler.py(...): __exit__
                 torch/profiler/profiler.py(...): stop
                   ...""",
@@ -949,9 +902,6 @@ class TestProfilerTree(TestCase):
     @unittest.skipIf(not torch.cuda.is_available(), "CUDA is required")
     @ProfilerTree.test
     def test_profiler_experimental_tree_cuda_detailed(self):
-        # Do lazy imports ahead of time to avoid it showing up in the tree
-        import torch.nested._internal.nested_tensor
-
         model = torch.nn.modules.Linear(1, 1, device="cuda")
         model.train()
         opt = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
@@ -1009,19 +959,8 @@ class TestProfilerTree(TestCase):
                     <built-in function len>
                     torch/autograd/__init__.py(...): _tensor_or_tensors_to_tuple
                     torch/autograd/__init__.py(...): _make_grads
-                      typing.py(...): inner
-                        typing.py(...): __hash__
-                          <built-in function hash>
-                      typing.py(...): cast
-                      <built-in function isinstance>
-                      <built-in function isinstance>
-                      <built-in function isinstance>
-                      <built-in function isinstance>
-                      <built-in function isinstance>
                       <built-in function isinstance>
                       <built-in method numel of Tensor object at 0xXXXXXXXXXXXX>
-                      <built-in function isinstance>
-                      <built-in function isinstance>
                       <built-in method ones_like of type object at 0xXXXXXXXXXXXX>
                         aten::ones_like
                           aten::empty_like

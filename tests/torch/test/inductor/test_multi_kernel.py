@@ -7,28 +7,22 @@ import unittest
 import torch
 from torch import nn
 from torch._dynamo.testing import reset_rng_state
+
 from torch._inductor import config, test_operators
 from torch._inductor.codegen.multi_kernel import MultiKernelCall
 from torch._inductor.test_case import TestCase
 from torch._inductor.utils import run_and_get_code
 from torch.nn import functional as F
-from torch.testing import make_tensor
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
     parametrize,
     skipIfRocm,
-    skipIfXpu,
 )
-from torch.testing._internal.inductor_utils import (
-    GPU_TYPE,
-    HAS_GPU,
-    IS_BIG_GPU,
-    requires_triton,
-)
+from torch.testing._internal.inductor_utils import HAS_CUDA
 
 
 class TransformerSnippet(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.ln1 = nn.LayerNorm(64)
         self.ln2 = nn.LayerNorm(64)
@@ -40,22 +34,12 @@ class TransformerSnippet(nn.Module):
         return self.ln2(x1 + x2)
 
     def example_inputs(self):
-        return (torch.randn(2, 64).to(GPU_TYPE), torch.randn(2, 64).to(GPU_TYPE))
+        return (torch.randn(2, 64).cuda(), torch.randn(2, 64).cuda())
 
 
 def _contains_multi_kernel_code(wrapper_code: str):
     return (
         re.search(r"multi_kernel_[^ ]* = async_compile.multi_kernel[(]", wrapper_code)
-        is not None
-    )
-
-
-def _contains_size_hint_multi_kernel_code(wrapper_code: str):
-    return (
-        re.search(
-            r"multi_kernel_[^ ]* = async_compile.size_hint_multi_kernel[(]",
-            wrapper_code,
-        )
         is not None
     )
 
@@ -70,7 +54,6 @@ def make_cpp_wrapper_test(orig_test, **extra_args):
     """
 
     @config.patch("cpp_wrapper", True)
-    @config.patch("triton.autotune_at_compile_time", True)
     def fn(self):
         # The same kernel may have been compiled by previous tests with
         # cpp_wrapper disabled. Clear the cache so we go ahead to re-compile
@@ -87,13 +70,12 @@ def make_cpp_wrapper_test(orig_test, **extra_args):
     {
         "triton.multi_kernel": int(os.environ.get("TORCHINDUCTOR_MULTI_KERNEL", "1")),
         "benchmark_kernel": True,
-        "multi_kernel_hints": [64, 256, 4096],
     }
 )
 @instantiate_parametrized_tests
 class MultiKernelTest(TestCase):
     def test_softmax(self, expect_multi_kernel=True):
-        x = torch.rand(2, 1024).to(GPU_TYPE)
+        x = torch.rand(2, 1024).cuda()
         ref = torch.softmax(x, -1)
         compiled_fn = torch.compile(torch.softmax)
         act, wrapper_code = run_and_get_code(compiled_fn, x, -1)
@@ -102,69 +84,17 @@ class MultiKernelTest(TestCase):
         # One for the first pass and one for the second pass.
         # We mainly care about the wrapper for the final pass here.
         wrapper_code = wrapper_code[-1]
-        self.assertEqual(ref, act)
+        self.assertTrue(torch.allclose(ref, act))
         if expect_multi_kernel:
             self.assertTrue(_contains_multi_kernel_code(wrapper_code))
         else:
-            self.assertFalse(_contains_multi_kernel_code(wrapper_code))
-
-    @requires_triton()
-    # TODO: bobrenjc93 to fix multi-kernel for ROCM
-    @skipIfRocm
-    @unittest.skipIf(not IS_BIG_GPU, "templates require big gpu")
-    @skipIfXpu(msg="driver issue, torch-xpu-ops: 2295")
-    def test_triton_gemm(self):
-        def fn(x, y):
-            return x @ y
-
-        compiled_fn = torch.compile(
-            fn,
-            options={
-                "max_autotune": True,
-                "max_autotune_gemm_backends": "TRITON",
-            },
-        )
-        x = torch.randn(4096, 4096, device=GPU_TYPE)
-        y = torch.randn(4096, 4096, device=GPU_TYPE)
-        torch._dynamo.mark_dynamic(x, 0)
-        act, wrapper_code = run_and_get_code(compiled_fn, x, y)
-        ref = fn(x, y)
-
-        # wrapper_code will contains 2 entries if cpp_wrapper=True.
-        # One for the first pass and one for the second pass.
-        # We mainly care about the wrapper for the final pass here.
-        wrapper_code = wrapper_code[-1]
-        self.assertEqual(ref, act)
-        self.assertTrue(_contains_size_hint_multi_kernel_code(wrapper_code))
-
-    @skipIfXpu(msg="driver issue, torch-xpu-ops: 2295")
-    @requires_triton()
-    # TODO: bobrenjc93 to fix multi-kernel for ROCM
-    @skipIfRocm
-    @unittest.skipIf(not IS_BIG_GPU, "templates require big gpu")
-    def test_triton_relu_fused_gemm(self):
-        def fn(x, y):
-            return (x @ y).relu()
-
-        compiled_fn = torch.compile(
-            fn,
-            options={
-                "max_autotune": True,
-                "max_autotune_gemm_backends": "TRITON",
-            },
-        )
-        x = torch.randn(4096, 4096, device=GPU_TYPE)
-        y = torch.randn(4096, 4096, device=GPU_TYPE)
-        torch._dynamo.mark_dynamic(x, 0)
-        act, wrapper_code = run_and_get_code(compiled_fn, x, y)
-        ref = fn(x, y)
-
-        # wrapper_code will contains 2 entries if cpp_wrapper=True.
-        # One for the first pass and one for the second pass.
-        # We mainly care about the wrapper for the final pass here.
-        wrapper_code = wrapper_code[-1]
-        self.assertEqual(ref, act)
-        self.assertTrue(_contains_size_hint_multi_kernel_code(wrapper_code))
+            # Skip verifying the wrapper_code in fbcode since we may fail
+            # compiling the cpp wrapper cuda code due to lacking proper setup of
+            # cuda compiler in fbcode environment. In that case, the last
+            # collected wrapper_code will corresponds to the first pass
+            # cpp-wrapper codegen which contains the multi-kernel.
+            if not config.is_fbcode():
+                self.assertFalse(_contains_multi_kernel_code(wrapper_code))
 
     @parametrize("force_kernel", (0, 1))
     @unittest.mock.patch.dict(
@@ -174,29 +104,26 @@ class MultiKernelTest(TestCase):
         """
         Force a specific sub-kernel being picked by mocking the benchmark result.
         """
-        x = torch.rand(2, 1024).to(GPU_TYPE)
+        x = torch.rand(2, 1024).cuda()
         mock_latency = [0.2, 0.2]
         mock_latency[force_kernel] = 0.1  # this make sure force_kernel will be picked
 
         def f(x):
             return torch.softmax(x, -1) + force_kernel
 
-        orig_run = MultiKernelCall.run
+        orig_run = MultiKernelCall.run_with_argless_kernels
         picked_kernel = None
 
-        def mock_run(self, *args, **kwargs):
-            out = orig_run(self, *args, **kwargs)
+        def mock_run(self, kernel_calls):
+            out = orig_run(self, kernel_calls)
             nonlocal picked_kernel
             picked_kernel = self.picked_kernel
             return out
 
-        with (
-            unittest.mock.patch.object(MultiKernelCall, "run", mock_run),
-            unittest.mock.patch.object(
-                MultiKernelCall,
-                "benchmark_sub_kernels",
-                lambda *args, **kwargs: mock_latency,
-            ),
+        with unittest.mock.patch.object(
+            MultiKernelCall, "run_with_argless_kernels", mock_run
+        ), unittest.mock.patch.object(
+            MultiKernelCall, "benchmark_sub_kernels", lambda *args: mock_latency
         ):
             torch.compile(f)(x)
         self.assertEqual(picked_kernel, force_kernel)
@@ -205,16 +132,18 @@ class MultiKernelTest(TestCase):
     def test_softmax_warn_mixed_layout(self):
         self.test_softmax()
 
-    test_softmax_cpp_wrapper = make_cpp_wrapper_test(
-        test_softmax, expect_multi_kernel=True
+    test_softmax_cpp_wrapper = skipIfRocm(
+        make_cpp_wrapper_test(test_softmax, expect_multi_kernel=False)
     )
 
     def test_layernorm(self):
-        ln = nn.LayerNorm(1024).to(GPU_TYPE)
-        x = torch.rand(2, 1024).to(GPU_TYPE)
+        ln = nn.LayerNorm(1024).cuda()
+        x = torch.rand(2, 1024).cuda()
         ref = ln(x)
         act = torch.compile(ln)(x)
-        self.assertEqual(ref, act, atol=1e-4, rtol=1e-4)
+        self.assertTrue(
+            torch.allclose(ref, act, atol=1e-4, rtol=1e-4), f"ref:\n{ref}\nact:\n{act}"
+        )
 
     def test_inplace_update(self):
         """
@@ -224,14 +153,14 @@ class MultiKernelTest(TestCase):
         def f(x, y):
             return x.sum(dim=-1, keepdims=True) * (y @ y)
 
-        x = torch.rand(1024, 1024).to(GPU_TYPE)
-        y = torch.rand(1024, 1024).to(GPU_TYPE)
+        x = torch.rand(1024, 1024).cuda()
+        y = torch.rand(1024, 1024).cuda()
         ref = f(x, y)
         act = torch.compile(f)(x, y)
-        self.assertEqual(ref, act)
+        self.assertTrue(torch.allclose(ref, act))
 
     def test_transformer_snippet(self):
-        model = TransformerSnippet().to(GPU_TYPE)
+        model = TransformerSnippet().cuda()
         x = model.example_inputs()
 
         def f(*x):
@@ -249,7 +178,10 @@ class MultiKernelTest(TestCase):
         # inductor random number implementation is different to eager.
         # We should fallback to eager if we want to test accuracy.
         if config.fallback_random:
-            self.assertEqual(ref, act, atol=1e-4, rtol=1e-4)
+            self.assertTrue(
+                torch.allclose(ref, act, atol=1e-4, rtol=1e-4),
+                f"ref:\n{ref}\nact:\n{act}",
+            )
 
     def test_transformer_snippet_with_fallback_random(self):
         """
@@ -266,18 +198,18 @@ class MultiKernelTest(TestCase):
         once for input and once for output. They are ruled out as in-out argument because
         they are considered as graph inputs.
 
-        Multi-kernel previously assumes that we never pass the same argument multi times
-        for a kernel. No matter if we change inductor behavior to assure that, it's better
+        Multi-kernel previously assumes that we never pass the same argument mutli times
+        for a kernel. No mater if we change inductor behavior to assure that, it's better
         to make multi-kernel being able to handle those cases.
         """
-        bn = nn.BatchNorm2d(3).to(GPU_TYPE)
+        bn = nn.BatchNorm2d(3).to("cuda")
 
         @torch.compile
         def f(x):
             bn(x).sum().backward()
 
         _, (wrapper_code, _) = run_and_get_code(
-            f, torch.randn(2, 3, 8, 8, device=GPU_TYPE)
+            f, torch.randn(2, 3, 8, 8, device="cuda")
         )
         self.assertTrue(_contains_multi_kernel_code(wrapper_code))
 
@@ -297,17 +229,17 @@ class MultiKernelTest(TestCase):
             x = x.sum(dim=1, keepdim=False)
             y.copy_(y * 0.9 + x * 0.1)
 
-        x = torch.randn(8, 16, device=GPU_TYPE)
-        y = torch.randn(8, device=GPU_TYPE)
+        x = torch.randn(8, 16, device="cuda")
+        y = torch.randn(8, device="cuda")
         y_ref = y.clone()
 
-        ref = f(x, y_ref)  # noqa: F841
-        act = torch.compile(f)(x, y)  # noqa: F841
-        self.assertEqual(y_ref, y)
+        ref = f(x, y_ref)
+        act = torch.compile(f)(x, y)
+        self.assertTrue(torch.allclose(y_ref, y))
 
     def test_reduction_scratch_buffer(self, force_multi_kernel=1):
         """
-        The explicitly realized buffer in the test function will be passed in
+        The explicited realized buffer in the test function will be passed in
         as a scratch buffer for the non-persistent reduction kernel but
         can be skipped for the persistent reduction kernel.
 
@@ -324,37 +256,11 @@ class MultiKernelTest(TestCase):
             x = x.sum(dim=-1, keepdim=True) + x
             return x
 
-        x = torch.rand(16, 16, device=GPU_TYPE)
+        x = torch.rand(16, 16, device="cuda")
         ref = f(x)
         with config.patch("triton.multi_kernel", force_multi_kernel):
             act = torch.compile(f)(x)
-        self.assertEqual(ref, act)
-
-    def test_split_scan(self, force_multi_kernel=1):
-        def f(x):
-            x = x.view(-1)
-            return torch.cumsum(x, 0)
-
-        x = make_tensor(10, 3, 352, 352, low=0, dtype=torch.float32, device=GPU_TYPE)
-        expect = f(x)
-        with config.patch("triton.multi_kernel", force_multi_kernel):
-            actual = torch.compile(f)(x)
-        self.assertEqual(expect, actual)
-
-    def test_sort_disables_multi_kernel(self, force_multi_kernel=1):
-        """
-        Sort currently requires a persistent kernel, so multi-kernel is not
-        possible. Make sure this falls back gracefully.
-        """
-
-        def f(x):
-            return x.sort(-1).values
-
-        x = torch.rand(32, 32, device=GPU_TYPE)
-        expect = f(x)
-        with config.patch("triton.multi_kernel", force_multi_kernel):
-            actual = torch.compile(f)(x)
-        self.assertEqual(expect, actual)
+        self.assertTrue(torch.allclose(ref, act))
 
     # Use benchmarking to pick the faster kernel
     test_reduction_scratch_buffer_cpp_wrapper = make_cpp_wrapper_test(
@@ -375,5 +281,5 @@ class MultiKernelTest(TestCase):
 if __name__ == "__main__":
     from torch._inductor.test_case import run_tests
 
-    if HAS_GPU:
+    if HAS_CUDA:
         run_tests()

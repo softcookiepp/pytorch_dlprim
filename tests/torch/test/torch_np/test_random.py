@@ -1,7 +1,7 @@
 # Owner(s): ["module: dynamo"]
 
-"""Light smoke test switching between numpy to pytorch random streams."""
-
+"""Light smoke test switching between numpy to pytorch random streams.
+"""
 from contextlib import contextmanager
 from functools import partial
 
@@ -9,8 +9,10 @@ import numpy as _np
 import pytest
 
 import torch._dynamo.config as config
+
 import torch._numpy as tnp
 from torch._numpy.testing import assert_equal
+
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
     parametrize,
@@ -46,8 +48,7 @@ class TestScalarReturn(TestCase):
         # default `size` means a python scalar return
         with control_stream(use_numpy):
             r = func()
-        if not isinstance(r, (int, float)):
-            raise AssertionError(f"Expected int or float, got {type(r)}")
+        assert isinstance(r, (int, float))
 
     @parametrize("use_numpy", [True, False])
     @parametrize(
@@ -69,8 +70,7 @@ class TestScalarReturn(TestCase):
                 r = func(10)
             else:
                 r = func(size=10)
-        if not isinstance(r, tnp.ndarray):
-            raise AssertionError(f"Expected tnp.ndarray, got {type(r)}")
+        assert isinstance(r, tnp.ndarray)
 
 
 @instantiate_parametrized_tests
@@ -83,24 +83,20 @@ class TestShuffle(TestCase):
         tnp.random.seed(1234)
         tnp.random.shuffle(ax)
 
-        if not isinstance(ax, tnp.ndarray):
-            raise AssertionError(f"Expected tnp.ndarray, got {type(ax)}")
-        if (ax == ox).all():
-            raise AssertionError("Expected 1d array to be shuffled")
+        assert isinstance(ax, tnp.ndarray)
+        assert not (ax == ox).all()
 
     @parametrize("use_numpy", [True, False])
     def test_2d(self, use_numpy):
         # np.shuffle only shuffles the first axis
-        ax = tnp.asarray([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+        ax = tnp.asarray([[1, 2, 3], [4, 5, 6]])
         ox = ax.copy()
 
         tnp.random.seed(1234)
         tnp.random.shuffle(ax)
 
-        if not isinstance(ax, tnp.ndarray):
-            raise AssertionError(f"Expected tnp.ndarray, got {type(ax)}")
-        if (ax == ox).all():
-            raise AssertionError("Expected 2d array to be shuffled")
+        assert isinstance(ax, tnp.ndarray)
+        assert not (ax == ox).all()
 
     @parametrize("use_numpy", [True, False])
     def test_shuffle_list(self, use_numpy):
@@ -142,8 +138,7 @@ class TestNumpyGlobal(TestCase):
             tnp.random.seed(12345)
             x_1 = tnp.random.uniform(0, 1, size=11)
 
-        if (x_1 == x).all():
-            raise AssertionError("Expected different variates with different stream")
+        assert not (x_1 == x).all()
 
 
 if __name__ == "__main__":

@@ -9,10 +9,13 @@ import os
 import sys
 import unittest
 
-from torch.distributed.elastic.rendezvous import RendezvousParameters
-from torch.distributed.elastic.rendezvous.etcd_rendezvous import create_rdzv_handler
-from torch.distributed.elastic.rendezvous.etcd_server import EtcdServer
+import etcd
 
+from torch.distributed.elastic.rendezvous.etcd_rendezvous import (
+    EtcdRendezvous,
+    EtcdRendezvousHandler,
+)
+from torch.distributed.elastic.rendezvous.etcd_server import EtcdServer
 
 if os.getenv("CIRCLECI"):
     print("T85992919 temporarily disabling in circle ci", file=sys.stderr)
@@ -40,18 +43,18 @@ class EtcdServerTest(unittest.TestCase):
         server.start()
 
         try:
-            endpoint = server.get_endpoint()
-            rdzv_params = RendezvousParameters(
-                backend="etcd",
-                endpoint=endpoint,
-                run_id="test_run_1",
-                min_nodes=1,
-                max_nodes=1,
+            client = etcd.Client(server.get_host(), server.get_port())
+
+            rdzv = EtcdRendezvous(
+                client=client,
+                prefix="test",
+                run_id=1,
+                num_min_workers=1,
+                num_max_workers=1,
                 timeout=60,
                 last_call_timeout=30,
-                local_addr="127.0.0.1",
             )
-            rdzv_handler = create_rdzv_handler(rdzv_params)
+            rdzv_handler = EtcdRendezvousHandler(rdzv)
             rdzv_info = rdzv_handler.next_rendezvous()
             self.assertIsNotNone(rdzv_info.store)
             self.assertEqual(0, rdzv_info.rank)

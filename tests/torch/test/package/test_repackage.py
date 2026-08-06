@@ -5,7 +5,6 @@ from io import BytesIO
 from torch.package import PackageExporter, PackageImporter, sys_importer
 from torch.testing._internal.common_utils import run_tests
 
-
 try:
     from .common import PackageTestCase
 except ImportError:
@@ -28,7 +27,7 @@ class TestRepackage(PackageTestCase):
 
         buffer.seek(0)
         pi = PackageImporter(buffer)
-        pi.load_pickle("default", "model.py")
+        loaded_model = pi.load_pickle("default", "model.py")
 
         model_b = ImportsIndirectlyFromSubPackage()
         buffer = BytesIO()

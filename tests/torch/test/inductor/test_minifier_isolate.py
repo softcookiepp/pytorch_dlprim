@@ -7,11 +7,11 @@ from torch.testing._internal.common_utils import (
     IS_JETSON,
     IS_MACOS,
     skipIfRocm,
-    skipIfWindows,
     TEST_WITH_ASAN,
 )
-from torch.testing._internal.inductor_utils import GPU_TYPE
-from torch.testing._internal.triton_utils import requires_gpu
+from torch.testing._internal.inductor_utils import HAS_CUDA
+
+requires_cuda = unittest.skipUnless(HAS_CUDA, "requires cuda")
 
 
 # These minifier tests are slow, because they must be run in separate
@@ -32,20 +32,14 @@ inner(torch.randn(2, 2).to("{device}"))
 
     @unittest.skipIf(IS_JETSON, "Fails on Jetson")
     @inductor_config.patch("cpp.inject_relu_bug_TESTING_ONLY", "runtime_error")
-    @skipIfWindows(
-        msg="Build Failed: fatal error C1083: Cannot open include file: 'Python.h': No such file or directory"
-    )
     def test_after_aot_cpu_runtime_error(self):
         self._test_after_aot_runtime_error("cpu", "")
 
     @skipIfRocm
-    @requires_gpu
+    @requires_cuda
     @inductor_config.patch("triton.inject_relu_bug_TESTING_ONLY", "runtime_error")
-    def test_after_aot_gpu_runtime_error(self):
-        expected_error = (
-            "injected assert fail" if GPU_TYPE == "xpu" else "device-side assert"
-        )
-        self._test_after_aot_runtime_error(GPU_TYPE, expected_error)
+    def test_after_aot_cuda_runtime_error(self):
+        self._test_after_aot_runtime_error("cuda", "device-side assert")
 
 
 if __name__ == "__main__":

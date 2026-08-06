@@ -1,6 +1,7 @@
 # Owner(s): ["module: functorch"]
 
 import torch
+
 from functorch import make_fx
 from functorch.compile import minifier
 from torch._functorch.compile_utils import get_outputs, get_placeholders
@@ -86,7 +87,7 @@ class TestMinifier(TestCase):
 
     def test_module(self):
         class MockModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.relu = torch.nn.ReLU()
 
@@ -110,12 +111,8 @@ class TestMinifier(TestCase):
             return torch.isnan(fx_g(*inps)[0]).any()
 
         min_f, inps = minifier(failing_f, inps, pass_checker)
-        if len(min_f.graph.nodes) != 3:
-            raise AssertionError(
-                f"Expected 3 graph nodes, got {len(min_f.graph.nodes)}"
-            )
-        if len(inps) != 1:
-            raise AssertionError(f"Expected 1 input, got {len(inps)}")
+        assert len(min_f.graph.nodes) == 3
+        assert len(inps) == 1
 
 
 if __name__ == "__main__":

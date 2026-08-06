@@ -2,14 +2,15 @@
 
 import importlib
 from io import BytesIO
+from sys import version_info
 from textwrap import dedent
 from unittest import skipIf
 
 import torch.nn
+
 from torch.package import EmptyMatchError, Importer, PackageExporter, PackageImporter
 from torch.package.package_exporter import PackagingError
 from torch.testing._internal.common_utils import IS_WINDOWS, run_tests
-
 
 try:
     from .common import PackageTestCase
@@ -112,6 +113,7 @@ class TestDependencyAPI(PackageTestCase):
                     ),
                 )
 
+    @skipIf(version_info < (3, 7), "mock uses __getattr__ a 3.7 feature")
     def test_mock(self):
         buffer = BytesIO()
         with PackageExporter(buffer) as he:
@@ -132,6 +134,7 @@ class TestDependencyAPI(PackageTestCase):
         with self.assertRaisesRegex(NotImplementedError, "was mocked out"):
             r()
 
+    @skipIf(version_info < (3, 7), "mock uses __getattr__ a 3.7 feature")
     def test_mock_glob(self):
         buffer = BytesIO()
         with PackageExporter(buffer) as he:
@@ -173,6 +176,7 @@ class TestDependencyAPI(PackageTestCase):
                 exporter.mock(include=["package_b.*"], allow_empty=False)
                 exporter.save_module("package_a.subpackage")
 
+    @skipIf(version_info < (3, 7), "mock uses __getattr__ a 3.7 feature")
     def test_pickle_mocked(self):
         import package_a.subpackage
 
@@ -186,6 +190,7 @@ class TestDependencyAPI(PackageTestCase):
                 he.intern("**")
                 he.save_pickle("obj", "obj.pkl", obj2)
 
+    @skipIf(version_info < (3, 7), "mock uses __getattr__ a 3.7 feature")
     def test_pickle_mocked_all(self):
         import package_a.subpackage
 
@@ -268,7 +273,7 @@ class TestDependencyAPI(PackageTestCase):
             return module
 
         class BrokenImporter(Importer):
-            def __init__(self) -> None:
+            def __init__(self):
                 self.modules = {
                     "foo": create_module("foo"),
                     "bar": create_module("bar"),
@@ -318,6 +323,7 @@ class TestDependencyAPI(PackageTestCase):
             ),
         )
 
+    @skipIf(version_info < (3, 7), "mock uses __getattr__ a 3.7 feature")
     def test_repackage_mocked_module(self):
         """Re-packaging a package that contains a mocked module should work correctly."""
         buffer = BytesIO()

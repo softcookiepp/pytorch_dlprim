@@ -1,38 +1,29 @@
 # Owner(s): ["module: __torch_dispatch__"]
-# ruff: noqa: F841
 
-import gc
-import pickle
-import sys
 import tempfile
 import unittest
-import weakref
 from copy import deepcopy
 
 import torch
-import torch._dynamo
 from torch import SymInt
-from torch._C import DispatchKey, DispatchKeySet
 from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.cuda.jiterator import _create_jit_fn
-from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.library import _scoped_library, fallthrough_kernel, impl, Library
+from torch.testing._internal.common_utils import *  # noqa: F403
+import logging
+import sys
+
+import torch._dynamo
+from torch._C import DispatchKey, DispatchKeySet
+from torch._custom_op.functional import register_functional_op
+from torch.fx.experimental.proxy_tensor import make_fx
 from torch.multiprocessing.reductions import StorageWeakRef
 from torch.testing._internal.common_device_type import (
     instantiate_device_type_tests,
     ops,
 )
 from torch.testing._internal.common_methods_invocations import op_db
-from torch.testing._internal.common_utils import (
-    first_sample,
-    instantiate_parametrized_tests,
-    IS_WINDOWS,
-    parametrize,
-    run_tests,
-    TEST_WITH_ROCM,
-    TestCase,
-)
 from torch.testing._internal.custom_op_db import custom_op_db
 from torch.testing._internal.logging_tensor import (
     capture_logs,
@@ -48,7 +39,6 @@ from torch.utils._mode_utils import all_same_mode, no_dispatch
 from torch.utils._python_dispatch import (
     _get_current_dispatch_mode,
     _get_current_dispatch_mode_stack,
-    is_in_torch_dispatch_mode,
     TorchDispatchMode,
 )
 from torch.utils._pytree import tree_map, tree_map_only
@@ -73,212 +63,6 @@ class TestPythonRegistration(TestCase):
     def tearDown(self):
         if hasattr(torch.ops, self.test_ns):
             del torch.ops._test_python_registration
-
-    def test_global_enter(self):
-        try:
-            v = LoggingTensorMode()
-            v_ref = weakref.ref(v)
-
-            v.__enter__()
-            # The bug trigger when the C++ stack is the only
-            # owner of the mode object.
-            del v
-
-            # Does not segfault
-            str(torch.rand(2))
-
-        finally:
-            v_ref().__exit__(None, None, None)
-
-    def test_fallback(self) -> None:
-        test_key = "TESTING_ONLY_GenericMode"
-        test_keyset = torch._C.DispatchKeySet(test_key)
-        include_to_set = torch._C._dispatch_tls_local_include_set() | test_keyset
-        exclude_to_set = torch._C._dispatch_tls_local_exclude_set()
-
-        with _scoped_library("_", "IMPL") as my_lib:
-            expected_op = None
-            expected_args = None
-            expected_kwargs = None
-            # Use this out shape to make sure the result from our fallback
-            # is what is returned to the user
-            out_shape = None
-
-            def my_fallback(op, *args, **kwargs):
-                # Disable our handler during checks and generating the output
-                with torch._C._ForceDispatchKeyGuard(
-                    include_to_set, exclude_to_set | test_keyset
-                ):
-                    self.assertIs(op, expected_op)
-                    self.assertEqual(args, expected_args)
-                    self.assertEqual(kwargs, expected_kwargs)
-                    # Return something specific
-                    return torch.empty(out_shape)
-
-            my_lib.fallback(my_fallback, test_key)
-
-            a, b = torch.rand(2), torch.rand(2)
-
-            with torch._C._ForceDispatchKeyGuard(include_to_set, exclude_to_set):
-                # Check a factory function
-                expected_op = torch.ops.aten.empty.memory_format
-                expected_args = ((2, 2),)
-                # Extra kwargs to bypass issues with default args in factory functions
-                expected_kwargs = {
-                    "dtype": torch.float64,
-                    "pin_memory": False,
-                    "device": torch.device("cpu"),
-                }
-                out_shape = (3,)
-                out = torch.empty(*expected_args, **expected_kwargs)
-                self.assertEqual(out.size(), out_shape)
-
-                # Check a regular function
-                expected_op = torch.ops.aten.add.Tensor
-                expected_args = (a, b)
-                expected_kwargs = {}
-                out_shape = (4,)
-                out = a + b
-                self.assertEqual(out.size(), out_shape)
-
-    def test_fallback_keyset(self) -> None:
-        test_key_first = "TESTING_ONLY_GenericMode"
-        test_key_second = "TESTING_ONLY_GenericWrapper"
-        test_keyset = torch._C.DispatchKeySet(test_key_first) | torch._C.DispatchKeySet(
-            test_key_second
-        )
-        include_to_set = torch._C._dispatch_tls_local_include_set() | test_keyset
-        exclude_to_set = torch._C._dispatch_tls_local_exclude_set()
-
-        with _scoped_library("_", "IMPL") as my_lib:
-            first_called = False
-            second_called = False
-
-            def first_fallback(keyset, op, *args, **kwargs):
-                nonlocal first_called
-                if second_called:
-                    # Recursive call
-                    first_called = True
-                    with torch._C._ForceDispatchKeyGuard(
-                        include_to_set, exclude_to_set | test_keyset
-                    ):
-                        return op(*args, **kwargs)
-                else:
-                    # Redispatch down
-                    keyset = keyset.remove(test_key_first)
-                    return op.redispatch(keyset, *args, **kwargs)
-
-            def second_fallback(op, *args, **kwargs):
-                nonlocal second_called
-                # Set to avoid infinite recursion
-                second_called = True
-                # New dispatcher call should hit the first callback again
-                self.assertFalse(first_called)
-                a, b = args
-                # Make a subtraction here instead of add !
-                c = a - b
-                self.assertTrue(first_called)
-                return c
-
-            my_lib.fallback(first_fallback, test_key_first, with_keyset=True)
-            my_lib.fallback(second_fallback, test_key_second)
-
-            a, b = torch.rand(2), torch.rand(2)
-            with torch._C._ForceDispatchKeyGuard(include_to_set, exclude_to_set):
-                c = a + b
-
-            self.assertEqual(c, a - b)
-            self.assertTrue(first_called)
-            self.assertTrue(second_called)
-
-    def test_fallback_fallthrough(self) -> None:
-        test_key_first = "TESTING_ONLY_GenericMode"
-        test_key_second = "TESTING_ONLY_GenericWrapper"
-        test_keyset = torch._C.DispatchKeySet(test_key_first) | torch._C.DispatchKeySet(
-            test_key_second
-        )
-        include_to_set = torch._C._dispatch_tls_local_include_set() | test_keyset
-        exclude_to_set = torch._C._dispatch_tls_local_exclude_set()
-
-        with _scoped_library("_", "IMPL") as my_lib:
-            is_called = False
-
-            def my_fallback(op, *args, **kwargs):
-                nonlocal is_called
-                is_called = True
-                with torch._C._ForceDispatchKeyGuard(
-                    include_to_set, exclude_to_set | test_keyset
-                ):
-                    return op(*args, **kwargs)
-
-            my_lib.fallback(torch.library.fallthrough_kernel, test_key_first)
-            my_lib.fallback(my_fallback, test_key_second)
-
-            a, b = torch.rand(2), torch.rand(2)
-            with torch._C._ForceDispatchKeyGuard(include_to_set, exclude_to_set):
-                c = a + b
-
-            self.assertEqual(c, a + b)
-            self.assertTrue(is_called)
-
-    def test_fallthrough_for_dense_key_with_meta_in_tls(self) -> None:
-        # This tests that if meta is included in TlS dispatch key set,
-        # then a meta kernel should be called regardless if a dense
-        # backend has a fallthrough kernel
-
-        a = torch.randn((3, 3))
-        with _scoped_library("custom", "DEF") as my_lib:
-            my_lib.define("sum(Tensor self) -> Tensor")
-            meta_is_called = False
-
-            def sum_meta(*args, **kwargs):
-                nonlocal meta_is_called
-                meta_is_called = True
-                return args[0]
-
-            my_lib.impl("sum", fallthrough_kernel, "CPU")
-            my_lib.impl("sum", sum_meta, "Meta")
-
-            with torch._C._IncludeDispatchKeyGuard(torch.DispatchKey.Meta):
-                torch.ops.custom.sum.default(a)
-                self.assertTrue(meta_is_called)
-
-    def test_include_dispatch_key_guard_restores_tls_exactly(self) -> None:
-        before = torch._C._dispatch_tls_local_include_set().raw_repr()
-        with torch._C._IncludeDispatchKeyGuard(torch.DispatchKey.Meta):
-            pass
-        after = torch._C._dispatch_tls_local_include_set().raw_repr()
-        self.assertEqual(before, after)
-
-    @parametrize(
-        "key",
-        [
-            torch.DispatchKey.Meta,
-            torch.DispatchKey.CUDA,
-            torch.DispatchKey.CPU,
-        ],
-    )
-    def test_exclude_dispatch_key_guard_restores_tls_exactly(self, key) -> None:
-        keyset = torch._C.DispatchKeySet(key)
-        before = torch._C._dispatch_tls_local_exclude_set().raw_repr()
-        with torch._C._ExcludeDispatchKeyGuard(keyset):
-            pass
-        after = torch._C._dispatch_tls_local_exclude_set().raw_repr()
-        self.assertEqual(before, after)
-
-    def test_dispatchkeyset_pickle(self) -> None:
-        keyset = torch._C.DispatchKeySet(torch._C.DispatchKey.AutogradCPU)
-        serialized = pickle.dumps(keyset)
-        new_keyset = pickle.loads(serialized)
-        self.assertEqual(new_keyset, keyset)
-
-    def test_dispatchkeyset_eq(self) -> None:
-        a = torch._C.DispatchKeySet(torch._C.DispatchKey.AutogradCPU)
-        b = torch._C.DispatchKeySet(torch._C.DispatchKey.AutogradCPU)
-        c = torch._C.DispatchKeySet(torch._C.DispatchKey.CPU)
-        self.assertTrue(a == b)
-        self.assertFalse(a != b)
-        self.assertTrue(a != c)
 
     def test_override_aten_ops_with_multiple_libraries(self) -> None:
         x = torch.tensor([1, 2])
@@ -314,7 +98,7 @@ class TestPythonRegistration(TestCase):
                 self.assertFalse(torch.mul(x, y)._is_zerotensor())
 
                 # Assert that a user can't override the behavior of a (ns, op, dispatch_key)
-                # combination if someone overridden the behavior for the same before them
+                # combination if someone overrided the behavior for the same before them
                 with self.assertRaisesRegex(
                     RuntimeError, "already a kernel registered from python"
                 ):
@@ -339,12 +123,8 @@ class TestPythonRegistration(TestCase):
         lib = Library(self.test_ns, "FRAGMENT")  # noqa: TOR901
         lib.define("foo123(Tensor x) -> Tensor")
 
-        # 1 for `lib`, 1 for sys.getrefcount' for previous python version (<=3.12)
-        # In Python 3.13+, sys.getrefcount() was optimized to not create
-        # a temporary reference, so expected counts are 1 less than before
-        expected_refcount = 1 if sys.version_info >= (3, 14) else 2
-        self.assertEqual(sys.getrefcount(lib), expected_refcount)
-
+        # 1 for `lib`, 1 for sys.getrefcount
+        self.assertEqual(sys.getrefcount(lib), 2)
         # We gained an additional reference that gets cleared when the finalizer runs
         self.assertEqual(sys.getrefcount(torch.library._impls), impls_refcnt + 1)
         # 1 for `lib`
@@ -362,7 +142,7 @@ class TestPythonRegistration(TestCase):
         saved_op_impls = lib._op_impls
 
         # del will definitely work if the following passes
-        self.assertEqual(sys.getrefcount(lib), expected_refcount)
+        self.assertEqual(sys.getrefcount(lib), 2)
         del lib
 
         # 1 for saved_op_impls
@@ -370,7 +150,7 @@ class TestPythonRegistration(TestCase):
         # This function should be the last user of lib._op_impls:
         # - lib should not have a reference anymore (it was del'ed)
         # - lib's finalizer should not have a reference anymore
-        self.assertEqual(sys.getrefcount(saved_op_impls), expected_refcount)
+        self.assertEqual(sys.getrefcount(saved_op_impls), 2)
 
         self.assertTrue(key not in torch.library._impls)
 
@@ -616,14 +396,11 @@ class TestPythonRegistration(TestCase):
             def _test():
                 torch.ops._test_python_registration._op()
 
-            if "_test_python_registration::_op" not in str(_test.graph):
-                raise AssertionError("expected _test_python_registration::_op in graph")
+            assert "_test_python_registration::_op" in str(_test.graph)
 
         with self.assertRaises(AssertionError):
             test_helper("")  # alias_analysis="FROM_SCHEMA"
 
-        # Run gc to make sure the previous Library is removed.  This is needed in dynamo-wrapped 3.14t
-        gc.collect()
         test_helper("CONSERVATIVE")
 
     def test_error_for_unsupported_ns_or_kind(self) -> None:
@@ -633,47 +410,6 @@ class TestPythonRegistration(TestCase):
         for kind in ("DEF", "FRAGMENT"):
             with self.assertRaisesRegex(ValueError, "reserved namespace"):
                 my_lib1 = Library("prim", kind)  # noqa: TOR901
-
-    def test_dispatcher_error_filenames(self) -> None:
-        # Test that dispatcher errors report correct Python filenames and line numbers
-        # when defining duplicate libraries (which triggers the filename tracking)
-        import linecache
-        import re
-
-        # Create first library
-        # NOTE: Using Library directly instead of _scoped_library because this test
-        # specifically verifies filename tracking in error messages, and _scoped_library
-        # would report library.py locations instead of the actual test file locations
-        lib1 = Library(self.test_ns, "DEF")  # FIRST_LIB_MARKER  # noqa: TOR901
-        try:
-            lib1.define("duplicate_op(Tensor x) -> Tensor")
-
-            # Try to create another library with same namespace - this should trigger error
-            with self.assertRaises(RuntimeError) as cm:
-                lib2 = Library(self.test_ns, "DEF")  # SECOND_LIB_MARKER  # noqa: TOR901
-        finally:
-            lib1._destroy()
-
-        error_msg = str(cm.exception)
-
-        # The error should NOT contain /dev/null (the old placeholder)
-        self.assertNotIn("/dev/null", error_msg)
-        # The error should contain the test file name for both registrations
-        self.assertIn("test_python_dispatch.py", error_msg)
-        # Extract line numbers from the error message and verify they point to the right lines
-        line_matches = re.findall(r"test_python_dispatch\.py:(\d+)", error_msg)
-        self.assertEqual(
-            len(line_matches), 2, "Should have exactly 2 line number references"
-        )
-
-        # Get the actual source lines and verify they contain our markers
-        first_line_num, second_line_num = sorted([int(x) for x in line_matches])
-        first_line = linecache.getline(__file__, first_line_num).strip()
-        second_line = linecache.getline(__file__, second_line_num).strip()
-
-        # Verify the lines contain our expected markers
-        self.assertIn("FIRST_LIB_MARKER", first_line)
-        self.assertIn("SECOND_LIB_MARKER", second_line)
 
     def test_returning_symint(self) -> None:
         shape_env = ShapeEnv()
@@ -694,6 +430,182 @@ class TestPythonRegistration(TestCase):
             out_val = shape_env.evaluate_expr(out.node.expr)
         self.assertEqual(out_val, 13)
 
+    def test_register_functional_op_error_cases(self):
+        with _scoped_library(self.test_ns, "FRAGMENT") as lib:
+            with self.assertRaisesRegex(TypeError, "instance of OpOverload"):
+                register_functional_op(lib, "abs", torch.ops.aten.abs_)
+            with self.assertRaisesRegex(RuntimeError, "Expected op to be mutable"):
+                register_functional_op(lib, "abs", torch.ops.aten.abs_.default)
+            with self.assertRaisesRegex(RuntimeError, "Expected op to be mutable"):
+                register_functional_op(lib, "abs", torch.ops.aten.abs.out)
+
+            schemas = [
+                "foo(Tensor x, Tensor(a!)[] y) -> ()",
+                "foo(Tensor x, Tensor(a!) y, Tensor(b) z) -> Tensor(b)",
+                "foo(Tensor x, Tensor(a!) y) -> (Tensor, Tensor(a))",
+            ]
+
+        for schema in schemas:
+            with _scoped_library(self.test_ns, "FRAGMENT") as lib:
+                lib.define(schema)
+                with self.assertRaisesRegex(RuntimeError, "NYI"):
+                    register_functional_op(
+                        lib,
+                        "foo_functional",
+                        getattr(torch.ops, self.test_ns).foo.default,
+                    )
+
+    def _check_is_functional_variant(self, mutable_op, functional_op, args):
+        # functional op should not mutate
+        cloned_args = pytree.tree_map_only(torch.Tensor, torch.clone, args)
+        functional_result = functional_op(*cloned_args)
+        self.assertEqual(cloned_args, args)
+
+        # check functional_result includes mutable_result
+        mutable_result = mutable_op(*cloned_args)
+        if mutable_result is None:
+            flat_mutable_result = []
+        else:
+            flat_mutable_result = pytree.tree_leaves(mutable_result)
+        flat_functional_result = pytree.tree_leaves(functional_result)
+        assert len(flat_functional_result) > len(flat_mutable_result)
+        self.assertEqual(
+            flat_functional_result[: len(flat_mutable_result)], flat_mutable_result
+        )
+
+        # check rest of functional_result is the mutated args
+        mutated_args = [
+            maybe_mutated_arg
+            for maybe_mutated_arg, arg in zip(cloned_args, args)
+            if not (
+                maybe_mutated_arg is not None
+                and arg is not None
+                and torch.allclose(maybe_mutated_arg, arg)
+            )
+        ]
+        self.assertEqual(
+            flat_functional_result[len(flat_mutable_result) :], mutated_args
+        )
+
+        # check that functionalization kernel was indeed registered
+        def fn(*args):
+            cloned_args = pytree.tree_map_only(torch.Tensor, torch.clone, args)
+            mutable_op(*cloned_args)
+            return cloned_args
+
+        gm = make_fx(torch.func.functionalize(fn))(*args)
+        has_functional_op = False
+        for node in gm.graph.nodes:
+            self.assertFalse(node.target is mutable_op)
+            if node.target is functional_op:
+                has_functional_op = True
+        self.assertTrue(has_functional_op)
+
+    def test_register_functional_op_no_returns(self):
+        with _scoped_library(self.test_ns, "FRAGMENT") as lib:
+            lib.define("foo(Tensor x, Tensor(a!) y, Tensor z, Tensor(b!) w) -> ()")
+
+            def foo_impl(x, y, z, w):
+                y.fill_(3.14)
+                w.fill_(2.71)
+
+            lib.impl("foo", foo_impl, "CPU")
+            register_functional_op(
+                lib, "foo_functional", getattr(torch.ops, self.test_ns).foo.default
+            )
+            x = torch.randn([])
+            y = torch.randn([])
+            z = torch.randn([])
+            w = torch.randn([])
+            self._check_is_functional_variant(
+                getattr(torch.ops, self.test_ns).foo.default,
+                getattr(torch.ops, self.test_ns).foo_functional.default,
+                (x, y, z, w),
+            )
+
+    def test_register_functional_op_with_optional(self):
+        with _scoped_library(self.test_ns, "FRAGMENT") as lib:
+            lib.define(
+                "foo(Tensor x, Tensor(a!) y, Tensor (b!) z, Tensor(c!)? w) -> ()"
+            )
+
+            def foo_impl(x, y, z, w):
+                y.fill_(3.14)
+                z.fill_(2.71)
+                if w is not None:
+                    w.fill_(1.618)
+
+            lib.impl("foo", foo_impl, "CPU")
+            register_functional_op(
+                lib, "foo_functional", getattr(torch.ops, self.test_ns).foo.default
+            )
+            x = torch.randn([])
+            y = torch.randn([])
+            z = torch.randn([])
+            w = torch.randn([])
+            self._check_is_functional_variant(
+                getattr(torch.ops, self.test_ns).foo.default,
+                getattr(torch.ops, self.test_ns).foo_functional.default,
+                (x, y, z, w),
+            )
+            self._check_is_functional_variant(
+                getattr(torch.ops, self.test_ns).foo.default,
+                getattr(torch.ops, self.test_ns).foo_functional.default,
+                (x, y, z, None),
+            )
+
+    def test_register_functional_op_one_return(self):
+        with _scoped_library(self.test_ns, "FRAGMENT") as lib:
+            lib.define(
+                "foo(Tensor x, Tensor(a!) y, Tensor(c!) z, Tensor(b!) w) -> Tensor"
+            )
+
+            def foo_impl(x, y, z, w):
+                y.fill_(3.14)
+                w.fill_(2.71)
+                z.fill_(0.99)
+                return x.clone()
+
+            lib.impl("foo", foo_impl, "CPU")
+            register_functional_op(
+                lib, "foo_functional", getattr(torch.ops, self.test_ns).foo.default
+            )
+            x = torch.randn([])
+            y = torch.randn([])
+            z = torch.randn([])
+            w = torch.randn([])
+            self._check_is_functional_variant(
+                getattr(torch.ops, self.test_ns).foo.default,
+                getattr(torch.ops, self.test_ns).foo_functional.default,
+                (x, y, z, w),
+            )
+
+    def test_register_functional_op_multiple_returns(self):
+        with _scoped_library(self.test_ns, "FRAGMENT") as lib:
+            lib.define(
+                "foo(Tensor x, Tensor(a!) y, Tensor z, Tensor(b!) w) -> (Tensor, Tensor)"
+            )
+
+            def foo_impl(x, y, z, w):
+                y.fill_(3.14)
+                w.fill_(2.71)
+                return x.clone(), z.clone()
+
+            lib.impl("foo", foo_impl, "CPU")
+            register_functional_op(
+                lib, "foo_functional", getattr(torch.ops, self.test_ns).foo.default
+            )
+
+            x = torch.randn([])
+            y = torch.randn([])
+            z = torch.randn([])
+            w = torch.randn([])
+            self._check_is_functional_variant(
+                getattr(torch.ops, self.test_ns).foo.default,
+                getattr(torch.ops, self.test_ns).foo_functional.default,
+                (x, y, z, w),
+            )
+
     def test_register_fallthrough(self):
         with _scoped_library("aten", "IMPL") as my_lib:
             my_lib.impl("mm", fallthrough_kernel, "AutocastCPU")
@@ -709,9 +621,6 @@ class TestPythonRegistration(TestCase):
         with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
             # default behavior should have been restored
             self.assertEqual(torch.mm(a, b).dtype, torch.bfloat16)
-
-
-instantiate_parametrized_tests(TestPythonRegistration)
 
 
 class TestPythonDispatch(TestCase):
@@ -831,8 +740,9 @@ $4: f32[1] = torch._ops.aten._foobar.default($0, False, arg3=False)""",
 $0: f32[2, 2] = input('x')
 $1: f64[2, 2] = torch._ops.aten._to_copy.default($0, dtype=torch.float64)
 $2: f64[2, 2] = torch._ops.aten.cumprod.default($0, 0, dtype=torch.float64)
-$3: f32[2] = torch._ops.aten.select.int($0, 1, 1)
-$4: f32[2] = torch._ops.aten.clone.default($3, memory_format=torch.contiguous_format)""",
+$3: f32[2, 2] = torch._ops.aten.slice.Tensor($0, 0, 0, 9223372036854775807)
+$4: f32[2] = torch._ops.aten.select.int($3, 1, 1)
+$5: f32[2] = torch._ops.aten.clone.default($4, memory_format=torch.contiguous_format)""",
         )
 
     def test_optional_tensor_list(self) -> None:
@@ -900,7 +810,7 @@ $1: f32[] = torch._ops.my_lib.weird.default(['None', '$0'])""",
             lambda: A(torch.zeros(1)).detach(),
         )
 
-    def test_detach_appears_once_when_called_once(self) -> None:
+    def test_detach_appears_twice_when_called_once(self) -> None:
         with capture_logs() as logs:
             x = LoggingTensor(torch.tensor([3.0]), requires_grad=True)
             log_input("x", x)
@@ -913,7 +823,8 @@ $1: f32[] = torch._ops.my_lib.weird.default(['None', '$0'])""",
             "\n".join(logs),
             """\
 $0: f32[1] = input('x')
-$1: f32[1] = torch._ops.aten.detach.default($0)""",
+$1: f32[1] = torch._ops.aten.detach.default($0)
+$2: f32[1] = torch._ops.aten.detach.default($1)""",
         )
 
     def test_storage(self) -> None:
@@ -999,13 +910,9 @@ $1: f32[1] = torch._ops.aten.detach.default($0)""",
 
             @staticmethod
             def backward(ctx, grad_output):
-                if not isinstance(grad_output, LoggingTensor):
-                    raise AssertionError(
-                        f"expected LoggingTensor, got {type(grad_output)}"
-                    )
+                assert isinstance(grad_output, LoggingTensor)
                 (x,) = ctx.saved_tensors
-                if not isinstance(x, LoggingTensor):
-                    raise AssertionError(f"expected LoggingTensor, got {type(x)}")
+                assert isinstance(x, LoggingTensor)
                 escape[0] = x
                 return grad_output * 2 * x
 
@@ -1160,8 +1067,7 @@ def forward(self, x_a_1, x_b_1, y_1):
             x = LoggingTensor(torch.randperm(3))
             torch.save(x, f)
             f.seek(0)
-            with torch.serialization.safe_globals([LoggingTensor]):
-                x_loaded = torch.load(f)
+            x_loaded = torch.load(f)
             self.assertTrue(type(x_loaded) is type(x))
             self.assertEqual(x, x_loaded)
             self.assertEqual(x.elem, x_loaded.elem)
@@ -1593,17 +1499,16 @@ $3: f32[] = torch._ops.aten.add.Tensor($1, $2)""",
         self.assertIsInstance(y, ModeTensor)
         self.assertIsInstance(z, ModeTensor)
 
-        if not self.assertRaisesRegex(
+        assert self.assertRaisesRegex(
             RuntimeError,
             "subclass Mode but.* associated to a python object of type Mode",
-        ):
-            raise AssertionError("expected RuntimeError")
+        )
 
     def test_notimplemented_mode(self):
         sub_count = 0
 
         class PoliteMode(TorchDispatchMode):
-            def __init__(self) -> None:
+            def __init__(self):
                 self.pre_count = 0
                 self.post_count = 0
 
@@ -1708,35 +1613,6 @@ $0: f32[] = torch._ops.aten.empty.memory_format([], device=device(type='cpu'), p
         self.assertFalse(all_same_mode([x, None]))
         self.assertFalse(all_same_mode([x, y]))
 
-    def test_mode_detection(self):
-        class InfraMode(TorchDispatchMode):
-            @classmethod
-            def is_infra_mode(cls):
-                return True
-
-        class NonInfraMode(TorchDispatchMode):
-            pass
-
-        with InfraMode():
-            self.assertTrue(is_in_torch_dispatch_mode())
-            self.assertFalse(is_in_torch_dispatch_mode(include_infra_modes=False))
-            with NonInfraMode():
-                self.assertTrue(is_in_torch_dispatch_mode())
-                self.assertTrue(is_in_torch_dispatch_mode(include_infra_modes=False))
-                with InfraMode():
-                    self.assertTrue(is_in_torch_dispatch_mode())
-                    self.assertTrue(
-                        is_in_torch_dispatch_mode(include_infra_modes=False)
-                    )
-
-                self.assertTrue(is_in_torch_dispatch_mode())
-                self.assertTrue(is_in_torch_dispatch_mode(include_infra_modes=False))
-            self.assertTrue(is_in_torch_dispatch_mode())
-            self.assertFalse(is_in_torch_dispatch_mode(include_infra_modes=False))
-
-        self.assertFalse(is_in_torch_dispatch_mode())
-        self.assertFalse(is_in_torch_dispatch_mode(include_infra_modes=False))
-
     def test_tolist_numpy_with_torch_dispatch_mode(self) -> None:
         x = LoggingTensor(torch.tensor([2.0, 3.0]))
         with self.assertRaisesRegex(
@@ -1749,23 +1625,6 @@ $0: f32[] = torch._ops.aten.empty.memory_format([], device=device(type='cpu'), p
             x.numpy()
         with self.assertRaises(AssertionError):
             self.assertEqual(x, None)
-
-    # See https://github.com/pytorch/pytorch/issues/136064
-    def test_view_returns_alias_under_torch_dispatch(self):
-        class MyMode(TorchDispatchMode):
-            def __init__(self, testcase):
-                self.testcase = testcase
-
-            def __torch_dispatch__(self, func, types, args=(), kwargs=None):
-                out = func(*args, **kwargs)
-                if func == torch.ops.aten.view.dtype:
-                    # view should return a fresh TensorImpl
-                    self.testcase.assertTrue(out is not args[0])
-                return out
-
-        with MyMode(self):
-            x = torch.ones(4, dtype=torch.float32)
-            out = x.view(torch.float32)
 
     def test_record_stream(self) -> None:
         class TestMode(TorchDispatchMode):
@@ -1811,6 +1670,46 @@ $0: f32[] = torch._ops.aten.empty.memory_format([], device=device(type='cpu'), p
                 self.assertEqual(s.stream_id, 1)
                 self.assertEqual(s.device_index, 2)
                 self.assertEqual(s.device_type, 3)
+
+    def test_subclass_autograd_device_check(self) -> None:
+        class NonWrapperSubclass(torch.Tensor):
+            elem: torch.Tensor
+
+            __slots__ = ["elem"]
+
+            @staticmethod
+            def __new__(cls, elem, *args, **kwargs):
+                # Wrong device here!
+                r = torch.Tensor._make_subclass(
+                    cls, elem.to("meta"), elem.requires_grad
+                )
+                # ...the real tensor is held as an element on the tensor.
+                r.elem = elem
+                return r
+
+            @classmethod
+            def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+                def unwrap(e):
+                    return e.elem if isinstance(e, NonWrapperSubclass) else e
+
+                def wrap(e):
+                    return NonWrapperSubclass(e) if isinstance(e, torch.Tensor) else e
+
+                rs = tree_map(
+                    wrap, func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs))
+                )
+                logging.getLogger("NonWrapperSubclass").info(
+                    f"{func.__module__}.{func.__name__}", args, kwargs, rs  # noqa: G004
+                )
+                return rs
+
+        x = NonWrapperSubclass(torch.tensor([3.0, 4.0], requires_grad=True))
+        y = torch.randn(2, requires_grad=True)
+        z = x * y
+        self.assertIsInstance(z, NonWrapperSubclass)
+        z.sum().backward(torch.tensor(1))
+        self.assertEqual(x.grad, y)
+        self.assertEqual(y.grad, x)
 
     def test_none_wrapping(self):
         # A Tensor subclass that returns None when doing add
@@ -2053,8 +1952,6 @@ $0: f32[] = torch._ops.aten.empty.memory_format([], device=device(type='cpu'), p
                 def __torch_dispatch__(cls, func, types, args, kwargs):
                     if func.overloadpacket == torch.ops.aten.is_contiguous:
                         return contiguous_data.is_contiguous()
-                    if func.overloadpacket == torch.ops.aten.sym_is_contiguous:
-                        return torch.ops.aten.sym_is_contiguous(contiguous_data)
                     return NotImplemented
 
             class ExampleTensor3(torch.Tensor):
@@ -2068,8 +1965,6 @@ $0: f32[] = torch._ops.aten.empty.memory_format([], device=device(type='cpu'), p
                 def __torch_dispatch__(cls, func, types, args, kwargs):
                     if func.overloadpacket == torch.ops.aten.is_contiguous:
                         return not_contiguous_data.is_contiguous()
-                    if func.overloadpacket == torch.ops.aten.sym_is_contiguous:
-                        return torch.ops.aten.sym_is_contiguous(not_contiguous_data)
                     return NotImplemented
 
             err_msg = "Multiple dispatch failed for 'torch.ops.aten.is_contiguous'"
@@ -2102,7 +1997,6 @@ $0: f32[] = torch._ops.aten.empty.memory_format([], device=device(type='cpu'), p
             @classmethod
             def __torch_dispatch__(cls, func, types, args, kwargs):
                 if func in [
-                    torch.ops.aten.sym_is_contiguous.default,
                     torch.ops.aten.is_contiguous.default,
                     torch.ops.aten.is_contiguous.memory_format,
                     torch.ops.aten.is_strides_like_format.default,
@@ -2514,74 +2408,6 @@ def forward(self, x_1):
             e = LayoutDefaultReturn(torch.randn(4, 2), use_wrapper_subclass)
             self.assertEqual(e.layout, torch.strided)
 
-    def test_wrapper_subclass_reentrant_dispatch_with_mode(self):
-        # Tests the interaction between a wrapper subclass using reentrant dispatch
-        # and a TorchDispatchMode. See https://github.com/pytorch/pytorch/issues/136565
-
-        # simple passthrough TorchDispatchMode
-        class CustomDispatchMode(TorchDispatchMode):
-            def __torch_dispatch__(self, func, types, args=..., kwargs=None):
-                return func(*args, **kwargs)
-
-        # derive from TwoTensor to minimize boilerplate
-        class MySubclass(TwoTensor):
-            def __torch_dispatch__(self, func, types, args, kwargs=None):
-                with torch.overrides.enable_reentrant_dispatch():
-                    return func(args[0].a)
-
-        t = MySubclass(torch.rand(2), torch.rand(2))
-        with CustomDispatchMode():
-            res = t.clone()
-
-        self.assertEqual(res, t.a)
-        self.assertIs(type(res), torch.Tensor)
-
-    def test_custom_dispatch_mode_supports_higher_order_operators(self):
-        class Mode(TorchDispatchMode):
-            supports_higher_order_operators = True
-
-            def __torch_dispatch__(self, func, types, args=..., kwargs=None):
-                if func is torch.ops.higher_order.cond:
-                    return torch.ones(3, 3)
-                return NotImplemented
-
-        pred = torch.tensor(True)
-        x = torch.randn(1, 1)
-        with Mode():
-            out = torch.cond(pred, lambda x: x.sin(), lambda x: x.cos(), (x,))
-        self.assertEqual(out, torch.ones(3, 3))
-
-    def test_custom_dispatch_mode_not_supports_higher_order_operators(self):
-        class Mode(TorchDispatchMode):
-            supports_higher_order_operators = False
-
-            def __torch_dispatch__(self, func, types, args=..., kwargs=None):
-                if func is torch.ops.higher_order.cond:
-                    return torch.ones(3, 3)
-                return NotImplemented
-
-        pred = torch.tensor(True)
-        x = torch.randn(1, 1)
-        with self.assertRaisesRegex(
-            NotImplementedError,
-            "There was no rule registered for HigherOrderOperator cond and mode",
-        ):
-            with Mode():
-                torch.cond(pred, lambda x: x.sin(), lambda x: x.cos(), (x,))
-
-    def test_dispatch_uint64(self):
-        class DummyMode(TorchDispatchMode):
-            def __torch_dispatch__(self, func, types, args, kwargs):
-                self.last_args = args
-                return func(*args, **kwargs)
-
-        # Value that could not be interpreted as signed int64
-        uarg = 2**63 + 1
-        with DummyMode() as m:
-            a = torch.full((3, 3), uarg, dtype=torch.uint64)
-            self.assertEqual(m.last_args[1], uarg)
-        self.assertTrue((a == uarg).all().item())
-
 
 class TestPythonDispatcher(TestCase):
     def test_basic(self):
@@ -2704,15 +2530,6 @@ class TestWrapperSubclassAliasing(TestCase):
         args = (torch.ones(4), torch.ones(4))
         kwargs = {"out": torch.empty(4)}
         self._test_wrapper_subclass_aliasing(torch.ops.aten.add.out, args, kwargs)
-
-    def test_wrapper_subclass_aliasing_fft_fft2(self, device):
-        args = (torch.randn(4, 4),)
-        kwargs = {}
-        # fft_fft2 has a default arg 'int[1] dim=[-2,-1]',
-        # Make sure that _return_and_correct_aliasing can handle this case
-        # (I'm using inference_mode to make sure fft_fft2 doesn't decompose and goes to torch_dispatch)
-        with torch.inference_mode():
-            self._test_wrapper_subclass_aliasing(torch.ops.aten.fft_fft2, args, kwargs)
 
 
 instantiate_device_type_tests(TestWrapperSubclassAliasing, globals())

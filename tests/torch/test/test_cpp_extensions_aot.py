@@ -8,22 +8,17 @@ from typing import get_args, get_origin, Union
 
 import torch
 import torch.backends.cudnn
+
 import torch.testing._internal.common_utils as common
 import torch.utils.cpp_extension
 from torch.testing._internal.common_cuda import TEST_CUDA
-from torch.testing._internal.common_utils import (
-    IS_WINDOWS,
-    skipIfTorchDynamo,
-    TEST_XPU,
-    xfailIfTorchDynamo,
-)
-
+from torch.testing._internal.common_utils import IS_WINDOWS, skipIfTorchDynamo
 
 try:
     import pytest
 
     HAS_PYTEST = True
-except ImportError:
+except ImportError as e:
     HAS_PYTEST = False
 
 # TODO: Rewrite these tests so that they can be collected via pytest without
@@ -110,22 +105,6 @@ class TestCppExtensionAOT(common.TestCase):
 
         self.assertEqual(cpu_output, mps_output.to("cpu"))
 
-    @unittest.skipIf(not TEST_XPU, "XPU not found")
-    @unittest.skipIf(
-        os.getenv("USE_NINJA", "0") == "0",
-        "sycl extension requires ninja to build",
-    )
-    def test_sycl_extension(self):
-        import torch_test_cpp_extension.sycl as sycl_extension
-
-        x = torch.zeros(100, device="xpu", dtype=torch.float32)
-        y = torch.zeros(100, device="xpu", dtype=torch.float32)
-
-        z = sycl_extension.sigmoid_add(x, y).cpu()
-
-        # 2 * sigmoid(0) = 2 * 0.5 = 1
-        self.assertEqual(z, torch.ones_like(z))
-
     @common.skipIfRocm
     @unittest.skipIf(common.IS_WINDOWS, "Windows not supported")
     @unittest.skipIf(not TEST_CUDA, "CUDA not found")
@@ -148,8 +127,7 @@ class TestCppExtensionAOT(common.TestCase):
 
     @unittest.skipIf(IS_WINDOWS, "Not available on Windows")
     def test_no_python_abi_suffix_sets_the_correct_library_name(self):
-        # For this test, run_test.py will call
-        # `python -m pip install . -v --no-build-isolation` in the
+        # For this test, run_test.py will call `python setup.py install` in the
         # cpp_extensions/no_python_abi_suffix_test folder, where the
         # `BuildExtension` class has a `no_python_abi_suffix` option set to
         # `True`. This *should* mean that on Python 3, the produced shared
@@ -203,7 +181,7 @@ class TestPybindTypeCasters(common.TestCase):
         Our Pybind functions have a signature of the form `() -> return_type`.
         """
         # Imports needed for the `eval` below.
-        from typing import List, Tuple  # noqa: F401, UP035
+        from typing import List, Tuple  # noqa: F401
 
         return eval(re.search("-> (.*)\n", func.__doc__).group(1))
 
@@ -240,8 +218,7 @@ class TestPybindTypeCasters(common.TestCase):
         """
         # Verify that all functions have the same return type.
         union_type = {self.expected_return_type(f) for f in funcs}
-        if len(union_type) != 1:
-            raise AssertionError(f"expected 1 union type, got {len(union_type)}")
+        assert len(union_type) == 1
         union_type = union_type.pop()
         self.assertIs(Union, get_origin(union_type))
         # SymInt is inconvenient to test, so don't require it
@@ -284,9 +261,9 @@ class TestPybindTypeCasters(common.TestCase):
 @torch.testing._internal.common_utils.markDynamoStrictTest
 class TestMAIATensor(common.TestCase):
     def test_unregistered(self):
-        torch.arange(0, 10, device="cpu")
+        a = torch.arange(0, 10, device="cpu")
         with self.assertRaisesRegex(RuntimeError, "Could not run"):
-            torch.arange(0, 10, device="maia")
+            b = torch.arange(0, 10, device="maia")
 
     @skipIfTorchDynamo("dynamo cannot model maia device")
     def test_zeros(self):
@@ -309,7 +286,7 @@ class TestMAIATensor(common.TestCase):
         b = torch.empty(5, 5, device="maia")
         self.assertEqual(maia_extension.get_test_int(), 0)
 
-        a + b
+        c = a + b
         self.assertEqual(maia_extension.get_test_int(), 1)
 
     def test_conv_backend_override(self):
@@ -319,50 +296,18 @@ class TestMAIATensor(common.TestCase):
         weight = torch.empty(6, 4, 2, 2, device="maia", requires_grad=True)
         bias = torch.empty(6, device="maia")
 
-        # Make sure forward is overridden
+        # Make sure forward is overriden
         out = torch.nn.functional.conv2d(input, weight, bias, 2, 0, 1, 1)
         self.assertEqual(maia_extension.get_test_int(), 2)
         self.assertEqual(out.shape[0], input.shape[0])
         self.assertEqual(out.shape[1], weight.shape[0])
 
-        # Make sure backward is overridden
+        # Make sure backward is overriden
         # Double backward is dispatched to _convolution_double_backward.
         # It is not tested here as it involves more computation/overrides.
         grad = torch.autograd.grad(out, input, out, create_graph=True)
         self.assertEqual(maia_extension.get_test_int(), 3)
         self.assertEqual(grad[0].shape, input.shape)
-
-    def test_autocast_apis_for_maia_device(self):
-        # Default low-precision type in MAIA's autocast.
-        fast_dtype = torch.get_autocast_dtype("maia")
-        self.assertEqual(fast_dtype, torch.bfloat16)
-        self.assertTrue(torch._C._is_autocast_available("maia"))
-
-    @skipIfTorchDynamo(
-        "dynamo cannot handle maia device. Output tensor may have wrong dtype."
-    )
-    def test_matmul_autocast_float16_precision(self):
-        # Ensure we can change low precision dtype.
-        x = torch.empty((2, 4), dtype=torch.float, device="maia")
-        w = torch.empty((4, 2), dtype=torch.float, device="maia")
-        with torch.autocast(device_type="maia", dtype=torch.float16):
-            self.assertTrue(torch.is_autocast_enabled("maia"))
-            y = torch.ops.aten.matmul(x, w)
-            self.assertEqual(y.dtype, torch.float16)
-            self.assertEqual(y.shape, (2, 2))
-
-    @skipIfTorchDynamo(
-        "dynamo cannot handle maia device. Output tensor may have wrong dtype."
-    )
-    def test_matmul_autocast_default_precision(self):
-        # Use default lower precision dtype, bfloat16.
-        x = torch.empty((2, 4), dtype=torch.float, device="maia")
-        w = torch.empty((4, 2), dtype=torch.float, device="maia")
-        with torch.autocast(device_type="maia"):
-            self.assertTrue(torch.is_autocast_enabled("maia"))
-            y = torch.ops.aten.matmul(x, w)
-            self.assertEqual(y.dtype, torch.bfloat16)
-            self.assertEqual(y.shape, (2, 2))
 
 
 @torch.testing._internal.common_utils.markDynamoStrictTest
@@ -370,7 +315,7 @@ class TestRNGExtension(common.TestCase):
     def setUp(self):
         super().setUp()
 
-    @xfailIfTorchDynamo
+    @skipIfTorchDynamo("https://github.com/pytorch/torchdynamo/issues/1991")
     def test_rng(self):
         fourty_two = torch.full((10,), 42, dtype=torch.int64)
 

@@ -19,8 +19,7 @@ def get_custom_backend_library_path():
     else:
         library_filename = "libcustom_backend.so"
     path = os.path.abspath(f"build/{library_filename}")
-    if not os.path.exists(path):
-        raise AssertionError(f"Library not found: {path}")
+    assert os.path.exists(path), path
     return path
 
 
@@ -59,8 +58,7 @@ def main():
     # Load the library containing the custom backend.
     library_path = get_custom_backend_library_path()
     torch.ops.load_library(library_path)
-    if library_path not in torch.ops.loaded_libraries:
-        raise AssertionError(f"Library not loaded: {library_path}")
+    assert library_path in torch.ops.loaded_libraries
 
     # Lower an instance of Model to the custom backend  and export it
     # to the specified location.

@@ -7,14 +7,12 @@ import torch
 import torch.distributed as dist
 import torch.distributed.checkpoint as dist_cp
 import torch.nn as nn
+from torch.distributed._tensor import init_device_mesh
 from torch.distributed.checkpoint.state_dict import (
-    get_model_state_dict,
     get_state_dict,
-    set_model_state_dict,
     set_state_dict,
     StateDictOptions,
 )
-from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
@@ -82,23 +80,22 @@ class FineTuningModel(nn.Module):
 class TestFineTuning(DTensorTestBase):
     @property
     def world_size(self) -> int:
-        return min(4, torch.accelerator.device_count())
+        return min(4, torch.cuda.device_count())
 
     @property
     def backend(self):
-        curr_backend = dist.get_default_backend_for_device(self.device_type)
-        return f"cpu:gloo,{self.device_type}:{curr_backend}"
+        return "cpu:gloo,cuda:nccl"
 
     def pretrain(self, pretrain_dir: str) -> None:
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
 
-        model = PreTrainedModel().to(self.device_type)
+        model = PreTrainedModel().cuda()
         model = FSDP(model, device_mesh=device_mesh)
         optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 
         # Training
-        for _ in range(3):
-            batch = torch.rand(32, DIM, device=self.device_type)
+        for i in range(3):
+            batch = torch.rand(32, DIM, device="cuda")
             loss = model(batch).sum()
             loss.backward()
             optim.step()
@@ -107,7 +104,7 @@ class TestFineTuning(DTensorTestBase):
         # Save state_dict
         model_state_dict, optim_state_dict = get_state_dict(model, optimizers=optim)
         saved_state_dict = {"model": model_state_dict, "optim": optim_state_dict}
-        dist_cp.save(
+        dist_cp.save_state_dict(
             state_dict=saved_state_dict,
             storage_writer=dist_cp.FileSystemWriter(pretrain_dir),
         )
@@ -115,7 +112,7 @@ class TestFineTuning(DTensorTestBase):
     def finetune(self, pretrain_dir: str, finetune_dir: str) -> None:
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
 
-        model = FineTuningModel().to(self.device_type)
+        model = FineTuningModel().cuda()
         # TODO: make the parallelism more complicated, e.g., using 2D + DDP.
         model = FSDP(model, use_orig_params=True, device_mesh=device_mesh)
         optim = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -123,16 +120,16 @@ class TestFineTuning(DTensorTestBase):
         # Simulate that the fine tuning restart after 3 iterations
         for i in range(2):
             # Load pretrain submodules checkpoint
-            pretrain_state_dict = get_model_state_dict(
+            pretrain_state_dict, _ = get_state_dict(
                 model,
                 submodules={model.pretrain},
                 options=StateDictOptions(keep_submodule_prefixes=False),
             )
-            dist_cp.load(
+            dist_cp.load_state_dict(
                 {"model": pretrain_state_dict},
                 storage_reader=dist_cp.FileSystemReader(pretrain_dir),
             )
-            set_model_state_dict(
+            set_state_dict(
                 model,
                 model_state_dict={model.pretrain: pretrain_state_dict},
                 options=StateDictOptions(strict=False),
@@ -162,8 +159,8 @@ class TestFineTuning(DTensorTestBase):
                 self.assertEqual(i, 0)
 
             # Training
-            for _ in range(3):
-                batch = torch.rand(32, DIM, device=self.device_type)
+            for j in range(3):
+                batch = torch.rand(32, DIM, device="cuda")
                 loss = model(batch).sum()
                 loss.backward()
                 optim.step()
@@ -176,7 +173,7 @@ class TestFineTuning(DTensorTestBase):
                 options=StateDictOptions(ignore_frozen_params=True),
             )
             saved_state_dict = {"model": model_state_dict, "optim": optim_state_dict}
-            dist_cp.save(
+            dist_cp.save_state_dict(
                 state_dict=saved_state_dict,
                 storage_writer=dist_cp.FileSystemWriter(finetune_dir),
             )

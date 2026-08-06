@@ -6,8 +6,14 @@ from typing import Callable, List
 import torch
 from torch import nn
 from torch.testing import FileCheck
-from torch.testing._internal.common_utils import raise_on_run_directly
 from torch.testing._internal.jit_utils import _inline_everything, JitTestCase, RUN_CUDA
+
+if __name__ == "__main__":
+    raise RuntimeError(
+        "This test file is not meant to be run directly, use:\n\n"
+        "\tpython test/test_jit.py TESTNAME\n\n"
+        "instead."
+    )
 
 
 class TestPeephole(JitTestCase):
@@ -37,7 +43,7 @@ class TestPeephole(JitTestCase):
             return y + y
 
         a = torch.ones(4, 4)
-        self.checkScript(test_write, (a,))
+        j = self.checkScript(test_write, (a,))
 
     def test_peephole_no_output_aliasing(self):
         def test_peephole(x):
@@ -86,7 +92,7 @@ class TestPeephole(JitTestCase):
         @torch.jit.script
         def foo(x, y, z):
             li = [x, y, z]
-            for _ in range(len(x)):
+            for i in range(len(x)):
                 li.append(x)
             return len([x, y, z])
 
@@ -113,7 +119,7 @@ class TestPeephole(JitTestCase):
         @torch.jit.script
         def foo(x, y, z):
             li = [x, y, z]
-            for _ in range(len(x)):
+            for i in range(len(x)):
                 li.append(x)
             return li[-2]
 
@@ -152,7 +158,7 @@ class TestPeephole(JitTestCase):
         self.run_pass("peephole", test.graph)
         FileCheck().check_not("prim::unchecked_cast").run(test.graph)
 
-        # refinement not optimized out
+        # refinement not optimzied out
         def is_int_tensor(x):
             scalar = x.item()
             if isinstance(scalar, int):
@@ -196,7 +202,7 @@ class TestPeephole(JitTestCase):
         for mod in modules:
 
             class ConvDim(torch.nn.Module):
-                def __init__(self) -> None:
+                def __init__(self):
                     super().__init__()
                     self.conv = mod(3, 32, kernel_size=3, stride=2, bias=False)
 
@@ -210,7 +216,7 @@ class TestPeephole(JitTestCase):
             FileCheck().check_not("conv").check_not("dim").run(conv_dim.graph)
 
             class ConvDimMutate(torch.nn.Module):
-                def __init__(self) -> None:
+                def __init__(self):
                     super().__init__()
                     self.conv = mod(3, 32, kernel_size=3, stride=2, bias=False)
 
@@ -341,7 +347,7 @@ class TestPeephole(JitTestCase):
                 x1 = True
             else:
                 x1 = len(b) != 4
-            assert x1 == False  # noqa: E712, S101 TODO: canonicalize x is False to aten::eq
+            assert x1 == False  # noqa: E712 TODO: canonicalize x is False to aten::eq
             return len(x), len(b)
 
         torch._C._jit_pass_peephole_list_idioms(foo.graph, refine_list_len=True)
@@ -355,12 +361,12 @@ class TestPeephole(JitTestCase):
                 x1 = False
             else:
                 x1 = len(b) != 4
-            assert x1 == False  # noqa: E712, S101 TODO: canonicalize x is False to aten::eq
+            assert x1 == False  # noqa: E712 TODO: canonicalize x is False to aten::eq
             return len(x), len(b)
 
         torch._C._jit_pass_peephole_list_idioms(foo.graph, refine_list_len=True)
         torch._C._jit_pass_constant_propagation(foo.graph)
-        # can't infer anything
+        # cant infer anything
         test_const_tuple_output(foo.graph, [])
 
         @torch.jit.script
@@ -369,12 +375,12 @@ class TestPeephole(JitTestCase):
                 x1 = True
             else:
                 x1 = len(b) == 4
-            assert x1 == False  # noqa: E712, S101 TODO: canonicalize x is False to aten::eq
+            assert x1 == False  # noqa: E712 TODO: canonicalize x is False to aten::eq
             return len(x), len(b)
 
         torch._C._jit_pass_peephole_list_idioms(foo.graph, refine_list_len=True)
         torch._C._jit_pass_constant_propagation(foo.graph)
-        # we can't infer anything, only len(b) != 4
+        # we cant infer anything, only len(b) != 4
         test_const_tuple_output(foo.graph, [])
 
         @torch.jit.script
@@ -383,7 +389,7 @@ class TestPeephole(JitTestCase):
                 x1 = True
             else:
                 x1 = len(b) != 4
-            assert x1 == False  # noqa: E712, S101 TODO: canonicalize x is False to aten::eq
+            assert x1 == False  # noqa: E712 TODO: canonicalize x is False to aten::eq
             return len(x), len(b)
 
         torch._C._jit_pass_peephole_list_idioms(foo.graph, refine_list_len=True)
@@ -398,7 +404,7 @@ class TestPeephole(JitTestCase):
                 x1 = len(b) != 4
             else:
                 x1 = True
-            assert x1 == False  # noqa: E712, S101 TODO: canonicalize x is False to aten::eq
+            assert x1 == False  # noqa: E712 TODO: canonicalize x is False to aten::eq
             return len(x), len(b)
 
         torch._C._jit_pass_peephole_list_idioms(foo.graph, refine_list_len=True)
@@ -413,7 +419,7 @@ class TestPeephole(JitTestCase):
                 x1 = len(b) != 4
             else:
                 x1 = True
-            assert not x1  # noqa: S101
+            assert not x1
             return len(x), len(b)
 
         torch._C._jit_pass_peephole_list_idioms(foo.graph, refine_list_len=True)
@@ -425,7 +431,7 @@ class TestPeephole(JitTestCase):
 
         @torch.jit.script
         def foo(x: List[int]):
-            assert len(x) == 4  # noqa: S101
+            assert len(x) == 4
             x.append(3)
             return len(x)
 
@@ -435,7 +441,7 @@ class TestPeephole(JitTestCase):
 
         @torch.jit.script
         def foo(x: List[int], y: List[int]):
-            assert len(x) == 4 or len(y) == 5  # noqa: S101
+            assert len(x) == 4 or len(y) == 5
             return len(x) + len(y)
 
         torch._C._jit_pass_peephole_list_idioms(foo.graph, refine_list_len=True)
@@ -515,7 +521,7 @@ class TestPeephole(JitTestCase):
 
         @torch.jit.script
         def foo(x: int, y: int):
-            assert x == 4 or y == 5  # noqa: S101
+            assert x == 4 or y == 5
             return x + y
 
         torch._C._jit_pass_peephole_list_idioms(foo.graph, refine_list_len=True)
@@ -883,7 +889,3 @@ class TestPeephole(JitTestCase):
 
         self.run_pass("peephole", foo.graph)
         FileCheck().check("aten::slice").run(foo.graph)
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

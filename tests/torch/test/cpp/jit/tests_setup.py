@@ -18,6 +18,7 @@ class FileSetup:
     def shutdown(self):
         if os.path.exists(self.path):
             os.remove(self.path)
+            pass
 
 
 class EvalModeForLoadedModule(FileSetup):
@@ -25,7 +26,7 @@ class EvalModeForLoadedModule(FileSetup):
 
     def setup(self):
         class Model(torch.jit.ScriptModule):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.dropout = torch.nn.Dropout(0.1)
 

@@ -1,6 +1,7 @@
 # Owner(s): ["module: dynamo"]
 
 import functools
+
 from unittest import expectedFailure as xfail, skipIf
 
 from pytest import raises as assert_raises  # , assert_raises_regex,
@@ -11,9 +12,8 @@ from torch.testing._internal.common_utils import (
     run_tests,
     TEST_WITH_TORCHDYNAMO,
     TestCase,
-    xpassIfTorchDynamo_np,
+    xpassIfTorchDynamo,
 )
-
 
 skip = functools.partial(skipIf, True)
 
@@ -49,7 +49,7 @@ else:
     )
 
 
-@xpassIfTorchDynamo_np  # (reason="unravel_index not implemented")
+@xpassIfTorchDynamo  # (reason="unravel_index not implemented")
 @instantiate_parametrized_tests
 class TestRavelUnravelIndex(TestCase):
     def test_basic(self):
@@ -208,8 +208,7 @@ class TestRavelUnravelIndex(TestCase):
         res = np.ravel_multi_index(
             np.zeros((3, 0), dtype=np.intp), (2, 1, 0), mode=mode
         )
-        if res.shape != (0,):
-            raise AssertionError(f"Expected res.shape == (0,), got {res.shape}")
+        assert res.shape == (0,)
 
         with assert_raises(ValueError):
             np.ravel_multi_index(np.zeros((3, 1), dtype=np.intp), (2, 1, 0), mode=mode)
@@ -217,10 +216,8 @@ class TestRavelUnravelIndex(TestCase):
     def test_empty_array_unravel(self):
         res = np.unravel_index(np.zeros(0, dtype=np.intp), (2, 1, 0))
         # res is a tuple of three empty arrays
-        if len(res) != 3:
-            raise AssertionError(f"Expected len(res) == 3, got {len(res)}")
-        if not all(a.shape == (0,) for a in res):
-            raise AssertionError("Expected all arrays in res to have shape (0,)")
+        assert len(res) == 3
+        assert all(a.shape == (0,) for a in res)
 
         with assert_raises(ValueError):
             np.unravel_index([1], (2, 1, 0))
@@ -287,7 +284,7 @@ class TestGrid(TestCase):
         assert_equal(grid.size, expected[0])
         assert_equal(grid_small.size, expected[1])
 
-    @xfail  # (reason="mgrid not implemented")
+    @xfail  # (reason="mgrid not implementd")
     def test_accepts_npfloating(self):
         # regression test for #16466
         grid64 = mgrid[0.1:0.33:0.1,]
@@ -454,7 +451,7 @@ class TestIx_(TestCase):
 
 
 class TestC(TestCase):
-    @xpassIfTorchDynamo_np  # (reason="c_ not implemented")
+    @xpassIfTorchDynamo  # (reason="c_ not implemented")
     def test_c_(self):
         a = np.c_[np.array([[1, 2, 3]]), 0, 0, np.array([[4, 5, 6]])]
         assert_equal(a, [[1, 2, 3, 0, 0, 4, 5, 6]])

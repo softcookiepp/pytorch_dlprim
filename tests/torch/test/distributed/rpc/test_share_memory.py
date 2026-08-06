@@ -9,7 +9,6 @@ import sys
 import torch
 import torch.distributed as dist
 
-
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -45,9 +44,9 @@ class ShareMemoryRPCPickler(_InternalRPCPickler):
         for t in torch._tensor_classes:
             self._dispatch_table[t] = TorchMpReductions.reduce_tensor
         self._dispatch_table[torch.Tensor] = TorchMpReductions.reduce_tensor
-        self._dispatch_table[torch.nn.parameter.Parameter] = (
-            TorchMpReductions.reduce_tensor
-        )
+        self._dispatch_table[
+            torch.nn.parameter.Parameter
+        ] = TorchMpReductions.reduce_tensor
 
 
 def worker_loop(a):

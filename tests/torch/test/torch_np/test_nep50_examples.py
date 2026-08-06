@@ -5,7 +5,6 @@
 import itertools
 from unittest import skipIf as skipif, SkipTest
 
-
 try:
     import numpy as _np
 
@@ -17,21 +16,21 @@ except ImportError:
 import torch._numpy as tnp
 from torch._numpy import (  # noqa: F401
     array,
-    bool_,
+    bool_,  # noqa: F401
     complex128,
     complex64,
     float32,
     float64,
     inf,
     int16,
-    int32,
+    int32,  # noqa: F401
     int64,
     uint8,
 )
 from torch._numpy.testing import assert_allclose
+
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
-    IS_WINDOWS,
     parametrize,
     run_tests,
     TestCase,
@@ -47,7 +46,6 @@ uint16 = uint8  # can be anything here, see below
 # np._set_promotion_state('weak')
 
 from pytest import raises as assert_raises
-
 
 unchanged = None
 
@@ -95,7 +93,7 @@ class TestNEP50Table(TestCase):
     def test_nep50_exceptions(self, example):
         old, new = examples[example]
 
-        if new is Exception:
+        if new == Exception:
             with assert_raises(OverflowError):
                 eval(example)
 
@@ -106,10 +104,7 @@ class TestNEP50Table(TestCase):
                 new = old
 
             assert_allclose(result, new, atol=1e-16)
-            if result.dtype != new.dtype:
-                raise AssertionError(
-                    f"Expected result.dtype == {new.dtype}, got {result.dtype}"
-                )
+            assert result.dtype == new.dtype
 
 
 # ### Directly compare to numpy ###
@@ -177,12 +172,8 @@ class TestCompareToNumpy(TestCase):
             if dtype is not None:
                 kwargs = {"dtype": getattr(tnp, dtype.__name__)}
             result = tnp.add(scalar, array, **kwargs).tensor.numpy()
-            if result.dtype != result_numpy.dtype:
-                raise AssertionError(
-                    f"Expected result.dtype == {result_numpy.dtype}, got {result.dtype}"
-                )
-            if result != result_numpy:
-                raise AssertionError(f"Expected result == {result_numpy}, got {result}")
+            assert result.dtype == result_numpy.dtype
+            assert result == result_numpy
 
         finally:
             _np._set_promotion_state(state)
@@ -217,36 +208,8 @@ class TestCompareToNumpy(TestCase):
                 # TypeError: ufunc 'hypot' not supported for the input types
                 result_numpy = None
 
-            type_mismatch = False
-            expected_numpy_dtype = None
-            expected_torch_dtype = None
-
             if result is not None and result_numpy is not None:
-                expected_numpy_dtype = result_numpy.dtype
-                expected_torch_dtype = result.tensor.numpy().dtype
-                if IS_WINDOWS:
-                    if (
-                        array.tensor.numpy().dtype != _np.bool_
-                        and result.tensor.numpy().dtype != result_numpy.dtype
-                    ):
-                        type_mismatch = True
-
-                    if (
-                        array.tensor.numpy().dtype == _np.bool_
-                        and result_numpy.dtype == _np.int32
-                        and result.tensor.numpy().dtype != _np.int64
-                    ):
-                        expected_numpy_dtype = _np.int32
-                        expected_torch_dtype = tnp.int64
-                        type_mismatch = True
-                else:
-                    if result.tensor.numpy().dtype != result_numpy.dtype:
-                        type_mismatch = True
-
-            if type_mismatch:
-                raise AssertionError(
-                    f"Expected result numpy dtype == {expected_numpy_dtype}, torch dtype == {expected_torch_dtype}"
-                )
+                assert result.tensor.numpy().dtype == result_numpy.dtype
 
         finally:
             _np._set_promotion_state(state)

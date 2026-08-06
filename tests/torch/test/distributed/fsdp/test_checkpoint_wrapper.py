@@ -16,15 +16,11 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     OffloadWrapper,
 )
 from torch.distributed.fsdp.wrap import ModuleWrapPolicy
-from torch.testing._internal.common_fsdp import get_devtype
 from torch.testing._internal.common_utils import run_tests, TestCase
 from torch.utils.checkpoint import checkpoint
 
-
 _SAVED_PREFIX = "_saved_"
 GRAD_FN_NEXT_FUNCTIONS = "next_functions"
-
-device_type = torch.device(get_devtype())
 
 
 class CheckpointWrapperTest(TestCase):
@@ -59,7 +55,7 @@ class CheckpointWrapperTest(TestCase):
 
     def test_checkpoint_wrapper_kwarg_support(self):
         class MyModel(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.lin = nn.Linear(10, 10)
 
@@ -73,7 +69,7 @@ class CheckpointWrapperTest(TestCase):
         ]:
             with self.subTest(wrapper=wrapper):
                 model = wrapper(MyModel())
-                if wrapper is offload_wrapper:
+                if wrapper == offload_wrapper:
                     self.assertTrue(isinstance(model, OffloadWrapper))
                 else:
                     self.assertTrue(isinstance(model, CheckpointWrapper))
@@ -90,7 +86,7 @@ class CheckpointWrapperTest(TestCase):
 
         # Test model that enforces kwarg inputs
         class ModelEnforceKwarg(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.lin = nn.Linear(10, 10)
 
@@ -133,7 +129,7 @@ class CheckpointWrapperTest(TestCase):
         m(torch.randn(2, 1)).sum().backward()
         self.assertEqual(2, count)
 
-    @unittest.skip
+    @unittest.skipIf(not torch.cuda.is_available(), "Test requires CUDA")
     def test_checkpoint_wrapper_parity(self):
         """
         Tests that using checkpoint_wrapper or the functional
@@ -158,13 +154,11 @@ class CheckpointWrapperTest(TestCase):
                 self.use_reentrant = use_reentrant
                 wrp = partial(
                     checkpoint_wrapper,
-                    checkpoint_impl=(
-                        CheckpointImpl.REENTRANT
-                        if use_reentrant
-                        else CheckpointImpl.NO_REENTRANT
-                    ),
+                    checkpoint_impl=CheckpointImpl.REENTRANT
+                    if use_reentrant
+                    else CheckpointImpl.NO_REENTRANT,
                 )
-                for _ in range(self.n):
+                for i in range(self.n):
                     l = nn.Sequential(
                         nn.Linear(256, 256), nn.Linear(256, 256), nn.Linear(256, 256)
                     )
@@ -189,12 +183,12 @@ class CheckpointWrapperTest(TestCase):
                 use_checkpointing,
                 use_wrapper=use_wrapper,
                 use_reentrant=use_reentrant,
-            ).to(device_type.type)
-            x = torch.randn(10000, 256, requires_grad=True).to(device_type.type)
-            torch.get_device_module(device_type.type).reset_peak_memory_stats()
+            ).cuda()
+            x = torch.randn(10000, 256, requires_grad=True).cuda()
+            torch.cuda.reset_peak_memory_stats()
             loss = a(x).sum()
             loss.backward()
-            return torch.get_device_module(device_type.type).max_memory_allocated()
+            return torch.cuda.max_memory_allocated()
 
         functional_no_reentrant = test(
             use_checkpointing=True, use_wrapper=False, use_reentrant=False
@@ -230,7 +224,7 @@ class CheckpointWrapperTest(TestCase):
         """
 
         class LinearWithBatchNorm(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.lin = nn.Linear(10, 10)
                 self.bn = nn.BatchNorm1d(10)
@@ -240,7 +234,7 @@ class CheckpointWrapperTest(TestCase):
                 return self.bn(self.nested_linear(self.lin(x)))
 
         class MyModel(nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.seq = nn.Sequential(
                     LinearWithBatchNorm(), LinearWithBatchNorm(), LinearWithBatchNorm()
@@ -303,7 +297,7 @@ class CheckpointWrapperTest(TestCase):
                     )
 
                 inp = torch.randn(4, 10, requires_grad=True)
-                for _ in range(6):
+                for i in range(6):
                     # Kwarg input
                     loss = model(x=inp).sum()
                     self.assertTrue(loss.requires_grad)
@@ -338,12 +332,13 @@ class CheckpointWrapperTest(TestCase):
         for fqn, _ in lin.named_parameters():
             self.assertTrue(fqn in state_dict, msg=f"{fqn} not in state_dict.")
 
+    @unittest.skipIf(not torch.cuda.is_available(), "Test requires CUDA")
     def test_checkpoint_wrapper_cpu_offload(self):
         model = nn.Sequential(
             nn.Linear(10, 10),
             nn.Linear(10, 10),
             nn.Linear(10, 10),
-        ).to(device_type.type)
+        ).cuda()
 
         # Patch saved_tensor_hooks to make the unpack keep the tensor on CPU for
         # testing, otherwise the tensor access during the DFS will cause orig
@@ -362,7 +357,7 @@ class CheckpointWrapperTest(TestCase):
 
         model = offload_wrapper(model)
 
-        inp = torch.randn(3, 10, device=device_type.type)
+        inp = torch.randn(3, 10, device="cuda")
         loss = model(inp).sum()
 
         # All autograd saved tensors should be offloaded to CPU.
@@ -388,34 +383,6 @@ class CheckpointWrapperTest(TestCase):
         self.assertTrue(offload_verified)
 
         torch.autograd.graph.saved_tensors_hooks.__init__ = orig_init
-
-    @unittest.skipIf(not torch.cuda.is_available(), "requires CUDA")
-    def test_checkpoint_wrapper_with_block_mask(self):
-        """Test that BlockMask can be passed through checkpoint_wrapper."""
-        from torch.nn.attention.flex_attention import BlockMask, create_block_mask
-        from torch.utils._pytree import register_pytree_node, SUPPORTED_NODES
-
-        if BlockMask not in SUPPORTED_NODES:
-            register_pytree_node(
-                BlockMask,
-                BlockMask._flatten,
-                BlockMask._unflatten,
-                flatten_with_keys_fn=BlockMask._flatten_with_keys,
-                serialized_type_name="torch.nn.attention.flex_attention.BlockMask",
-            )
-
-        block_mask = create_block_mask(
-            lambda b, h, q, kv: q >= kv, B=1, H=1, Q_LEN=128, KV_LEN=128
-        )
-
-        class Block(nn.Module):
-            def forward(self, x, mask):
-                return x * 2
-
-        model = checkpoint_wrapper(Block()).cuda()
-        x = torch.randn(4, 128, device="cuda")
-        result = model(x, block_mask)
-        self.assertEqual(result, x * 2)
 
 
 if __name__ == "__main__":

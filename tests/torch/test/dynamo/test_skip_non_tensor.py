@@ -2,22 +2,22 @@
 from unittest.mock import patch
 
 import torch
+
 import torch._dynamo
 import torch._dynamo.test_case
 from torch._dynamo.testing import CompileCounter
-
 
 _variable = 0
 _variable_2 = 0
 
 
 def user_function():
-    return torch.compiler.is_compiling()
+    return torch._utils.is_compiling()
 
 
 def user_generator():
     for _ in range(1):
-        yield torch.compiler.is_compiling()
+        yield torch._utils.is_compiling()
     return
 
 
@@ -38,7 +38,7 @@ class MyModule(torch.nn.Module):
         global _variable, _variable_2
 
         if self.mode == 1:
-            if torch.compiler.is_compiling():
+            if torch._utils.is_compiling():
                 _variable += 1
             else:
                 _variable_2 += 1
@@ -46,7 +46,7 @@ class MyModule(torch.nn.Module):
             if user_function():
                 _variable += 1
         elif self.mode == 3:
-            lambda_f = lambda: torch.compiler.is_compiling()  # noqa: E731
+            lambda_f = lambda: torch._utils.is_compiling()  # noqa: E731
             if lambda_f():
                 _variable += 1
         elif self.mode == 4:
@@ -73,8 +73,7 @@ class SkipNonTensorTests(torch._dynamo.test_case.TestCase):
         opt_fn = torch._dynamo.optimize_assert(counter)(fn)
         opt_fn(x, y)
 
-        if counter.op_count != 1:
-            raise AssertionError(f"Expected op_count 1, got {counter.op_count}")
+        assert counter.op_count == 1
 
     def test_add_tensor2(self):
         def fn(a, b):
@@ -87,8 +86,7 @@ class SkipNonTensorTests(torch._dynamo.test_case.TestCase):
         opt_fn = torch._dynamo.optimize_assert(counter)(fn)
         opt_fn(x, y)
 
-        if counter.op_count != 1:
-            raise AssertionError(f"Expected op_count 1, got {counter.op_count}")
+        assert counter.op_count == 1
 
     def test_add_tensor_list(self):
         def fn(lst):
@@ -100,8 +98,7 @@ class SkipNonTensorTests(torch._dynamo.test_case.TestCase):
         opt_fn = torch._dynamo.optimize_assert(counter)(fn)
         opt_fn([x, y])
 
-        if counter.op_count != 1:
-            raise AssertionError(f"Expected op_count 1, got {counter.op_count}")
+        assert counter.op_count == 1
 
     def test_add_tensor_dict(self):
         def fn(dt):
@@ -113,8 +110,7 @@ class SkipNonTensorTests(torch._dynamo.test_case.TestCase):
         opt_fn = torch._dynamo.optimize_assert(counter)(fn)
         opt_fn({"a": x, "b": y})
 
-        if counter.op_count != 1:
-            raise AssertionError(f"Expected op_count 1, got {counter.op_count}")
+        assert counter.op_count == 1
 
     def test_add_skip(self):
         def fn(a, b):
@@ -126,8 +122,7 @@ class SkipNonTensorTests(torch._dynamo.test_case.TestCase):
         y = 5
         opt_fn(x, y)
 
-        if counter.op_count != 0:
-            raise AssertionError(f"Expected op_count 0, got {counter.op_count}")
+        assert counter.op_count == 0
 
     @patch.object(torch._dynamo.config, "raise_on_ctx_manager_usage", False)
     def test_recursive_list(self):
@@ -141,8 +136,7 @@ class SkipNonTensorTests(torch._dynamo.test_case.TestCase):
         with torch._dynamo.optimize_assert(counter):
             fn(x)
 
-        if counter.op_count != 0:
-            raise AssertionError(f"Expected op_count 0, got {counter.op_count}")
+        assert counter.op_count == 0
 
     @patch.object(torch._dynamo.config, "raise_on_ctx_manager_usage", False)
     def test_custom_list(self):
@@ -164,13 +158,12 @@ class SkipNonTensorTests(torch._dynamo.test_case.TestCase):
         with torch._dynamo.optimize_assert(counter):
             fn(x)
 
-        if counter.op_count != 0:
-            raise AssertionError(f"Expected op_count 0, got {counter.op_count}")
+        assert counter.op_count == 0
 
     def test_do_not_skip_side_effects(self):
         # https://github.com/pytorch/pytorch/issues/110765
 
-        # By invoking torch.compiler.is_compiling(),
+        # By invoking torch._utils.is_compiling(),
         # there may be side-effects inconsistent with eager when
         # compiling. Thus we force dynamo to commit the graph,
         # even if it does not perform any tensor operation
@@ -183,23 +176,17 @@ class SkipNonTensorTests(torch._dynamo.test_case.TestCase):
             _variable_2 = 0
 
             mod = MyModule(mode=mode)
-            model = torch.compile(mod, backend="eager", fullgraph=mode != 6)
-            if _variable != 0:
-                raise AssertionError(f"Expected _variable 0, got {_variable}")
-            if _variable_2 != 0:
-                raise AssertionError(f"Expected _variable_2 0, got {_variable_2}")
+            model = torch._dynamo.optimize(backend="eager", nopython=mode != 6)(mod)
+            assert _variable == 0
+            assert _variable_2 == 0
 
             model(torch.tensor([1]))
-            if _variable != 1:
-                raise AssertionError(f"Expected _variable 1, got {_variable}")
-            if _variable_2 != 0:
-                raise AssertionError(f"Expected _variable_2 0, got {_variable_2}")
+            assert _variable == 1
+            assert _variable_2 == 0
 
             model(torch.tensor([1]))
-            if _variable != 2:
-                raise AssertionError(f"Expected _variable 2, got {_variable}")
-            if _variable_2 != 0:
-                raise AssertionError(f"Expected _variable_2 0, got {_variable_2}")
+            assert _variable == 2
+            assert _variable_2 == 0
 
 
 if __name__ == "__main__":

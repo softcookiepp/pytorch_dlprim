@@ -12,7 +12,6 @@ import torch.autograd
 import torch.distributed as dist
 from torch._C._distributed_c10d import ReduceOp
 
-
 if not dist.is_available():
     print("Distributed not available, skipping tests", file=sys.stderr)
     sys.exit(0)
@@ -24,8 +23,6 @@ from torch.testing._internal.common_distributed import (
 )
 from torch.testing._internal.common_utils import IS_SANDCASTLE, run_tests, TestCase
 
-
-device_type = acc.type if (acc := torch.accelerator.current_accelerator()) else "cpu"
 
 DEFAULT_WORLD_SIZE = 4
 
@@ -311,10 +308,7 @@ class TestCollectivesWithBaseClass(MultiThreadedTestCase):
                 result = rank * 2
 
                 ctx.save_for_backward(result, rank)
-                if int(rank.item()) != dist.get_rank():
-                    raise AssertionError(
-                        f"Expected rank.item() == dist.get_rank(), got {int(rank.item())} vs {dist.get_rank()}"
-                    )
+                assert int(rank.item()) == dist.get_rank()
                 return result
 
             @staticmethod
@@ -335,7 +329,7 @@ class TestCollectivesWithBaseClass(MultiThreadedTestCase):
                 return grad_output * result
 
         x = torch.tensor(
-            [dist.get_rank()], dtype=torch.float, device=device_type, requires_grad=True
+            [dist.get_rank()], dtype=torch.float, device="cuda", requires_grad=True
         )
         x = MyFunc.apply(x)
         x.sum().backward()

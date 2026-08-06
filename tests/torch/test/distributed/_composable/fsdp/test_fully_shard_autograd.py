@@ -2,41 +2,31 @@
 
 import collections
 import copy
-import functools
-import itertools
-from typing import Any
+
+from typing import Any, List, Optional, Type, Union
 
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from torch.distributed.fsdp import fully_shard
+
+from torch.distributed._composable.fsdp import fully_shard
 from torch.nn.parallel.scatter_gather import _is_namedtuple
 from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
 from torch.testing._internal.common_fsdp import (
     check_sharded_parity,
     DoubleLinear,
     FSDPTest,
-    FSDPTestMultiThread,
-    get_devtype,
-    MLP,
 )
 from torch.testing._internal.common_utils import run_tests
-from torch.testing._internal.distributed._tensor.common_dtensor import (
-    ModelArgs,
-    Transformer,
-)
-
-
-device_type = torch.device(get_devtype())
 
 
 class TestFullyShardAutograd(FSDPTest):
     @property
     def world_size(self) -> int:
-        return min(4, torch.get_device_module(device_type).device_count())
+        return min(4, torch.cuda.device_count())
 
     def _reduce_1d_partial_grads(
-        self, module: nn.Module, group: dist.ProcessGroup | None = None
+        self, module: nn.Module, group: Optional[dist.ProcessGroup] = None
     ) -> None:
         group = group or dist.distributed_c10d._get_default_group()
         for param in module.parameters():
@@ -55,12 +45,12 @@ class TestFullyShardAutograd(FSDPTest):
             self._test_unused_forward_output,
         )
 
-    def _test_unused_forward_output(self, reshard_after_forward: bool | int):
+    def _test_unused_forward_output(self, reshard_after_forward: Union[bool, int]):
         torch.manual_seed(42)
         local_batch_size = 2
         global_batch_size, dim = (self.world_size * local_batch_size, 24)
         model = DoubleLinear(dim=dim, use_second_linear=True)
-        ref_model = copy.deepcopy(model).to(device_type)
+        ref_model = copy.deepcopy(model).cuda()
         fully_shard(model.lin1, reshard_after_forward=reshard_after_forward)
         fully_shard(model, reshard_after_forward=reshard_after_forward)
         ref_optim = torch.optim.Adam(ref_model.parameters(), lr=1e-2)
@@ -70,7 +60,7 @@ class TestFullyShardAutograd(FSDPTest):
         for iter_idx in range(10):
             # Use all forward outputs in the loss/backward for the first half
             # of the iterations and only the 1st forward output for the rest
-            global_inp = torch.rand((global_batch_size, dim), device=device_type)
+            global_inp = torch.rand((global_batch_size, dim), device="cuda")
             local_inp = global_inp[
                 self.rank * local_batch_size : (self.rank + 1) * local_batch_size
             ].detach()
@@ -101,12 +91,12 @@ class TestFullyShardAutograd(FSDPTest):
             self._test_unused_forward_module,
         )
 
-    def _test_unused_forward_module(self, reshard_after_forward: bool | int):
+    def _test_unused_forward_module(self, reshard_after_forward: Union[bool, int]):
         torch.manual_seed(42)
         local_batch_size, dim = (2, 24)
         global_batch_size = self.world_size * local_batch_size
         model = DoubleLinear(dim=dim, use_second_linear=False)
-        ref_model = copy.deepcopy(model).to(device_type)
+        ref_model = copy.deepcopy(model).cuda()
         fully_shard(model.lin1, reshard_after_forward=reshard_after_forward)
         fully_shard(model.lin2, reshard_after_forward=reshard_after_forward)
         fully_shard(model, reshard_after_forward=reshard_after_forward)
@@ -115,11 +105,11 @@ class TestFullyShardAutograd(FSDPTest):
 
         torch.manual_seed(1)  # same on all ranks
         for iter_idx in range(10):
-            global_inp = torch.rand((global_batch_size, dim), device=device_type)
+            global_inp = torch.rand((global_batch_size, dim), device="cuda")
             local_inp = global_inp[
                 self.rank * local_batch_size : (self.rank + 1) * local_batch_size
             ].detach()
-            losses: list[torch.Tensor] = []
+            losses: List[torch.Tensor] = []
             for _model, inp in ((ref_model, global_inp), (model, local_inp)):
                 losses.append(_model(inp).sum())
                 losses[-1].backward()
@@ -143,7 +133,7 @@ class TestFullyShardAutograd(FSDPTest):
             self._test_nontensor_activations,
         )
 
-    def _test_nontensor_activations(self, container_type: type):
+    def _test_nontensor_activations(self, container_type: Type):
         class Module(nn.Module):
             def __init__(self, dim: int):
                 super().__init__()
@@ -172,7 +162,7 @@ class TestFullyShardAutograd(FSDPTest):
                 return self.relu(self.lin2(self.relu(self.lin1(x))))
 
         class ToContainerType(nn.Module):
-            def __init__(self, container_type: type):
+            def __init__(self, container_type: Type):
                 super().__init__()
                 self.container_type = container_type
 
@@ -192,7 +182,7 @@ class TestFullyShardAutograd(FSDPTest):
                     )
 
         class FromContainerType(nn.Module):
-            def __init__(self, container_type: type):
+            def __init__(self, container_type: Type):
                 super().__init__()
                 self.container_type = container_type
 
@@ -216,7 +206,7 @@ class TestFullyShardAutograd(FSDPTest):
             Module(dim),
             FromContainerType(container_type),
         )
-        ref_model = copy.deepcopy(model).to(device_type)
+        ref_model = copy.deepcopy(model).cuda()
         for module in model:
             fully_shard(module)
         fully_shard(model)
@@ -225,11 +215,11 @@ class TestFullyShardAutograd(FSDPTest):
 
         torch.manual_seed(1)  # same on all ranks
         for iter_idx in range(10):
-            global_inp = torch.rand((global_batch_size, dim), device=device_type)
+            global_inp = torch.rand((global_batch_size, dim), device="cuda")
             local_inp = global_inp[
                 self.rank * local_batch_size : (self.rank + 1) * local_batch_size
             ].detach()
-            losses: list[torch.Tensor] = []
+            losses: List[torch.Tensor] = []
             for _model, inp in ((ref_model, global_inp), (model, local_inp)):
                 losses.append(_model(inp).sum())
                 losses[-1].backward()
@@ -240,91 +230,6 @@ class TestFullyShardAutograd(FSDPTest):
             for _optim in (optim, ref_optim):
                 _optim.step()
                 _optim.zero_grad(set_to_none=(iter_idx % 2))
-
-
-class TestFullyShardPostAccGradHookMultiThread(FSDPTestMultiThread):
-    @property
-    def world_size(self) -> int:
-        return 2
-
-    def test_post_acc_grad_hook_runs(self):
-        param_name_to_hook_count = collections.defaultdict(int)
-
-        def hook(param_name: str, param: torch.Tensor) -> None:
-            nonlocal param_name_to_hook_count
-            param_name_to_hook_count[param_name] += 1
-
-        model = MLP(8)
-        for module in (model.in_proj, model.out_proj, model):
-            fully_shard(module)
-        for param_name, param in model.named_parameters():
-            param_hook = functools.partial(hook, param_name)
-            param.register_post_accumulate_grad_hook(param_hook)
-
-        inp = torch.randn((2, 8), device=device_type)
-        model(inp).sum().backward()
-        param_names = {param_name for param_name, _ in model.named_parameters()}
-        self.assertEqual(param_names, set(param_name_to_hook_count.keys()))
-        for count in param_name_to_hook_count.values():
-            self.assertEqual(count, 1)
-
-
-class TestFullyShardPostAccGradHookMultiProcess(FSDPTest):
-    @property
-    def world_size(self) -> int:
-        return min(torch.get_device_module(device_type).device_count(), 2)
-
-    @skip_if_lt_x_gpu(2)
-    def test_post_acc_grad_hook_optim_parity(self):
-        """
-        Tests parity of running the optimizer via the post-accumulate-grad
-        hook vs. normally.
-        """
-        torch.manual_seed(42)
-        model_args = ModelArgs(dropout_p=0.0)
-        model = Transformer(model_args)
-
-        ref_model = copy.deepcopy(model).to(device_type)
-        for module in itertools.chain(ref_model.layers, [ref_model]):
-            fully_shard(module)
-        optim_kwargs = {"lr": 1e-2, "foreach": False}
-        ref_optim = torch.optim.AdamW(ref_model.parameters(), **optim_kwargs)
-        lr_scheduler_kwargs = {"step_size": 5}
-        ref_lr_scheduler = torch.optim.lr_scheduler.StepLR(
-            ref_optim, **lr_scheduler_kwargs
-        )
-
-        for module in itertools.chain(model.layers, [model]):
-            fully_shard(module)
-        param_to_optim = {}
-        param_to_lr_scheduler = {}
-        for param in model.parameters():
-            param_to_optim[param] = torch.optim.AdamW([param], **optim_kwargs)
-            param_to_lr_scheduler[param] = torch.optim.lr_scheduler.StepLR(
-                param_to_optim[param], **lr_scheduler_kwargs
-            )
-
-        def optim_hook(param: nn.Parameter) -> None:
-            param_to_optim[param].step()
-            param_to_optim[param].zero_grad()
-            param_to_lr_scheduler[param].step()
-
-        for param in model.parameters():
-            param.register_post_accumulate_grad_hook(optim_hook)
-
-        torch.manual_seed(42 + self.rank)
-        inp = torch.randint(0, model_args.vocab_size, (2, 16), device=device_type)
-        for _ in range(10):
-            ref_loss = ref_model(inp).sum()
-            ref_loss.backward()
-            ref_optim.step()
-            ref_optim.zero_grad()
-            ref_lr_scheduler.step()
-            loss = model(inp).sum()
-            loss.backward()
-            self.assertTrue(torch.equal(ref_loss, loss))
-            for ref_param, param in zip(ref_model.parameters(), model.parameters()):
-                self.assertTrue(torch.equal(ref_param, param))
 
 
 if __name__ == "__main__":

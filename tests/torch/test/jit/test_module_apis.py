@@ -5,13 +5,18 @@ import sys
 from typing import Any, Dict, List
 
 import torch
-from torch.testing._internal.common_utils import raise_on_run_directly
 from torch.testing._internal.jit_utils import JitTestCase
-
 
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(pytorch_test_dir)
+
+if __name__ == "__main__":
+    raise RuntimeError(
+        "This test file is not meant to be run directly, use:\n\n"
+        "\tpython test/test_jit.py TESTNAME\n\n"
+        "instead."
+    )
 
 
 class TestModuleAPIs(JitTestCase):
@@ -19,7 +24,7 @@ class TestModuleAPIs(JitTestCase):
         """Tests that default state dict methods are automatically available"""
 
         class DefaultStateDictModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.conv = torch.nn.Conv2d(6, 16, 5)
                 self.fc = torch.nn.Linear(16 * 5 * 5, 120)
@@ -38,7 +43,7 @@ class TestModuleAPIs(JitTestCase):
         """Tests that customized state dict methods are in effect"""
 
         class CustomStateDictModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.conv = torch.nn.Conv2d(6, 16, 5)
                 self.fc = torch.nn.Linear(16 * 5 * 5, 120)
@@ -85,7 +90,7 @@ class TestModuleAPIs(JitTestCase):
         """Tests that customized state dict methods on submodules are in effect"""
 
         class CustomStateDictModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.conv = torch.nn.Conv2d(6, 16, 5)
                 self.fc = torch.nn.Linear(16 * 5 * 5, 120)
@@ -119,7 +124,7 @@ class TestModuleAPIs(JitTestCase):
                 return
 
         class ParentModule(torch.nn.Module):
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.sub = CustomStateDictModule()
 
@@ -135,7 +140,3 @@ class TestModuleAPIs(JitTestCase):
         self.assertFalse(m2.sub.customized_load_state_dict_called)
         m2.load_state_dict(state_dict)
         self.assertTrue(m2.sub.customized_load_state_dict_called)
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

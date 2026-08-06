@@ -1,5 +1,4 @@
 # Owner(s): ["oncall: jit"]
-# ruff: noqa: F841
 
 import inspect
 import os
@@ -10,19 +9,28 @@ from typing import Dict, Iterator, List, Optional, Tuple
 
 import torch
 import torch.testing._internal.jit_utils
+
 from jit.test_module_interface import TestModuleInterface  # noqa: F401
 from torch.testing import FileCheck
-from torch.testing._internal.common_utils import raise_on_run_directly
-from torch.testing._internal.jit_utils import JitTestCase
 
+from torch.testing._internal.jit_utils import JitTestCase
 
 # Make the helper files in test/ importable
 pytorch_test_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(pytorch_test_dir)
 
+if __name__ == "__main__":
+    raise RuntimeError(
+        "This test file is not meant to be run directly, use:\n\n"
+        "\tpython test/test_jit.py TESTNAME\n\n"
+        "instead."
+    )
+
 
 class TestTypesAndAnnotation(JitTestCase):
     def test_pep585_type(self):
+        # TODO add test to use PEP585 type annotation for return type after py3.9
+        # see: https://www.python.org/dev/peps/pep-0585/#id5
         def fn(x: torch.Tensor) -> Tuple[Tuple[torch.Tensor], Dict[str, int]]:
             xl: list[tuple[torch.Tensor]] = []
             xd: dict[str, int] = {}
@@ -35,20 +43,6 @@ class TestTypesAndAnnotation(JitTestCase):
         x = torch.randn(2, 2)
         expected = fn(x)
         scripted = torch.jit.script(fn)(x)
-
-        self.assertEqual(expected, scripted)
-
-        def fn2(x: torch.Tensor) -> tuple[tuple[torch.Tensor], dict[str, int]]:
-            xl: list[tuple[torch.Tensor]] = []
-            xd: dict[str, int] = {}
-            xl.append((x,))
-            xd["foo"] = 1
-            return xl.pop(), xd
-
-        self.checkScript(fn2, [torch.randn(2, 2)])
-
-        expected = fn2(x)
-        scripted = torch.jit.script(fn2)(x)
 
         self.assertEqual(expected, scripted)
 
@@ -353,7 +347,7 @@ class TestTypesAndAnnotation(JitTestCase):
                     self.x = x
 
                 def set(self, val: int):
-                    for _ in range(3):
+                    for i in range(3):
                         self.x: int = val
 
         # Type annotation in __init__, should not fail
@@ -376,7 +370,3 @@ class TestTypesAndAnnotation(JitTestCase):
 
         with self.assertRaisesRegex(RuntimeError, "ErrorReason"):
             t = inferred_type.type()
-
-
-if __name__ == "__main__":
-    raise_on_run_directly("test/test_jit.py")

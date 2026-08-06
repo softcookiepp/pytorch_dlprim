@@ -3,6 +3,7 @@
 from unittest import skipIf, SkipTest
 
 import numpy
+
 import pytest
 from pytest import raises as assert_raises
 
@@ -12,7 +13,7 @@ from torch.testing._internal.common_utils import (
     run_tests,
     TEST_WITH_TORCHDYNAMO,
     TestCase,
-    xpassIfTorchDynamo_np,
+    xpassIfTorchDynamo,
 )
 
 
@@ -49,22 +50,17 @@ class TestAny(TestCase):
         y1 = [0, 0, 1, 0]
         y2 = [0, 0, 0, 0]
         y3 = [1, 0, 1, 0]
-        if not np.any(y1):
-            raise AssertionError("Expected np.any(y1) to be True")
-        if not np.any(y3):
-            raise AssertionError("Expected np.any(y3) to be True")
-        if np.any(y2):
-            raise AssertionError("Expected np.any(y2) to be False")
+        assert np.any(y1)
+        assert np.any(y3)
+        assert not np.any(y2)
 
     def test_nd(self):
         y1 = [[0, 0, 0], [0, 1, 0], [1, 1, 0]]
-        if not np.any(y1):
-            raise AssertionError("Expected np.any(y1) to be True")
+        assert np.any(y1)
         assert_equal(np.any(y1, axis=0), [1, 1, 0])
         assert_equal(np.any(y1, axis=1), [0, 1, 1])
         assert_equal(np.any(y1), True)
-        if not isinstance(np.any(y1, axis=1), np.ndarray):
-            raise AssertionError("Expected np.any result to be np.ndarray")
+        assert isinstance(np.any(y1, axis=1), np.ndarray)
 
     # YYY: deduplicate
     def test_method_vs_function(self):
@@ -77,19 +73,14 @@ class TestAll(TestCase):
         y1 = [0, 1, 1, 0]
         y2 = [0, 0, 0, 0]
         y3 = [1, 1, 1, 1]
-        if np.all(y1):
-            raise AssertionError("Expected np.all(y1) to be False")
-        if not np.all(y3):
-            raise AssertionError("Expected np.all(y3) to be True")
-        if np.all(y2):
-            raise AssertionError("Expected np.all(y2) to be False")
-        if not np.all(~np.array(y2)):
-            raise AssertionError("Expected np.all(~np.array(y2)) to be True")
+        assert not np.all(y1)
+        assert np.all(y3)
+        assert not np.all(y2)
+        assert np.all(~np.array(y2))
 
     def test_nd(self):
         y1 = [[0, 0, 1], [0, 1, 1], [1, 1, 1]]
-        if np.all(y1):
-            raise AssertionError("Expected np.all(y1) to be False")
+        assert not np.all(y1)
         assert_equal(np.all(y1, axis=0), [0, 0, 1])
         assert_equal(np.all(y1, axis=1), [0, 0, 1])
         assert_equal(np.all(y1), False)
@@ -102,20 +93,15 @@ class TestAll(TestCase):
 class TestMean(TestCase):
     def test_mean(self):
         A = [[1, 2, 3], [4, 5, 6]]
-        if np.mean(A) != 3.5:
-            raise AssertionError(f"Expected mean 3.5, got {np.mean(A)}")
-        if not np.all(np.mean(A, 0) == np.array([2.5, 3.5, 4.5])):
-            raise AssertionError("Mean along axis 0 does not match expected")
-        if not np.all(np.mean(A, 1) == np.array([2.0, 5.0])):
-            raise AssertionError("Mean along axis 1 does not match expected")
+        assert np.mean(A) == 3.5
+        assert np.all(np.mean(A, 0) == np.array([2.5, 3.5, 4.5]))
+        assert np.all(np.mean(A, 1) == np.array([2.0, 5.0]))
 
         # XXX: numpy emits a warning on empty slice
-        if not np.isnan(np.mean([])):
-            raise AssertionError("Expected mean of empty array to be nan")
+        assert np.isnan(np.mean([]))
 
         m = np.asarray(A)
-        if np.mean(A) != m.mean():
-            raise AssertionError(f"Expected {m.mean()}, got {np.mean(A)}")
+        assert np.mean(A) == m.mean()
 
     def test_mean_values(self):
         # rmat = np.random.random((4, 5))
@@ -140,10 +126,9 @@ class TestMean(TestCase):
     def test_mean_float16(self):
         # This fail if the sum inside mean is done in float16 instead
         # of float32.
-        if np.mean(np.ones(100000, dtype="float16")) != 1:
-            raise AssertionError("Expected mean of ones to be 1")
+        assert np.mean(np.ones(100000, dtype="float16")) == 1
 
-    @xpassIfTorchDynamo_np  # (reason="XXX: mean(..., where=...) not implemented")
+    @xpassIfTorchDynamo  # (reason="XXX: mean(..., where=...) not implemented")
     def test_mean_where(self):
         a = np.arange(16).reshape((4, 4))
         wh_full = np.array(
@@ -171,13 +156,13 @@ class TestMean(TestCase):
         assert_allclose(a3d.mean(axis=2, where=_wh_partial), np.array(_res))
         assert_allclose(np.mean(a3d, axis=2, where=_wh_partial), np.array(_res))
 
-        with pytest.warns(RuntimeWarning):
+        with pytest.warns(RuntimeWarning) as w:
             assert_allclose(
                 a.mean(axis=1, where=wh_partial), np.array([np.nan, 5.5, 9.5, np.nan])
             )
-        with pytest.warns(RuntimeWarning):
+        with pytest.warns(RuntimeWarning) as w:
             assert_equal(a.mean(where=False), np.nan)
-        with pytest.warns(RuntimeWarning):
+        with pytest.warns(RuntimeWarning) as w:
             assert_equal(np.mean(a, where=False), np.nan)
 
 
@@ -207,11 +192,10 @@ class TestSum(TestCase):
 
         res_float = a.sum(dtype=np.float64)
         assert_allclose(res_float, 4.0, atol=1e-15)
-        if res_float.dtype != "float64":
-            raise AssertionError(f"Expected dtype float64, got {res_float.dtype}")
+        assert res_float.dtype == "float64"
 
     @skipIf(numpy.__version__ < "1.24", reason="NP_VER: fails on NumPy 1.23.x")
-    @xpassIfTorchDynamo_np  # (reason="sum: does not warn on overflow")
+    @xpassIfTorchDynamo  # (reason="sum: does not warn on overflow")
     def test_sum_dtypes_warnings(self):
         for dt in (int, np.float16, np.float32, np.float64):
             for v in (0, 1, 2, 7, 8, 9, 15, 16, 19, 127, 128, 1024, 1235):
@@ -278,7 +262,7 @@ class TestSum(TestCase):
         d += d
         assert_allclose(d, 2.0 + 2j, atol=1.5e-7)
 
-    @xpassIfTorchDynamo_np  # (reason="initial=... need implementing")
+    @xpassIfTorchDynamo  # (reason="initial=... need implementing")
     def test_sum_initial(self):
         # Integer, single axis
         assert_equal(np.sum([3], initial=2), 5)
@@ -292,7 +276,7 @@ class TestSum(TestCase):
             [12, 12, 12],
         )
 
-    @xpassIfTorchDynamo_np  # (reason="where=... need implementing")
+    @xpassIfTorchDynamo  # (reason="where=... need implementing")
     def test_sum_where(self):
         # More extensive tests done in test_reduction_with_where.
         assert_equal(np.sum([[1.0, 2.0], [3.0, 4.0]], where=[True, False]), 4.0)
@@ -422,8 +406,7 @@ class TestGenericReductions(TestCase):
         out = np.empty_like(result)
         result_with_out = func(a, out=out)
 
-        if result_with_out is not out:
-            raise AssertionError("Expected result_with_out to be out")
+        assert result_with_out is out
         assert_array_equal(result, result_with_out)
 
     def _check_out_axis(self, axis, dtype, keepdims):
@@ -434,10 +417,8 @@ class TestGenericReductions(TestCase):
         out = np.empty_like(result, dtype=dtype)
         result_with_out = self.func(a, axis=axis, keepdims=keepdims, out=out)
 
-        if result_with_out is not out:
-            raise AssertionError("Expected result_with_out to be out")
-        if result_with_out.dtype != dtype:
-            raise AssertionError(f"Expected dtype {dtype}, got {result_with_out.dtype}")
+        assert result_with_out is out
+        assert result_with_out.dtype == dtype
         assert_array_equal(result, result_with_out)
 
         # TODO: what if result.dtype != out.dtype; does out typecast the result?
@@ -468,10 +449,8 @@ class TestGenericReductions(TestCase):
         out = np.empty_like(result, dtype=dtype)
         result_with_out = func(a, axis=axis, keepdims=keepdims, out=out)
 
-        if result_with_out is not out:
-            raise AssertionError("Expected result_with_out to be out")
-        if result_with_out.dtype != dtype:
-            raise AssertionError(f"Expected dtype {dtype}, got {result_with_out.dtype}")
+        assert result_with_out is out
+        assert result_with_out.dtype == dtype
         assert_array_equal(result, result_with_out)
 
         # TODO: what if result.dtype != out.dtype; does out typecast the result?
@@ -502,8 +481,7 @@ class TestGenericReductions(TestCase):
         out = np.empty(shape_out)
 
         result = func(d, axis=axis, keepdims=True, out=out)
-        if result is not out:
-            raise AssertionError("Expected result to be out")
+        assert result is out
         assert_equal(result.shape, shape_out)
 
 

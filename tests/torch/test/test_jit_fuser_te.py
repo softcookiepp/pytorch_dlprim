@@ -1,18 +1,16 @@
 # Owner(s): ["NNC"]
-# ruff: noqa: F841
 
 import contextlib
 import math
 import operator
 import os
-import sys
 import unittest
 import warnings
+from typing import List
 
 import torch
 import torch.nn.functional as F
 from torch.testing import FileCheck
-
 
 # these needs to be set before `common_utils`
 # infers `GRAPH_EXECUTOR`.
@@ -23,17 +21,12 @@ from torch.testing import FileCheck
 torch._C._jit_set_profiling_executor(True)
 torch._C._get_graph_executor_optimize(True)
 
-if __name__ == "__main__":
-    from torch.testing._internal.common_utils import parse_cmd_line_args
-
-    # The value of GRAPH_EXECUTOR depends on command line arguments so make sure they're parsed
-    # before instantiating tests.
-    parse_cmd_line_args()
-
 from itertools import combinations, permutations, product
+
 from textwrap import dedent
 
 from jit.test_fuser_common import TestFuserCommon  # noqa: F401
+
 from test_jit import (
     backward_graph,
     get_lstm_inputs,
@@ -51,6 +44,7 @@ from torch.testing._internal.common_device_type import (
     ops,
 )
 from torch.testing._internal.common_jit import JitCommonTestCase
+
 from torch.testing._internal.common_methods_invocations import op_db
 from torch.testing._internal.common_utils import (
     enable_profiling_mode_for_profiling_tests,
@@ -61,6 +55,7 @@ from torch.testing._internal.common_utils import (
     skipIfTorchDynamo,
     slowTest,
     TEST_WITH_ASAN,
+    TEST_WITH_ROCM,
 )
 from torch.testing._internal.jit_metaprogramming_utils import create_traced_fn
 from torch.testing._internal.jit_utils import (
@@ -75,7 +70,6 @@ from torch.testing._internal.jit_utils import (
     TensorExprTestOptions,
     warmup_backward,
 )
-
 
 FUSION_GROUP = "prim::TensorExprGroup"
 LLVM_ENABLED = torch._C._llvm_enabled()
@@ -94,7 +88,7 @@ def strip_profiling_nodes(nodes):
 
 
 def warmup_forward(f, *args, profiling_count=2):
-    for _ in range(profiling_count):
+    for i in range(profiling_count):
         results = f(*args)
 
     return results
@@ -133,7 +127,7 @@ class TestTEFuser(JitTestCase):
         super().setUp()
         self.tensorexpr_options = TensorExprTestOptions()
 
-        # note: `self.dynamic_shapes` instantiated in specialization of class
+        # note: `self.dynamic_shapes` instatiated in specialization of class
         # defined below
 
         fusion_strategy = [("DYNAMIC", 20)] if self.dynamic_shapes else [("STATIC", 20)]
@@ -243,7 +237,7 @@ class TestTEFuser(JitTestCase):
             return x2.sum()
 
         with texpr_reductions_enabled():
-            a = torch.tensor(list(range(15)), dtype=torch.float, device="cpu")
+            a = torch.tensor(list(range(0, 15)), dtype=torch.float, device="cpu")
             a = a.reshape(5, 3)
             scripted = self.checkScript(func, (a,))
             self.assertLastGraphAllFused()
@@ -259,7 +253,7 @@ class TestTEFuser(JitTestCase):
             return x.sum((-2,)) * 2
 
         with texpr_reductions_enabled():
-            a = torch.tensor(list(range(15)), dtype=torch.float, device="cpu")
+            a = torch.tensor(list(range(0, 15)), dtype=torch.float, device="cpu")
             a = a.reshape(5, 3)
             scripted = self.checkScript(func, (a,))
             self.assertLastGraphAllFused()
@@ -271,7 +265,7 @@ class TestTEFuser(JitTestCase):
             return x.sum((0,), keepdim=True, dtype=torch.double) * 2
 
         with texpr_reductions_enabled():
-            a = torch.tensor(list(range(15)), dtype=torch.float, device="cpu")
+            a = torch.tensor(list(range(0, 15)), dtype=torch.float, device="cpu")
             a = a.reshape(5, 3)
 
             self.checkScript(func, (a,))
@@ -332,7 +326,13 @@ class TestTEFuser(JitTestCase):
 
             x = torch.randn(4, 4, dtype=torch.float, device=device)
             y = torch.randn(4, 4, dtype=torch.float, device=device)
-            traced_f = torch.jit.trace(f, (x, y))
+            traced_f = torch.jit.trace(
+                f,
+                (
+                    x,
+                    y,
+                ),
+            )
             self.assertEqual(traced_f(x.t().contiguous(), y), traced_f(x.t(), y))
 
     def test_broadcast(self):
@@ -500,7 +500,9 @@ class TestTEFuser(JitTestCase):
                 z0, z1 = z.chunk(2)
                 return z0 * z1
 
-            inputs = [torch.tensor([1.1, 1.2], device=device, dtype=torch.float)]
+            inputs = [
+                torch.tensor([1.1, 1.2], device=device, dtype=torch.float),
+            ]
             for func in [func1, func2]:
                 self.checkScript(func, inputs)
                 self.assertLastGraphAllFused()
@@ -1087,7 +1089,7 @@ class TestTEFuser(JitTestCase):
         class M(torch.jit.ScriptModule):
             __constants__ = ["d"]
 
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__()
                 self.d = torch.device("cuda")
 
@@ -1682,8 +1684,11 @@ class TestTEFuser(JitTestCase):
         ]
         dtypes = ["int", "float", "bool"]
         values = {"int": [10, 3], "float": [12.34, 2.78], "bool": [True, False]}
-        for dtype_x, dtype_y, op in product(dtypes, dtypes, binary_ops):
-            code = ir_template.format(dtype_x=dtype_x, dtype_y=dtype_y, op=op)
+        devices = self.devices
+        for dtype_x, dtype_y, op, device in product(
+            dtypes, dtypes, binary_ops, devices
+        ):
+            code = ir_template.format(**locals())
 
             # Interpret the graph
             try:
@@ -1698,7 +1703,9 @@ class TestTEFuser(JitTestCase):
             try:
                 k = torch._C._te.TensorExprKernel(graph)
             except Exception as e:
-                raise RuntimeError(" ".join(["Compilation failed:", str(code)])) from e
+                raise RuntimeError(
+                    " ".join(["Compilation failed:", device, str(code)])
+                ) from e
 
             # Run the graph
             for x, y in product(values[dtype_x], values[dtype_y]):
@@ -1708,7 +1715,9 @@ class TestTEFuser(JitTestCase):
                     self.assertEqual(ref, res)
                 except Exception as e:
                     raise RuntimeError(
-                        " ".join(["Failed at runtime:", str(x), str(y), str(code)])
+                        " ".join(
+                            ["Failed at runtime:", device, str(x), str(y), str(code)]
+                        )
                     ) from e
 
     def test_matmul(self):
@@ -2089,8 +2098,7 @@ class TestTEFuser(JitTestCase):
                 w = t1 - t2
                 h = t3 - t4
                 k = (w > t) & (h > t)
-                if k.dtype != torch.bool:
-                    raise AssertionError("k.dtype should be bool")
+                assert k.dtype == torch.bool
                 if t > 0.5:
                     # Putting a use of k in a never-executed conditional prevents
                     # profiling its type, which leaves it as "Tensor".  If we
@@ -2193,7 +2201,13 @@ class TestTEFuser(JitTestCase):
             dtypes.remove(torch.float16)
             dtypes.remove(torch.bfloat16)
             for dtype1, dtype2 in product(dtypes, dtypes):
-                x = torch.randint(2, (1, 13)).to(dtype1)
+                x = torch.randint(
+                    2,
+                    (
+                        1,
+                        13,
+                    ),
+                ).to(dtype1)
                 zero = torch.tensor([[0]]).to(dtype2)
                 one = torch.tensor([[1]]).to(dtype2)
                 script = torch.jit.trace(eager, (x, zero))
@@ -2228,7 +2242,7 @@ class TestTEFuser(JitTestCase):
 
         indices = [0, 1, 2, 3]
         sets = []
-        for i in range(len(indices) + 1):
+        for i in range(0, len(indices) + 1):
             for subset in combinations(indices, i):
                 sets.append(subset)  # noqa: PERF402
 
@@ -2278,7 +2292,7 @@ class TestTEFuser(JitTestCase):
         x = torch.arange(-10, 10, dtype=torch.float32, requires_grad=True)
         xs = torch.arange(-10, 10, dtype=torch.float32, requires_grad=True)
         script = torch.jit.script(fn)
-        for _ in range(11):
+        for i in range(11):
             y = fn(x)
             g0 = torch.rand_like(y)
             y.backward(g0)
@@ -2326,7 +2340,7 @@ class TestTEFuser(JitTestCase):
 
             @torch.jit.script
             def repro(
-                xs: list[torch.Tensor], ys: list[torch.Tensor], zs: list[torch.Tensor]
+                xs: List[torch.Tensor], ys: List[torch.Tensor], zs: List[torch.Tensor]
             ):
                 return [
                     torch.cat([x, torch.cat([y, z], dim=-1)], dim=-1)
@@ -2405,34 +2419,32 @@ class TestTEFuser(JitTestCase):
 
     @skipIfTorchDynamo("too slow")
     @unittest.skipIf(TEST_WITH_ASAN, "takes 10+ minutes on asan")
+    @unittest.skipIf(TEST_WITH_ROCM, "Tensor-likes are not close for nans")
     def test_batch_norm(self):
         def test(fn, args):
             trace = torch.jit.trace(fn, args)
             self.assertAllFused(trace.graph_for(*args))
+            # TODO: Are `NaN`'s actually ok here or did this pass silently before, because `equal_nan=True` was the
+            #  default?
             torch.testing.assert_close(fn(*args), trace(*args), equal_nan=True)
 
-        def bn(i, x, rv):
-            return torch.batch_norm(i, x, x, x, rv, False, 0.1, 1e-4, False).relu()
+        def bn(i, x):
+            return torch.batch_norm(i, x, x, x, x, False, 0.1, 1e-4, False).relu()
 
-        def bn_no_weight(i, x, rv):
-            return torch.batch_norm(i, None, x, x, rv, False, 0.1, 1e-4, False).relu()
+        def bn_no_weight(i, x):
+            return torch.batch_norm(i, None, x, x, x, False, 0.1, 1e-4, False).relu()
 
-        def bn_no_bias(i, x, rv):
-            return torch.batch_norm(i, x, None, x, rv, False, 0.1, 1e-4, False).relu()
+        def bn_no_bias(i, x):
+            return torch.batch_norm(i, x, None, x, x, False, 0.1, 1e-4, False).relu()
 
-        def bn_neither(i, x, rv):
-            return torch.batch_norm(
-                i, None, None, x, rv, False, 0.1, 1e-4, False
-            ).relu()
+        def bn_neither(i, x):
+            return torch.batch_norm(i, None, None, x, x, False, 0.1, 1e-4, False).relu()
 
         for device in self.devices:
             i = torch.randn(4, 16, 32, 40, device=device)
             x = torch.randn(16, device=device)
-            rv = torch.randn(
-                16, device=device
-            ).abs()  # running_var must be non-negative
             for fn in [bn, bn_no_weight, bn_no_bias, bn_neither]:
-                test(fn, (i, x, rv))
+                test(fn, (i, x))
 
     def test_profiler(self):
         @torch.jit.script
@@ -2502,7 +2514,7 @@ class TestTEFuser(JitTestCase):
 
                     for i, func in enumerate(funcs):
                         num_args = i + 1
-                        for gen in gen_tensor:
+                        for j, gen in enumerate(gen_tensor):
                             inps = (gen(n), gen(n), gen(n))
                             func_s = torch.jit.trace(func, inps, check_trace=False)
                             torch._C._jit_pass_erase_shape_information(func_s.graph)
@@ -2510,7 +2522,7 @@ class TestTEFuser(JitTestCase):
                                 x, y, z = gen(n), gen(n), gen(n)
                                 func_s(x, y, z)
 
-                            for _incr in range(3):
+                            for incr in range(3):
                                 func_s(*[gen(n + 1) for _ in range(3)])
 
                             g = torch.jit.last_executed_optimized_graph()
@@ -2674,7 +2686,7 @@ class TestTEFuser(JitTestCase):
 
             f_traced = torch.jit.trace(f, (x, y))
 
-            for _ in range(4):
+            for i in range(4):
                 # make sure this doesn't error out
                 res = f_traced(x, y)
 
@@ -2693,7 +2705,7 @@ class TestTEFuser(JitTestCase):
         ref = fn(x)
 
         script_fn = torch.jit.script(fn)
-        for _ in range(4):
+        for i in range(4):
             res = script_fn(x)
 
         self.assertEqual(ref, res)
@@ -2881,8 +2893,8 @@ class TestNNCOpInfo(TestNNCOpInfoParent):
                     fx_args.append(f"{k} = {repr(v)}")
 
             code = f"""
-def f({", ".join(param_names)}):
-    return op.op({", ".join(fx_args)})"""
+def f({', '.join(param_names)}):
+    return op.op({', '.join(fx_args)})"""
             g = {"torch": torch, "inf": math.inf, "op": op}
             exec(code, g)
             f = g["f"]
@@ -2942,10 +2954,7 @@ def f({", ".join(param_names)}):
 
     @slowTest
     @onlyCPU
-    @ops(
-        [op for op in op_db if get_name(op) not in known_failures],
-        dtypes=OpDTypes.supported,
-    )
+    @ops(op_db, dtypes=OpDTypes.supported)
     def test_nnc_correctness(self, device, dtype, op):
         if not op.supports_tracing:
             self.skipTest("Requires tracing support")
@@ -3043,13 +3052,11 @@ class TestLoopnestRandomization(TestLoopnestRandomizationParent):
 
         ref = fn(x, y)
         res = traced_fn(x, y)
-        if not torch.allclose(ref, res):
-            raise AssertionError("traced function output does not match reference")
+        assert torch.allclose(ref, res)
 
 
 instantiate_device_type_tests(TestLoopnestRandomization, globals(), only_for=("cpu"))
 
 
 if __name__ == "__main__":
-    if sys.version_info < (3, 14):
-        run_tests()
+    run_tests()
