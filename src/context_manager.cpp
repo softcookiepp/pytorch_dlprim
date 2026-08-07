@@ -19,8 +19,13 @@ CLContextManager& CLContextManager::instance()
 CLContextManager::~CLContextManager()
 {
 	{
-		for(auto &data:data_)
-			data->cache.clear();
+		#if 1
+			for (auto& pair : sDeviceCaches)
+				pair.second.clear();
+		#else
+			for(auto &data:data_)
+				data->cache.clear();
+		#endif
 	}
 	no_cache_ = true;
 }
@@ -28,17 +33,12 @@ CLContextManager::~CLContextManager()
 //static
 CLCache& CLContextManager::getCache(int deviceIndex)
 {
-	#if 0
-		if (sDeviceCaches.find(deviceIndex) == sDeviceCaches.end())
-		{
-			tart::device_ptr device = dlprim::Context::getInstance().getDevice(device);
-			sDeviceCaches[deviceIndex].prepare(device);
-		}
-		return sDeviceCaches[deviceIndex];
-	#else
-		CLContextManager::DevData& d = instance().data(deviceIndex);
-		return d.cache;
-	#endif
+	if (sDeviceCaches.find(deviceIndex) == sDeviceCaches.end())
+	{
+		tart::device_ptr device = dlprim::Context::getInstance().getDevice(deviceIndex);
+		sDeviceCaches[deviceIndex].prepare(device);
+	}
+	return sDeviceCaches[deviceIndex];
 }
 
 //static
@@ -111,16 +111,15 @@ void CLContextManager::free_ptr(void *ctx)
 //static
 dlprim::RandomState& CLContextManager::rng_state(int index)
 {
-	return instance().data_.at(index)->rng;
+	static std::map<int, dlprim::RandomState> rngs;
+	return rngs[index];
 }
 
 //static
 bool CLContextManager::is_ready(int index)
 {
-	auto &data = instance().data_;
-	if(index < 0 || index >= int(data.size()) || !data[index])
-		return false;
-	return data[index]->ready;
+	getCache(index);
+	return true;
 }
 
 //static
@@ -132,22 +131,14 @@ bool CLContextManager::fp64(int index)
 //static
 bool CLContextManager::enable_profiling(int device)
 {
-	if(is_ready(device))
-		return false;
-	if(unsigned(device) >= count())
-		return false;
-	instance().data_.at(device)->enable_profiling = true;
-	return true;
+	return false;
 }
 
 //static
 void CLContextManager::clear(int index)
 {
-	auto &data = instance().data_;
-	if(index < 0 || index >= int(data.size()) || !data[index] || !data[index]->ready)
-		return;
-	getCommandQueue(index).finish();
-	data[index]->cache.clear();
+	dlprim::Context::getInstance().getDevice(index)->sync();
+	sDeviceCaches[index].clear();
 }
 
 //static
@@ -156,21 +147,6 @@ bool CLContextManager::bad_fork()
 	instance();
 	return bad_fork_;
 }
-
-#if 0
-struct DevData {
-	bool ready = false; // FIXME make thread safe
-	bool enable_profiling = false;
-	bool fp64 = false;
-	dlprim::RandomState rng;
-	std::string name;
-	dlprim::Context ctx;
-	dlprim::ExecutionContext queue;
-	CLCache cache;
-	std::shared_ptr<dlprim::TimingData> timing;
-};
-#endif
-
 
 //static
 void CLContextManager::init(std::unique_ptr<CLContextManager> &self)
@@ -197,32 +173,6 @@ void CLContextManager::allocate()
 	poison_fork();
 	char *no_cache=getenv("OPENCL_NO_MEM_CACHE");
 	no_cache_ = no_cache && atoi(no_cache);
-	
-	tart::Instance& tartInstance = dlprim::Context::getInstance();
-	for(size_t j=0; j < tartInstance.getNumDevices(); j++) {
-		std::unique_ptr<DevData> d(new DevData());
-		data_.push_back(std::move(d));
-		data_.back()->name = "0:" + std::to_string(j);
-	}
-}
-
-CLContextManager::DevData& CLContextManager::data(int i)
-{
-	if(i < 0)
-		i = 0;
-	if(i >= int(data_.size()))
-		throw std::runtime_error("Invalid Device #" + std::to_string(i));
-	CLContextManager::DevData &res = *data_[i];
-	if(res.ready)
-		return res;
-	std::cout << "	res.name: " << res.name << std::endl;
-	res.ctx = dlprim::Context(res.name);
-	//res.fp64 = res.ctx.device()->getMetadata().double_;
-	//res.queue = res.ctx.make_execution_context(0);
-	res.cache.prepare(res.ctx.device());
-	res.ready = true;
-	std::cout << "Accessing device #" << i << ":" << res.ctx.name() << std::endl;
-	return res;
 }
 
 

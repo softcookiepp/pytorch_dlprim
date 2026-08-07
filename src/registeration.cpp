@@ -69,9 +69,11 @@ public:
     virtual bool queryStream(const Stream& /*stream*/) const {
         return false;
     }
-    virtual void synchronizeStream(const Stream& stream) const {
+    virtual void synchronizeStream(const Stream& stream) const
+    {
         auto device = stream.device();
-        CLContextManager::getCommandQueue(device.index()).finish();
+        dlprim::Context::getInstance().getDevice(device.index())->sync();
+        //CLContextManager::getCommandQueue(device.index()).finish();
     }
 private:
 

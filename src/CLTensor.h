@@ -128,20 +128,6 @@ extern tart::profiler_ptr gProfiler;
 
     private:
 
-        struct DevData {
-            bool ready = false; // FIXME make thread safe
-            bool enable_profiling = false;
-            bool fp64 = false;
-            dlprim::RandomState rng;
-            std::string name;
-            dlprim::Context ctx;
-            dlprim::ExecutionContext queue;
-            CLCache cache;
-            std::shared_ptr<dlprim::TimingData> timing;
-        };
-
-
-
         static void init(std::unique_ptr<CLContextManager> &self);
 
         // Called in the forked child if cuda has already been initialized
@@ -150,10 +136,7 @@ extern tart::profiler_ptr gProfiler;
         static void poison_fork();
         
         void allocate();
-
-        DevData &data(int i);
         
-        std::vector<std::unique_ptr<DevData> > data_;
         bool no_cache_;
         static bool bad_fork_;
     };

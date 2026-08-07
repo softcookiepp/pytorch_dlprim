@@ -5,9 +5,8 @@
 #include "CLTensor.h"
 #include "utils.h"
 #include <dlprim/core/util.hpp>
-namespace ptdlprim {
-
-
+namespace ptdlprim
+{
     using namespace torch;
     using torch::autograd::tensor_list;
     using torch::autograd::AutogradContext;
@@ -25,8 +24,13 @@ namespace ptdlprim {
         int N = CLContextManager::instance().count();
         for(int i=0;i<N;i++) {
             CLContextManager::rng_state(i).seed(seed);
-            if(CLContextManager::is_ready(i)) {
-                CLContextManager::getCommandQueue(i).finish();
+            if(CLContextManager::is_ready(i))
+            {
+				#if 1
+					dlprim::Context::getInstance().getDevice(i)->sync();
+				#else
+					CLContextManager::getCommandQueue(i).finish();
+				#endif
             }
         }
 
@@ -36,13 +40,23 @@ namespace ptdlprim {
         if(index == -1) {
             int N = CLContextManager::instance().count();
             for(int i=0;i<N;i++) {
-                if(CLContextManager::is_ready(i)) {
-                    CLContextManager::getCommandQueue(i).finish();
+                if(CLContextManager::is_ready(i))
+                {
+					#if 1
+						dlprim::Context::getInstance().getDevice(i)->sync();
+					#else
+						CLContextManager::getCommandQueue(i).finish();
+					#endif
                 }
             }
         }
-        else {
-            CLContextManager::getCommandQueue(index).finish();
+        else
+        {
+			#if 1
+				dlprim::Context::getInstance().getDevice(index)->sync();
+			#else
+				CLContextManager::getCommandQueue(index).finish();
+			#endif
         }
     }
     bool is_bad_fork()
