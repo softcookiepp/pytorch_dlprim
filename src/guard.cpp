@@ -3,14 +3,9 @@
 namespace ptdlprim {
     typedef void (*enter_type)(char const *name,char const*);
     typedef void (*leave_type)(char const *name);
-    static dlprim::ExecutionContext *profiling_queue = nullptr;
     static void enter_default(char const *,char const *name) {
-       if(profiling_queue)
-            profiling_queue->enter(name);
     }
     static void leave_default(char const *) {
-        if(profiling_queue)
-            profiling_queue->leave();
     }
     static void enter_log_exception(char const *,char const*){}
     static void leave_log_exception(char const *name)
@@ -72,6 +67,5 @@ namespace ptdlprim {
     }
     void ExecGuard::set_profiling_context(dlprim::ExecutionContext *queue)
     {
-        profiling_queue = queue;
     }
 };
