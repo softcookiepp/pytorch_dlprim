@@ -90,13 +90,15 @@ extern tart::profiler_ptr gProfiler;
         std::unique_ptr<CLMemAllocation> allocate(int id,cl::Context &ctx,int64_t orig_size);
 #endif
         void release(std::unique_ptr<CLMemAllocation> &&mem);
-        void prepare(dlprim::Context &ctx);
+        //void prepare(dlprim::Context &ctx);
+        void prepare(const tart::device_ptr& device);
     };
     
 
     class CLContextManager
     {
 		static std::set<tart::buffer_ptr> sAllocations;
+		static std::map<int, CLCache> sDeviceCaches;
     public: 
         static CLContextManager &instance();
         ~CLContextManager();
@@ -122,6 +124,8 @@ extern tart::profiler_ptr gProfiler;
         static void clear(int index);
         
         static bool bad_fork();
+        
+        static CLCache& getCache(int device);
 
     private:
 

@@ -83,9 +83,9 @@ namespace ptdlprim {
             tmp.swap(allocation);
         }
     }
-    void CLCache::prepare(dlprim::Context &ctx)
+    void CLCache::prepare(const tart::device_ptr& device)
     {
-		int64_t mem_size = ctx.device()->getMetadata().maxMemoryAllocationSize;
+		int64_t mem_size = device->getMetadata().maxMemoryAllocationSize;
 		int64_t rounded_mem_size = round(mem_size);
         for(int64_t size=1;size<=rounded_mem_size;size*=2) {
             allocation[size]; // create empty list

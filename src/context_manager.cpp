@@ -6,6 +6,7 @@ namespace ptdlprim
 
 
 std::set<tart::buffer_ptr> CLContextManager::sAllocations;
+std::map<int, CLCache> CLContextManager::sDeviceCaches;
 
 CLContextManager& CLContextManager::instance()
 {
@@ -22,6 +23,16 @@ CLContextManager::~CLContextManager()
 			data->cache.clear();
 	}
 	no_cache_ = true;
+}
+
+//static
+CLCache& CLContextManager::getCache(int deviceIndex)
+{
+	#if 0
+	#else
+		CLContextManager::DevData& d = instance().data(deviceIndex);
+		return d.cache;
+	#endif
 }
 
 //static
@@ -43,15 +54,7 @@ dlprim::ExecutionContext CLContextManager::getCommandQueue(int id)
 	tart::device_ptr device = dlprim::Context::getInstance().getDevice(id);
 	return dlprim::ExecutionContext(device);
 }
-#if 0
-//static
-std::unique_ptr<CLMemAllocation> CLContextManager::alloc(int id,int64_t size)
-{
-	auto &d = instance().data(id);
-	tart::device_ptr device = d.ctx.device();
-	return d.cache.allocate(id, device, size);
-}
-#endif
+
 // static
 void CLContextManager::release(std::unique_ptr<CLMemAllocation> &&mem)
 {
@@ -60,8 +63,7 @@ void CLContextManager::release(std::unique_ptr<CLMemAllocation> &&mem)
 		mem.reset();
 		return;
 	}
-	CLContextManager::DevData& d = instance().data(mem->device_id);
-	d.cache.release(std::move(mem));
+	getCache(mem->device_id).release(std::move(mem));
 }
 
 typedef struct TMemAllocation
@@ -75,9 +77,8 @@ static std::set<std::shared_ptr<TMemAllocation>> sTMemAllocations;
 // static
 at::DataPtr CLContextManager::allocate(c10::Device const &dev,size_t n)
 {
-	CLContextManager::DevData& d = instance().data(dev.index());
 	tart::device_ptr device = dlprim::Context::getInstance().getDevice(dev.index());
-	std::unique_ptr<CLMemAllocation> ptr = d.cache.allocate(dev.index(), device, n);
+	std::unique_ptr<CLMemAllocation> ptr = getCache(dev.index()).allocate(dev.index(), device, n);
 	tart::buffer_ptr* buffer = &(ptr->buffer);
 	return at::DataPtr(buffer,ptr.release(),&CLContextManager::free_ptr,dev);
 }
@@ -213,7 +214,7 @@ CLContextManager::DevData& CLContextManager::data(int i)
 	res.ctx = dlprim::Context(res.name);
 	res.fp64 = res.ctx.device()->getMetadata().double_;
 	res.queue = res.ctx.make_execution_context(0);
-	res.cache.prepare(res.ctx);
+	res.cache.prepare(res.ctx.device());
 	res.ready = true;
 	std::cout << "Accessing device #" << i << ":" << res.ctx.name() << std::endl;
 	return res;
