@@ -243,11 +243,7 @@ using c10::DeviceType;
         dlprim::Tensor y0=todp(out_c);
         float w0 = other.toDouble();
         dlprim::core::pointwise_operation_broadcast({x0},{y0},{w0},{dlprim::float_data},
-#if VULKAN_API
 										"y0 = typeof_y0( typeof_x0(x0) " + op + " typeof_x0(w0) ? 1 : 0 );" ,
-#else
-                                      "y0 = (x0 " + op + " w0) ? 1 : 0;" ,
-#endif
                                       getExecutionContext(self));
         
         if (!out.is_contiguous())
@@ -337,11 +333,7 @@ using c10::DeviceType;
             Tensor other_c = other.contiguous();
             dlprim::Tensor x1=todp(other_c);
             dlprim::core::pointwise_operation_broadcast({x0,x1},{y0},{},
-#if VULKAN_API
 										"y0 = typeof_y0(x0) / typeof_y0(x1);",
-#else
-                                        "y0 = x0/x1;",
-#endif
                                         getExecutionContext(self));
         }
         
@@ -378,11 +370,7 @@ using c10::DeviceType;
                other_c = other.contiguous();
         
         if(op_builder.empty()) {
-#if VULKAN_API
             op_builder = "y0 = typeof_y0(typeof_x0(left) " + op + " typeof_x0(right));";
-#else
-            op_builder = "y0 = left " + op + " right;";
-#endif
         }
 
         dlprim::Tensor y(todp(out_c));
@@ -390,22 +378,14 @@ using c10::DeviceType;
         if(isCPUScalar(other,value)) {
             dlprim::Tensor x0(todp(self_c));
             dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.dtype()},
-#if VULKAN_API
                         "precise typeof_x0 left = x0; precise typeof_w0 right = w0;" + op_builder,
-#else
-                        "typeof_x0 left = x0; typeof_w0 right = w0;" + op_builder,
-#endif
                         getExecutionContext(self));
             sync_if_needed(self.device());
         }
         else if(isCPUScalar(self,value)) {
             dlprim::Tensor x0(todp(other_c));
             dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.dtype()},
-#if VULKAN_API
                         "precise typeof_w0 left = w0; precise typeof_x0 right = x0;" + op_builder,
-#else
-                        "typeof_w0 left = w0; typeof_x0 right = x0;" + op_builder,
-#endif
                         getExecutionContext(other));
             sync_if_needed(other.device());
         }
@@ -413,11 +393,7 @@ using c10::DeviceType;
             dlprim::Tensor x0(todp(self_c));
             dlprim::Tensor x1(todp(other_c));
             dlprim::core::pointwise_operation_broadcast({x0,x1},{y},{},
-#if VULKAN_API
                     "typeof_x0 left = x0; typeof_x1 right = x1;" + op_builder,
-#else
-                    "typeof_x0 left = x0; typeof_x1 right = x1;" + op_builder,
-#endif
                     getExecutionContext(self));
             sync_if_needed(self.device());
         }
@@ -470,11 +446,7 @@ using c10::DeviceType;
         dlprim::Tensor dx=todp(grad_input_c);
         dlprim::Tensor Y=todp(self_c);
         float th = threshold.toDouble();
-#if VULKAN_API
         dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;",getExecutionContext(self));
-#else
-        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;",getExecutionContext(self));
-#endif   
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
         
@@ -654,11 +626,7 @@ using c10::DeviceType;
     Tensor & atan_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-#if VULKAN_API
         return unitary_op(self,out,"precise dtype y0_precise; y0_precise = atan(x0); y0 = y0_precise;");
-#else
-        return unitary_op(self,out,"y0=atan(x0);");
-#endif
     }
 
 
@@ -1216,11 +1184,7 @@ using c10::DeviceType;
         dlprim::Tensor x(todp(self_c));
         dlprim::Tensor y(todp(out_c));
         dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.dtype()},
-#if VULKAN_API
                     "y0 = typeof_y0(x0 != typeof_x0(w0));", 
-#else
-                    "y0 = x0 != w0;", 
-#endif
                     getExecutionContext(self));
         
         if (!out.is_contiguous())
@@ -1266,11 +1230,7 @@ using c10::DeviceType;
         dlprim::Tensor x(todp(self_c));
         dlprim::Tensor y(todp(out_c));
         dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.dtype()},
-#if VULKAN_API
                     "y0 = typeof_y0( x0 == typeof_x0(w0) );",
-#else
-                    "y0 = x0 == w0;",
-#endif
                     getExecutionContext(self));
         
         if (!out.is_contiguous())

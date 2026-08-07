@@ -1,5 +1,3 @@
-#if VULKAN_API
-
 #include "CLTensor.h"
 #include "utils.h"
 
@@ -374,5 +372,3 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m)
 	m.impl("aten::col2im", &ptdlprim::col2im_vk);
 	m.impl("aten::col2im.out", &ptdlprim::col2im_out_vk);
 }
-
-#endif

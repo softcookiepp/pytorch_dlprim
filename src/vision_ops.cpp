@@ -57,136 +57,7 @@ using c10::DeviceType;
             return dlprim::core::Conv2DSettings(cfg_base,dlprim::core::Conv2DBase::get_output_shape_transposed(cfg_base,X.shape(),op),X.dtype());
         }
     }
-#if VULKAN_API
-#else
-    Tensor convolution_overrideable(const Tensor & input,
-                                    const Tensor & weight,
-                                    const c10::optional<Tensor> & bias,
-                                    IntArrayRef stride,
-                                    IntArrayRef padding,
-                                    IntArrayRef dilation,
-                                    bool transposed,
-                                    IntArrayRef output_padding,
-                                    int64_t groups)
-    {
-        GUARD;
-        Tensor X_tmp = input.contiguous();
-        dlprim::Tensor X = todp(X_tmp);
-        dlprim::Tensor W = todp(weight);
-        dlprim::Tensor B;
-        TORCH_CHECK(X.shape().size() == 4,"Invalid input shape");
-        TORCH_CHECK(W.shape().size() == 4,"Invalid input shape");
-        bool with_bias = bias && bias->numel() != 0;
-        if(with_bias) {
-            B=todp(*bias);
-        }
 
-        dlprim::core::Conv2DSettings cfg = conv_config(transposed,X,W,padding,stride,dilation,output_padding,groups);
-
-        dlprim::ExecutionContext q = getExecutionContext(input);
-        dlprim::Context ctx(q);
-        torch::Tensor result;
-        if(!transposed) {
-            auto conv = dlprim::core::Conv2DForward::create(ctx,cfg,with_bias);
-            WSGuard wsg(conv->workspace(),input.device());
-
-            dlprim::Shape rs = dlprim::core::Conv2DForward::get_output_shape(cfg,X.shape());
-            result = new_tensor_as(rs,input);
-            dlprim::Tensor Y = todp(result);
-            conv->enqueue(X,W,(with_bias ? &B : nullptr),Y,wsg.ws,0,q);
-        }
-        else {
-            int opad[2] = {int(output_padding[0]),int(output_padding[1]) };
-            dlprim::Shape rs = dlprim::core::Conv2DBase::get_output_shape_transposed(cfg,X.shape(),opad);
-
-            std::swap(cfg.channels_in,cfg.channels_out);
-            auto conv = dlprim::core::Conv2DBackwardData::create(ctx,cfg);
-            WSGuard wsg(conv->workspace(),input.device());
-            result = new_tensor_as(rs,input);
-            dlprim::Tensor Y = todp(result);
-            conv->enqueue(Y,W,X,wsg.ws,0,q);
-            if(with_bias)
-                dlprim::core::add_bias(Y,B,q);
-        }
-        sync_if_needed(input.device());
-
-        return result;
-    }
-
-
-    // {"schema": "aten::convolution_backward_overrideable(Tensor grad_output, Tensor input, Tensor weight, int[] stride, int[] padding, int[] dilation, bool transposed, int[] output_padding, int groups, bool[3] output_mask) -> (Tensor grad_input, Tensor grad_weight, Tensor grad_bias)", "dispatch": "True", "default": "True"}
-    ::std::tuple<Tensor,Tensor,Tensor> convolution_backward_overrideable(const Tensor & grad_output, const Tensor & input, const Tensor & weight, IntArrayRef stride, IntArrayRef padding, IntArrayRef dilation, bool transposed, IntArrayRef output_padding, int64_t groups, ::std::array<bool,3> output_mask)
-    {
-        GUARD;
-        Tensor grad_output_c = grad_output.contiguous(), input_c = input.contiguous();
-        dlprim::Tensor dy = todp(grad_output_c);
-        dlprim::Tensor x  = todp(input_c);
-        dlprim::Tensor W  = todp(weight);
-        dlprim::core::Conv2DSettings cfg = conv_config(transposed,x,W,padding,stride,dilation,output_padding,groups);
-        dlprim::ExecutionContext q = getExecutionContext(input);
-        dlprim::Context ctx(q);
-
-        size_t ws_size = 0;
-        std::unique_ptr<dlprim::core::Conv2DBackwardData> bwd_data;
-        std::unique_ptr<dlprim::core::Conv2DForward> bwd_data_tr;
-        std::unique_ptr<dlprim::core::Conv2DBackwardFilter> bwd_filter;
-        std::unique_ptr<dlprim::core::BiasBackwardFilter> bwd_bias;
-
-        torch::Tensor data_diff,filter_diff,bias_diff;
-
-        if(transposed)
-            std::swap(cfg.channels_out,cfg.channels_in);
-
-        if(output_mask[0]) {
-            if(!transposed) {
-                bwd_data = std::move(dlprim::core::Conv2DBackwardData::create(ctx,cfg)); 
-                ws_size = std::max(ws_size,bwd_data->workspace());
-            }
-            else {
-                bwd_data_tr = std::move(dlprim::core::Conv2DForward::create(ctx,cfg,false));
-                ws_size = std::max(ws_size,bwd_data_tr->workspace());
-            }
-        }
-        if(output_mask[1]) {
-            bwd_filter = std::move(dlprim::core::Conv2DBackwardFilter::create(ctx,cfg)); 
-            ws_size = std::max(ws_size,bwd_filter->workspace());
-        }
-        if(output_mask[2]) {
-            bwd_bias = std::move(dlprim::core::BiasBackwardFilter::create(ctx,dy.shape(),dy.dtype()));
-            ws_size = std::max(ws_size,bwd_bias->workspace());
-        }
-        at::DataPtr ws_ptr;
-        dlprim::Tensor ws = make_workspace(ws_ptr,ws_size,input.device());
-
-        if(output_mask[0]) {
-            data_diff = new_tensor_as(x.shape(),input);
-            dlprim::Tensor dx = todp(data_diff);
-            if(!transposed)
-                bwd_data->enqueue(dx,W,dy,ws,0,q);
-            else 
-                bwd_data_tr->enqueue(dy,W,nullptr,dx,ws,0,q);
-        }
-
-        if(output_mask[1]) {
-            filter_diff = new_tensor_as(W.shape(),weight);
-            dlprim::Tensor dW = todp(filter_diff);
-            if(!transposed)
-                bwd_filter->enqueue(x,dW,dy,ws,0,q);
-            else
-                bwd_filter->enqueue(dy,dW,x,ws,0,q);
-        }
-
-        if(output_mask[2]) {
-            bias_diff = new_tensor_as(dlprim::Shape(dy.shape()[1]),weight);
-            dlprim::Tensor dB = todp(bias_diff);
-            bwd_bias->enqueue(dy,dB,ws,0,q);
-        }
-        
-        sync_if_needed(grad_output.device());
-
-        return std::tuple<torch::Tensor,torch::Tensor,torch::Tensor>(data_diff,filter_diff,bias_diff);
-    }
-#endif
     Tensor _adaptive_avg_pool2d(const Tensor & self, IntArrayRef output_size) // {"schema": "aten::_adaptive_avg_pool2d
     {
         GUARD;
@@ -586,21 +457,13 @@ using c10::DeviceType;
 
         dlprim::ExecutionContext q(getExecutionContext(self));
         dlprim::Context ctx(q);
-#if VULKAN_API
+
 		tart::buffer_ptr Abuf = buffer_from_tensor(A);
         int64_t    Aoff = A.storage_offset();
         tart::buffer_ptr Bbuf = buffer_from_tensor(B);
         int64_t    Boff = B.storage_offset();
         tart::buffer_ptr Cbuf = buffer_from_tensor(C);
         int64_t    Coff = C.storage_offset();
-#else
-        cl::Buffer Abuf = buffer_from_tensor(A);
-        int64_t    Aoff = A.storage_offset();
-        cl::Buffer Bbuf = buffer_from_tensor(B);
-        int64_t    Boff = B.storage_offset();
-        cl::Buffer Cbuf = buffer_from_tensor(C);
-        int64_t    Coff = C.storage_offset();
-#endif
 
         if(bmm == 0) {
             auto gemm_op = dlprim::gpu::GEMM::get_optimal_gemm(ctx,todp(A.dtype()),At,Bt,M,N,K);
@@ -848,12 +711,8 @@ using c10::DeviceType;
 
 } // namespace
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-#if VULKAN_API
-#else
-      m.impl("aten::convolution_overrideable",&ptdlprim::convolution_overrideable);
-      m.impl("aten::convolution_backward_overrideable",&ptdlprim::convolution_backward_overrideable);
-#endif
+TORCH_LIBRARY_IMPL(aten, PrivateUse1, m)
+{
       m.impl("aten::_adaptive_avg_pool2d",&ptdlprim::_adaptive_avg_pool2d);
       m.impl("aten::_adaptive_avg_pool2d_backward",&ptdlprim::_adaptive_avg_pool2d_backward);
       m.impl("aten::avg_pool2d.out",&ptdlprim::avg_pool2d_out);

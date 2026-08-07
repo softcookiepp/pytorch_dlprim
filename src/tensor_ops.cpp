@@ -29,7 +29,8 @@ using c10::DeviceType;
         // }
         c10::Device dev = device ? *device : Device(OpenCLDeviceType,0);
         c10::ScalarType st = dtype ? *dtype : c10::kFloat; 
-        if(st == c10::kDouble && !CLContextManager::fp64(dev.index())) {
+		tart::device_ptr pDevice = dlprim::Context::getInstance().getDevice(dev.index());
+        if(st == c10::kDouble && !pDevice->getMetadata().double_) {
             st = c10::kFloat;
             TORCH_WARN("This device vk:" + std::to_string(dev.index()) + " does not support cl_khr_fp64, falling back to float");
         }
@@ -168,7 +169,7 @@ using c10::DeviceType;
                 dlprim::Shape shape=dlprim::Shape::from_range(src_sizes.begin(),src_sizes.end());
                 dlprim::Shape src_std=dlprim::Shape::from_range(src_stride.begin(),src_stride.end());
                 dlprim::Shape tgt_std=dlprim::Shape::from_range(tgt_stride.begin(),tgt_stride.end());
-#if VULKAN_API
+
 				tart::buffer_ptr selfBuf = buffer_from_tensor(self);
 				tart::buffer_ptr dstBuf = buffer_from_tensor(dst);
 				dlprim::core::copy_strided(shape, selfBuf, src_offset, src_std,
@@ -176,23 +177,9 @@ using c10::DeviceType;
                                                  todp(self.dtype()),
                                                  todp(dst.dtype()),
                                                  getExecutionContext(self.device()));
-#else
-                dlprim::core::copy_strided(shape,buffer_from_tensor(self),src_offset,src_std,
-                                                 buffer_from_tensor(dst), tgt_offset,tgt_std,
-                                                 todp(self.dtype()),
-                                                 todp(dst.dtype()),
-                                                 getExecutionContext(self.device()));
-#endif
             }
             if(non_blocking)
                 sync_if_needed(self.device());
-            else
-#if VULKAN_API
-			{}
-                //getExecutionContext(self.device()).queue()->sync();
-#else
-                getExecutionContext(self.device()).queue().flush();
-#endif
         }
         else {
             throw std::runtime_error("OpenCL supports copy to CPU backend only");
@@ -425,7 +412,6 @@ using c10::DeviceType;
         
         if(new_size >= storage_size && new_size > 0) {
             at::DataPtr new_mem = CLContextManager::allocate(self.device(),new_size);
-#if VULKAN_API	
 			if(storage_size > 0)
 			{
                 tart::buffer_ptr dst = *( (tart::buffer_ptr*)(new_mem.get()) );
@@ -433,14 +419,6 @@ using c10::DeviceType;
                 auto q = getExecutionContext(self);
                 src->copyTo(dst, 0, 0, storage_size);
             } 
-#else
-            if(storage_size > 0) {
-                cl::Buffer dst((cl_mem)new_mem.get(),true);
-                cl::Buffer src((cl_mem)data.get(),true);
-                auto q = getExecutionContext(self);
-                q.queue().enqueueCopyBuffer(src,dst,0,0,storage_size,q.events(),q.event("copy_buffer"));
-            } 
-#endif
             data = std::move(new_mem);
             storage.set_nbytes(new_size);
             sync_if_needed(self.device());

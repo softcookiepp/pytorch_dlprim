@@ -1,5 +1,3 @@
-#if VULKAN_API
-
 #include "CLTensor.h"
 #include "utils.h"
 
@@ -763,5 +761,3 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m)
 	m.impl("aten::convolution_overrideable",&ptdlprim::convolution_overrideable);
 	m.impl("aten::convolution_backward_overrideable",&ptdlprim::convolution_backward_overrideable);
 }
-
-#endif

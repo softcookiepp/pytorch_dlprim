@@ -83,11 +83,8 @@ extern tart::profiler_ptr gProfiler;
 
         void clear();
         static std::uint64_t round(uint64_t v);
-#if VULKAN_API
+        
 		std::unique_ptr<CLMemAllocation> allocate(int id, tart::device_ptr& ctx, int64_t orig_size);
-#else
-        std::unique_ptr<CLMemAllocation> allocate(int id,cl::Context &ctx,int64_t orig_size);
-#endif
         void release(std::unique_ptr<CLMemAllocation> &&mem);
         //void prepare(dlprim::Context &ctx);
         void prepare(const tart::device_ptr& device);
@@ -114,8 +111,6 @@ extern tart::profiler_ptr gProfiler;
 
         static dlprim::RandomState &rng_state(int index);
         static bool is_ready(int index);
-
-        static bool fp64(int index);
 
         static bool enable_profiling(int device);
         static void start_profiling(int device);

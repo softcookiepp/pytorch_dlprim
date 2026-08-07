@@ -1,5 +1,3 @@
-#if VULKAN_API
-
 #include "CLTensor.h"
 #include "utils.h"
 
@@ -85,12 +83,8 @@ Tensor& fill_Tensor_(Tensor& self, const Tensor& value)
 	TORCH_CHECK(value.dim() == 0, "fill_ only supports 0-dimension value tensor but got tensor with ", value.dim(), " dimensions.");
 	if (self.device() != value.device())
 	{
-#if 1
 		auto valDevice = value.to(self.device());
 		return fill_Tensor_(self, valDevice);
-#else
-		return at::native::fill_out(self, value.item());
-#endif
 	}
 	// Check if value is a view of self and if it is we clone
 	// it to avoid overwriting self prematurely
@@ -111,9 +105,5 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m)
 {
 	m.impl("aten::fill_.Tensor", &ptdlprim::fill_Tensor_);
 }
-
-#endif
-
-
 
 

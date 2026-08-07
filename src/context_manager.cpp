@@ -18,15 +18,9 @@ CLContextManager& CLContextManager::instance()
 
 CLContextManager::~CLContextManager()
 {
-	{
-		#if 1
-			for (auto& pair : sDeviceCaches)
-				pair.second.clear();
-		#else
-			for(auto &data:data_)
-				data->cache.clear();
-		#endif
-	}
+	// wait, do we really need this?
+	for (auto& pair : sDeviceCaches)
+		pair.second.clear();
 	no_cache_ = true;
 }
 
@@ -72,14 +66,6 @@ void CLContextManager::release(std::unique_ptr<CLMemAllocation> &&mem)
 	getCache(mem->device_id).release(std::move(mem));
 }
 
-typedef struct TMemAllocation
-{
-	tart::device_ptr device = nullptr;
-	tart::buffer_ptr buf = nullptr;
-} TMemAllocation;
-
-static std::set<std::shared_ptr<TMemAllocation>> sTMemAllocations;
-
 // static
 at::DataPtr CLContextManager::allocate(c10::Device const &dev,size_t n)
 {
@@ -120,12 +106,6 @@ bool CLContextManager::is_ready(int index)
 {
 	getCache(index);
 	return true;
-}
-
-//static
-bool CLContextManager::fp64(int index)
-{
-	return instance().getContext(index).device()->getMetadata().double_;
 }
 
 //static
