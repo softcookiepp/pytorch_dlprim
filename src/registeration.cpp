@@ -73,7 +73,6 @@ public:
     {
         auto device = stream.device();
         dlprim::Context::getInstance().getDevice(device.index())->sync();
-        //CLContextManager::getCommandQueue(device.index()).finish();
     }
 private:
 

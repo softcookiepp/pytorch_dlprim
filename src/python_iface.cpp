@@ -26,11 +26,7 @@ namespace ptdlprim
             CLContextManager::rng_state(i).seed(seed);
             if(CLContextManager::is_ready(i))
             {
-				#if 1
-					dlprim::Context::getInstance().getDevice(i)->sync();
-				#else
-					CLContextManager::getCommandQueue(i).finish();
-				#endif
+				dlprim::Context::getInstance().getDevice(i)->sync();
             }
         }
 
@@ -42,21 +38,13 @@ namespace ptdlprim
             for(int i=0;i<N;i++) {
                 if(CLContextManager::is_ready(i))
                 {
-					#if 1
-						dlprim::Context::getInstance().getDevice(i)->sync();
-					#else
-						CLContextManager::getCommandQueue(i).finish();
-					#endif
+					dlprim::Context::getInstance().getDevice(i)->sync();
                 }
             }
         }
         else
         {
-			#if 1
-				dlprim::Context::getInstance().getDevice(index)->sync();
-			#else
-				CLContextManager::getCommandQueue(index).finish();
-			#endif
+			dlprim::Context::getInstance().getDevice(index)->sync();
         }
     }
     bool is_bad_fork()
