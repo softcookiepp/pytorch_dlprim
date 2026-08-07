@@ -29,6 +29,12 @@ CLContextManager::~CLContextManager()
 CLCache& CLContextManager::getCache(int deviceIndex)
 {
 	#if 0
+		if (sDeviceCaches.find(deviceIndex) == sDeviceCaches.end())
+		{
+			tart::device_ptr device = dlprim::Context::getInstance().getDevice(device);
+			sDeviceCaches[deviceIndex].prepare(device);
+		}
+		return sDeviceCaches[deviceIndex];
 	#else
 		CLContextManager::DevData& d = instance().data(deviceIndex);
 		return d.cache;
@@ -90,7 +96,6 @@ void CLContextManager::sync_if_needed(int index)
 	if(inst.no_cache_)
 	{
 		dlprim::Context::getInstance().getDevice(index)->sync();
-		//inst.data(index).queue.finish();
 	}
 }
 
@@ -212,8 +217,8 @@ CLContextManager::DevData& CLContextManager::data(int i)
 		return res;
 	std::cout << "	res.name: " << res.name << std::endl;
 	res.ctx = dlprim::Context(res.name);
-	res.fp64 = res.ctx.device()->getMetadata().double_;
-	res.queue = res.ctx.make_execution_context(0);
+	//res.fp64 = res.ctx.device()->getMetadata().double_;
+	//res.queue = res.ctx.make_execution_context(0);
 	res.cache.prepare(res.ctx.device());
 	res.ready = true;
 	std::cout << "Accessing device #" << i << ":" << res.ctx.name() << std::endl;

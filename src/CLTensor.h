@@ -43,8 +43,8 @@ extern tart::profiler_ptr gProfiler;
     #  define GUARD ExecGuard debug_guard(__PRETTY_FUNCTION__,__func__);
 	#endif
 
-    struct CLMemAllocation {
-
+    struct CLMemAllocation
+    {
         CLMemAllocation(CLMemAllocation const &) = delete;
         void operator=(CLMemAllocation const &) = delete;
         CLMemAllocation(CLMemAllocation &&) = default;
@@ -56,7 +56,6 @@ extern tart::profiler_ptr gProfiler;
             orig_size(os)
         {
 			buffer = ctx->allocateBuffer(length);
-
         }
         int device_id;
         std::int64_t size;

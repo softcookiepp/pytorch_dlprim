@@ -99,70 +99,11 @@ namespace ptdlprim {
 
     void CLContextManager::stop_profiling(int device,std::string const &output)
     {
-#if VULKAN_API
 		throw std::runtime_error("profiling is not implemented on Vulkan yet :c");
-#else
-        auto &data = instance().data(device);
-        if(!data.enable_profiling || !data.timing) {
-            throw std::runtime_error("You must enable profiling: torch.vk.enable_profiling(device) and call stop after finishing ");
-        }
-        data.queue.finish();
-        ExecGuard::set_profiling_context(nullptr);
-        std::shared_ptr<dlprim::TimingData> timing = data.timing;
-        data.queue.enable_timing(nullptr);
-        if(output.empty()) {
-            return;
-        }
-        std::ofstream log(output);
-        log << "section,kernel,start (ms),end (ms),duraion(ms)\n";
-        double point0 = -1.0;
-        for(auto &d : timing->events()) {
-            try
-            {
-                auto end_ms   = d->event.getProfilingInfo<CL_PROFILING_COMMAND_END>() * 1e-6;
-                auto start_ms = d->event.getProfilingInfo<CL_PROFILING_COMMAND_START>() * 1e-6;
-                if(point0 == -1)
-                    point0 = start_ms;
-                double time_ms = (end_ms - start_ms);
-                int s = d->section;
-                std::stack<char const *> sections;
-                while(s!=-1) {
-                    auto &sec = timing->sections().at(s);
-                    sections.push(sec.name);
-                    s=sec.parent;
-                }
-                while(!sections.empty()) {
-                    log << sections.top();
-                    sections.pop();
-                    if(!sections.empty())
-                        log<<":";
-                }
-                log<<"," << d->name;
-                if(d->index != -1)
-                     log << '[' << d->index << ']';
-                log << "," << (start_ms-point0)<<","<<(end_ms-point0) << ","  << time_ms << "\n";
-            }
-#if VULKAN_API
-            catch (const std::exception& e)
-            {
-#else
-            catch(cl::Error const &e) {
-#endif
-                log << "Failed for " << d->name << " " << e.what() << e.err() << std::endl;
-            }
-        }
-#endif
     }
     void CLContextManager::start_profiling(int device)
     {
-        auto &data = instance().data(device);
-        if(!data.enable_profiling) {
-            throw std::runtime_error("You must enable profiling: torch.vk.enable_profiling(device)");
-        }
-        data.queue.finish();
-        data.timing.reset(new dlprim::TimingData());
-        data.queue.enable_timing(data.timing);
-        ExecGuard::set_profiling_context(&data.queue);
+		throw std::runtime_error("Profiling is not implemented for Vulkan yet");
     }
 } // namespace
 
