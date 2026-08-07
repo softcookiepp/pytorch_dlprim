@@ -1,10 +1,11 @@
 // because having everything in a header is completely unreadable and slows down the build time of everything
+#include "CLTensor.h"
 
 namespace ptdlprim
 {
 
 
-static std::set<tart::buffer_ptr> CLContextManager::sAllocations;
+std::set<tart::buffer_ptr> CLContextManager::sAllocations;
 
 CLContextManager& CLContextManager::instance()
 {
@@ -23,27 +24,34 @@ CLContextManager::~CLContextManager()
 	no_cache_ = true;
 }
 
+//static
 unsigned CLContextManager::count()
 {
-	return instance().data_.size();
+	return dlprim::Context::getInstance().getNumDevices();
 }
+
+//static
 dlprim::Context CLContextManager::getContext(int id)
 {
-	return instance().data(id).ctx;
+	tart::device_ptr device = dlprim::Context::getInstance().getDevice(id);
+	return dlprim::Context(device);
 }
 
+//static
 dlprim::ExecutionContext CLContextManager::getCommandQueue(int id)
 {
-	return instance().data(id).queue;
+	tart::device_ptr device = dlprim::Context::getInstance().getDevice(id);
+	return dlprim::ExecutionContext(device);
 }
-
+#if 0
+//static
 std::unique_ptr<CLMemAllocation> CLContextManager::alloc(int id,int64_t size)
 {
 	auto &d = instance().data(id);
 	tart::device_ptr device = d.ctx.device();
 	return d.cache.allocate(id, device, size);
 }
-
+#endif
 // static
 void CLContextManager::release(std::unique_ptr<CLMemAllocation> &&mem)
 {
@@ -52,20 +60,24 @@ void CLContextManager::release(std::unique_ptr<CLMemAllocation> &&mem)
 		mem.reset();
 		return;
 	}
-	auto &d = instance().data(mem->device_id);
+	CLContextManager::DevData& d = instance().data(mem->device_id);
 	d.cache.release(std::move(mem));
 }
+
+typedef struct TMemAllocation
+{
+	tart::device_ptr device = nullptr;
+	tart::buffer_ptr buf = nullptr;
+} TMemAllocation;
+
+static std::set<std::shared_ptr<TMemAllocation>> sTMemAllocations;
 
 // static
 at::DataPtr CLContextManager::allocate(c10::Device const &dev,size_t n)
 {
-	#if 1
-		auto& d = instance().data(dev.index());
-		tart::device_ptr device = d.ctx.device();
-		std::unique_ptr<CLMemAllocation> ptr = d.cache.allocate(dev.index(), device, n);
-	#else
-		std::unique_ptr<CLMemAllocation> ptr=alloc(dev.index(),n);
-	#endif
+	CLContextManager::DevData& d = instance().data(dev.index());
+	tart::device_ptr device = dlprim::Context::getInstance().getDevice(dev.index());
+	std::unique_ptr<CLMemAllocation> ptr = d.cache.allocate(dev.index(), device, n);
 	tart::buffer_ptr* buffer = &(ptr->buffer);
 	return at::DataPtr(buffer,ptr.release(),&CLContextManager::free_ptr,dev);
 }
@@ -74,22 +86,20 @@ at::DataPtr CLContextManager::allocate(c10::Device const &dev,size_t n)
 void CLContextManager::sync_if_needed(int index)
 {
 	auto &inst = instance();
-	if(inst.no_cache_) {
-		inst.data(index).queue.finish();
+	if(inst.no_cache_)
+	{
+		dlprim::Context::getInstance().getDevice(index)->sync();
+		//inst.data(index).queue.finish();
 	}
 }
 
 //static
 void CLContextManager::free_ptr(void *ctx)
 {
-	#if 0
-		// TODO: write more concise stuff
-	#else
-		if(ctx == nullptr)
-			return;
-		std::unique_ptr<CLMemAllocation> ptr(static_cast<CLMemAllocation *>(ctx));
-		release(std::move(ptr));
-	#endif
+	if(ctx == nullptr)
+		return;
+	std::unique_ptr<CLMemAllocation> ptr(static_cast<CLMemAllocation *>(ctx));
+	release(std::move(ptr));
 }
 
 //static
@@ -110,10 +120,7 @@ bool CLContextManager::is_ready(int index)
 //static
 bool CLContextManager::fp64(int index)
 {
-	#if 0
-	#else
-		return instance().data(index).fp64;
-	#endif
+	return instance().getContext(index).device()->getMetadata().double_;
 }
 
 //static
@@ -193,13 +200,13 @@ void CLContextManager::allocate()
 	}
 }
 
-DevData& CLContextManager::data(int i)
+CLContextManager::DevData& CLContextManager::data(int i)
 {
 	if(i < 0)
 		i = 0;
 	if(i >= int(data_.size()))
 		throw std::runtime_error("Invalid Device #" + std::to_string(i));
-	DevData &res = *data_[i];
+	CLContextManager::DevData &res = *data_[i];
 	if(res.ready)
 		return res;
 	std::cout << "	res.name: " << res.name << std::endl;

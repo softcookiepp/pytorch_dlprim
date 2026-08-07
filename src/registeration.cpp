@@ -119,15 +119,7 @@ public:
     at::DataPtr allocate(size_t nbytes) override
     {
         at::Device device = current_device();
-        std::cout << "	DEVICE INDEX: " << device.index() << std::endl;
-        #if 0
-			tart::device_ptr tdev = device.
-			tart::buffer_ptr buf = 
-			at::DataPtr ptr(buffer,ptr.release(), &CLContextManager::free_ptr,dev);
-			return ptr;
-        #else
-			return CLContextManager::allocate(device,nbytes);
-		#endif
+		return CLContextManager::allocate(device,nbytes);
     }
     virtual void copy_data(void* dest, const void* src, std::size_t count) const override
     {

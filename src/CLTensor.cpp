@@ -9,8 +9,6 @@ namespace ptdlprim {
 	
 	tart::profiler_ptr gProfiler = std::make_shared<tart::HostProfiler>();
 	
-	std::set<tart::buffer_ptr> CLContextManager::sAllocations;
-	
     std::uint64_t CLCache::round(uint64_t v)
     {
         v--;
