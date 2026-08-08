@@ -293,7 +293,7 @@ using c10::DeviceType;
     size_t select_impl(T *mask,dlprim::Tensor &/*m*/,dlprim::Tensor &v)
     {
         void *p=v.host_data();
-        switch(dlprim::size_of_data_type(v.dtype())) {
+        switch(dlprim::data_type_to_tart_dtype(v.dtype()).size()) {
         case 1: return select_impl_by(static_cast<int8_t  *>(p),mask,v.shape().total_size());
         case 2: return select_impl_by(static_cast<int16_t *>(p),mask,v.shape().total_size());
         case 4: return select_impl_by(static_cast<int32_t *>(p),mask,v.shape().total_size());
@@ -408,7 +408,7 @@ using c10::DeviceType;
         c10::ArrayRef<int64_t> sizes(vsizes.data(),vsizes.size());
 
         dlprim::DataType dt = todp(self.dtype());
-        new_size*=dlprim::size_of_data_type(dt);
+        new_size*=dlprim::data_type_to_tart_dtype(dt).size();
         
         if(new_size >= storage_size && new_size > 0) {
             at::DataPtr new_mem = CLContextManager::allocate(self.device(),new_size);

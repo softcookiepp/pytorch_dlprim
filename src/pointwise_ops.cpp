@@ -1078,7 +1078,7 @@ using c10::DeviceType;
         TORCH_CHECK(r.second == Yind.shape(),"Invalid output shape");
         Yind.reshape(r.first);
 
-        WSGuard tmp_guard(Yind.shape().total_size()*dlprim::size_of_data_type(X.dtype()),
+        WSGuard tmp_guard(Yind.shape().total_size()*dlprim::data_type_to_tart_dtype(X.dtype()).size(),
                          self.device());
         dlprim::Tensor Yval = tmp_guard.ws.sub_tensor(0,Yind.shape(),X.dtype());
 
