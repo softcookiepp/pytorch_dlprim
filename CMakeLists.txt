@@ -3,7 +3,7 @@ project(dlprim_backend)
 
 set(Python_FIND_VIRTUALENV FIRST)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-
+execute_process(COMMAND which python3)
 if(INSTALL_TORCH)
 	# CMake is a Rube Goldberg machine platform, I don't care what people say.
 	# This is all because pyproject.toml has no way of specifying the package index for the build environment packages,
@@ -32,6 +32,10 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 option(BUILD_CORE_ONLY "Core Build" ON)
 option(DLPRIM_STATIC_BUILD "Build static version only" ON)
 option(BUILD_CPLUS_EXAMPLE "Build C++ examples" OFF)
+if(DLPRIM_STATIC_BUILD)
+	set(BUILD_SHARED_LIBS OFF)
+	set(TART_BUILD_STATIC ON)
+endif()
 
 add_subdirectory(dlprimitives)
 include_directories(${PYTHON_INCLUDE_DIR})
@@ -45,10 +49,6 @@ message(" Python libraries: ${Python3_LIBRARIES}")
 message(" Python include: ${Python3_INCLUDE_DIRS}")
 
 if(1)
-	if(NOT WIN32)
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O2 -Wall")
-	endif()
-
 	# Define our library target
 	add_library(pt_vk SHARED 
 			src/pointwise_ops.cpp
@@ -70,10 +70,11 @@ if(1)
 			)
 
 	target_compile_features(pt_vk PRIVATE cxx_std_17)
-	set_target_properties(pt_vk PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
+	set_target_properties(pt_vk PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib")
 
 	# Link against LibTorch
-	target_link_libraries(pt_vk ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core ${Python3_LIBRARIES})
+	message(${Python3_LIBRARIES})
+	target_link_libraries(pt_vk ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core)# ${Python3_LIBRARIES})
 	if(WIN32)
 		target_link_libraries(pt_vk ${Python3_LIBRARIES})
 	endif()
@@ -87,13 +88,15 @@ if(1)
 		)
 		 
 	endif()
+	
+	set_target_properties(pt_vk PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib")
 
 		
 
 
 	foreach(PYNAME __init__.py)
 		configure_file(${CMAKE_CURRENT_SOURCE_DIR}/python/pytorch_vk/${PYNAME} "${CMAKE_BINARY_DIR}/pytorch_vk/${PYNAME}" COPYONLY)
-		install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/python/pytorch_vk/${PYNAME} DESTINATION python/pytorch_vk)
+		install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/python/pytorch_vk/${PYNAME} DESTINATION pytorch_vk)
 	endforeach()
 
 	install(TARGETS pt_vk 
@@ -118,7 +121,7 @@ else()
 		src/CLTensor.cpp
 		src/guard.cpp
 		src/python_iface.cpp)
-	target_link_libraries(pt_vk ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core ${Python3_LIBRARIES} pybind11::headers)
+	target_link_libraries(pt_vk ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core ${Python3_LIBRARIES})
 	set_target_properties(pt_vk PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 	install(TARGETS pt_vk DESTINATION "${SKBUILD_PLATLIB_DIR}")
 endif()
