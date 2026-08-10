@@ -40,7 +40,7 @@ using c10::DeviceType;
         GUARD;
         dlprim::Tensor rnd=todp(self);
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
-        dlprim::core::fill_random(rnd,seq.seed,seq.sequence,dlprim::core::rnd_bernoulli,p,0,getExecutionContext(self));
+        dlprim::core::fill_random(rnd, seq.seed,seq.sequence, dlprim::core::rnd_bernoulli,p, 0);
         sync_if_needed(self.device());
         return self;
     }
@@ -52,7 +52,7 @@ using c10::DeviceType;
         GUARD;
         dlprim::Tensor rnd=todp(self);
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
-        dlprim::core::fill_random(rnd,seq.seed,seq.sequence,dlprim::core::rnd_normal,mean,std*std,getExecutionContext(self));
+        dlprim::core::fill_random(rnd,seq.seed,seq.sequence,dlprim::core::rnd_normal,mean,std*std);
         sync_if_needed(self.device());
         return self;
     }
@@ -64,7 +64,7 @@ using c10::DeviceType;
         GUARD;
         dlprim::Tensor rnd=todp(self);
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
-        dlprim::core::fill_random(rnd,seq.seed,seq.sequence,dlprim::core::rnd_uniform,from,to,getExecutionContext(self));
+        dlprim::core::fill_random(rnd,seq.seed,seq.sequence,dlprim::core::rnd_uniform,from,to);
         sync_if_needed(self.device());
         return self;
     }
