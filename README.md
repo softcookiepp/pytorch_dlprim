@@ -4,7 +4,7 @@ Out-of-tree backend for pytorch supporting any GPU with a Vulkan driver!
 
 Originally based [pytorch_dlprim](https://github.com/artyom-beilis/pytorch_dlprim), but will likely have even more functionality in the future.
 
-Currently pytorch version 2.4.0 is required, but this will change in the future.
+Currently all functionality is validated against pytorch 2.4.0, but it should work for later versions too.
 
 # Installation
 
@@ -30,6 +30,7 @@ a = torch.randn(256).to("vk:0")
 - Refactor codebases of upstream dependencies. They have far too many goofy abstractions that only exist because of limitations inherent to OpenCL and/or the ability to support multiple GPGPU APIs, and this makes maintenance and optimization difficult.
 - Optimize as much as possible.
 - Implement missing operators.
+- Validate against pytorch's own unit tests; original pytorch_dlprim unit tests are not as comprehensive
 
 ## `pytorch_vk` specific API
 

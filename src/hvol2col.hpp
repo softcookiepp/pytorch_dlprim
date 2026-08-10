@@ -13,7 +13,7 @@ void hvol2col(
 		const torch::IntArrayRef dilation_size,
 		const tart::buffer_ptr& data_col,
 		const uint32_t data_col_offset,
-		const dlprim::DataType Dtype,
+		const tart::DType dt,
 		const uint32_t dim)
 {
 	if (dim == 3)
@@ -67,7 +67,7 @@ void hvol2col(
 				dilation_size[1],
 				data_col,
 				data_col_offset,
-				Dtype);
+				dt);
 	}
 }
 
@@ -84,7 +84,7 @@ void col2hvol(
 		const torch::IntArrayRef dilation_size,
 		const tart::buffer_ptr& data_hvol,
 		const uint32_t data_hvol_offset,
-		const dlprim::DataType Dtype,
+		const tart::DType& dt,
 		uint32_t dim)
 {
 	if (dim == 3)
@@ -138,7 +138,7 @@ void col2hvol(
 			dilation_size[1],
 			data_hvol,
 			data_hvol_offset,
-			Dtype,
-			Dtype);
+			dt,
+			dt);
 	}
 }

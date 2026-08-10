@@ -148,7 +148,7 @@ static void im2col_out_vk_template(
 				dilation_width,
 				output_n_dp.device_buffer(),
 				output_n_dp.device_offset(),
-				input_n_dp.dtype());
+				input_n_dp.tDtype());
 		}
 	}
 	
@@ -247,9 +247,7 @@ void col2im_out_vk_template(
 				1;
 		int64_t width_col = (output_width + 2 * pad_width -
 												 (dilation_width * (kernel_width - 1) + 1)) /
-						stride_width +
-				1;
-#if 1
+						stride_width + 1;
 		//throw std::runtime_error("col2im_batched not implemented!");
 		
 		dlprim::ExecutionContext q = getExecutionContext(output);
@@ -277,30 +275,7 @@ void col2im_out_vk_template(
 			output_dp.device_buffer(),
 			output_dp.device_offset(),
 			output_batch_stride,
-			output_dp.dtype());
-		
-#else
-		col2im_batched(
-				at::cuda::getCurrentCUDAStream(),
-				input.const_data_ptr<scalar_t>(),
-				input_batch_stride,
-				batch_size,
-				n_output_plane,
-				output_height,
-				output_width,
-				height_col,
-				width_col,
-				kernel_height,
-				kernel_width,
-				pad_height,
-				pad_width,
-				stride_height,
-				stride_width,
-				dilation_height,
-				dilation_width,
-				output.mutable_data_ptr<scalar_t>(),
-				output_batch_stride);
-#endif
+			output_dp.tDtype());
 	}
 #if 0
 	);
