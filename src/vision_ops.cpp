@@ -466,7 +466,7 @@ using c10::DeviceType;
         int64_t    Coff = C.storage_offset();
 
         if(bmm == 0) {
-            auto gemm_op = dlprim::gpu::GEMM::get_optimal_gemm(ctx,todp(A.dtype()),At,Bt,M,N,K);
+            auto gemm_op = dlprim::gpu::GEMM::get_optimal_gemm(q.queue(),todp(A.dtype()),At,Bt,M,N,K);
             gemm_op->gemm(M,N,K,
                     Abuf,Aoff,lda,
                     Bbuf,Boff,ldb,
