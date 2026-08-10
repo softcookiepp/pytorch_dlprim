@@ -174,9 +174,8 @@ using c10::DeviceType;
 				tart::buffer_ptr dstBuf = buffer_from_tensor(dst);
 				dlprim::core::copy_strided(shape, selfBuf, src_offset, src_std,
                                                  dstBuf, tgt_offset,tgt_std,
-                                                 todp(self.dtype()),
-                                                 todp(dst.dtype()),
-                                                 getExecutionContext(self.device()));
+                                                 data_type_to_tart_dtype(todp(self.dtype())),
+                                                 data_type_to_tart_dtype(todp(dst.dtype())));
             }
             if(non_blocking)
                 sync_if_needed(self.device());
