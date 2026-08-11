@@ -79,7 +79,7 @@ using c10::DeviceType;
         else {
             result = new_tensor_as(X.shape(),self);
             dlprim::Tensor Y = todp(result);
-            dlprim::core::pointwise_operation({X},{Y},{},"y0=x0;",getExecutionContext(self));
+            dlprim::core::pointwise_operation({X},{Y},{},"y0=x0;");
         }
         sync_if_needed(self.device());
         return result;
@@ -107,7 +107,7 @@ using c10::DeviceType;
         else {
             result = new_tensor_as(dy.shape(),self);
             dlprim::Tensor dx = todp(result);
-            dlprim::core::pointwise_operation({dy},{dx},{},"y0=x0;",getExecutionContext(self));
+            dlprim::core::pointwise_operation({dy},{dx},{},"y0=x0;");
         }
         sync_if_needed(self.device());
         return result;
@@ -519,13 +519,11 @@ using c10::DeviceType;
             if(out.is_contiguous()) {
                 auto y=todp(out);
                 dlprim::core::pointwise_operation({x},{y},{alpha},
-                                          "y0 = x0*w0;",
-                                          getExecutionContext(self));
+                                          "y0 = x0*w0;");
             }
             else {
                 dlprim::core::pointwise_operation({x},{x},{alpha},
-                                          "y0 = x0*w0;",
-                                          getExecutionContext(self));
+                                          "y0 = x0*w0;");
                 out.copy_(p);
             }
         }

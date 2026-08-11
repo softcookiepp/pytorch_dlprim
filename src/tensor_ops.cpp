@@ -208,7 +208,7 @@ using c10::DeviceType;
         GUARD;
         dlprim::Tensor t(todp(self));
         auto q = getExecutionContext(self);
-        dlprim::core::fill_tensor(t,value.to<double>(),q);
+        dlprim::core::fill_tensor(t,value.to<double>());
         sync_if_needed(self.device());
         return self;
     }
@@ -221,7 +221,7 @@ using c10::DeviceType;
             return self;
         Tensor self_c = self.contiguous();
         dlprim::Tensor t(todp(self));
-        dlprim::core::fill_tensor(t,0.0,getExecutionContext(self));
+        dlprim::core::fill_tensor(t,0.0);
         if(!self.is_contiguous())
             self.copy_(self_c);
         return self;

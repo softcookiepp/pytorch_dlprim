@@ -120,8 +120,7 @@ using c10::DeviceType;
         dlprim::Tensor x0=todp(self_c);
         float scale = other.to<double>();
         dlprim::core::pointwise_operation({x0},{x0},{scale},
-                                          "y0 = x0*w0;",
-                                          getExecutionContext(self));
+                                          "y0 = x0*w0;");
         
         if (!self.is_contiguous())
             self.copy_(self_c);
@@ -143,8 +142,7 @@ using c10::DeviceType;
             dlprim::Tensor x0=todp(self_c);
             float w0 = alpha.toDouble() * value;
             dlprim::core::pointwise_operation({x0},{y0},{w0},
-                                      "y0 = x0 + w0;",
-                                      getExecutionContext(self));
+                                      "y0 = x0 + w0;");
         }
         else if(isCPUScalar(self,value)) {
             dev_to_sync = other.device();
@@ -153,8 +151,7 @@ using c10::DeviceType;
             float w0 = value;
             float w1 = alpha.toDouble();
             dlprim::core::pointwise_operation({x0},{y0},{w0,w1},
-                                      "y0 = w0 + x0 * w1;",
-                                      getExecutionContext(other));
+                                      "y0 = w0 + x0 * w1;");
         }
         else {
             Tensor self_c = self.contiguous();
@@ -163,8 +160,7 @@ using c10::DeviceType;
             dlprim::Tensor x1=todp(other_c);
             float w0 = alpha.toDouble();
             dlprim::core::pointwise_operation_broadcast({x0,x1},{y0},{w0},
-                                      "y0 = x0 + x1 * w0;",
-                                      getExecutionContext(self));
+                                      "y0 = x0 + x1 * w0;", getExecutionContext(self_c));
         }
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -179,7 +175,7 @@ using c10::DeviceType;
         
         dlprim::Tensor x=todp(self_c);
         dlprim::Tensor y=todp(out_c);
-        dlprim::core::pointwise_operation({x},{y},{},op,getExecutionContext(self));
+        dlprim::core::pointwise_operation({x},{y},{},op);
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -306,7 +302,7 @@ using c10::DeviceType;
         dlprim::Tensor x = todp(self_c);
         dlprim::Tensor y = todp(out_c);
         
-        dlprim::core::pointwise_operation({x},{y},{val},"y0=pow(x0,w0);",getExecutionContext(self));
+        dlprim::core::pointwise_operation({x},{y},{val},"y0=pow(x0,w0);");
 
         if(!out.is_contiguous())
             out.copy_(out_c);
@@ -326,8 +322,7 @@ using c10::DeviceType;
         double value=0;
         if(isCPUScalar(other,value)) {
             dlprim::core::pointwise_operation({x0},{y0},{double(1.0/value)},
-                                        "y0 = x0*w0;",
-                                        getExecutionContext(self));
+                                        "y0 = x0*w0;");
         }
         else {
             Tensor other_c = other.contiguous();
@@ -446,7 +441,7 @@ using c10::DeviceType;
         dlprim::Tensor dx=todp(grad_input_c);
         dlprim::Tensor Y=todp(self_c);
         float th = threshold.toDouble();
-        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;",getExecutionContext(self));
+        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;");
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
         
@@ -565,7 +560,7 @@ using c10::DeviceType;
         dlprim::Tensor Y(todp(out));
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
-        dlprim::core::pointwise_operation({X},{Y},{w0,w1},"y0=max(w0,min(w1,x0));",getExecutionContext(self));
+        dlprim::core::pointwise_operation({X},{Y},{w0,w1},"y0=max(w0,min(w1,x0));");
         sync_if_needed(self.device());
         return out;
     }
@@ -579,7 +574,7 @@ using c10::DeviceType;
         dlprim::Tensor X=todp(self_c);
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
-        dlprim::core::pointwise_operation({X},{X},{w0,w1},"y0=max(w0,min(w1,x0));",getExecutionContext(self));
+        dlprim::core::pointwise_operation({X},{X},{w0,w1},"y0=max(w0,min(w1,x0));");
         if(!self.is_contiguous())
             self.copy_(self_c);
         sync_if_needed(self.device());
@@ -597,7 +592,7 @@ using c10::DeviceType;
         dlprim::Tensor dX = todp(result);
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
-        dlprim::core::pointwise_operation({X,dY},{dX},{w0,w1},"y0 = (w0 <= x0 && x0 <= w1) ? x1 : 0;",getExecutionContext(self));
+        dlprim::core::pointwise_operation({X,dY},{dX},{w0,w1},"y0 = (w0 <= x0 && x0 <= w1) ? x1 : 0;");
         sync_if_needed(self.device());
         return result;
     }
@@ -611,7 +606,7 @@ using c10::DeviceType;
         dlprim::Tensor x=todp(self_c);
         Tensor out = new_tensor_as(x.shape(),self);
         dlprim::Tensor y=todp(out);
-        dlprim::core::pointwise_operation({x},{y},{},"y0 = x0 < 0 ? -x0 : x0;",getExecutionContext(self));
+        dlprim::core::pointwise_operation({x},{y},{},"y0 = x0 < 0 ? -x0 : x0;");
         sync_if_needed(self.device());
         return out;
     }
@@ -739,7 +734,7 @@ using c10::DeviceType;
         
         Tensor self_c = self.contiguous();
         dlprim::Tensor x=todp(self_c);
-        dlprim::core::pointwise_operation({x},{x},{},"y0 = x0 <= -3.0f ? 0 : (x0>=3.0f ? x0 : x0*(x0+3.0f)/6.0f);",getExecutionContext(self));
+        dlprim::core::pointwise_operation({x},{x},{},"y0 = x0 <= -3.0f ? 0 : (x0>=3.0f ? x0 : x0*(x0+3.0f)/6.0f);");
         
         if (!self.is_contiguous())
             self.copy_(self_c);
@@ -765,7 +760,7 @@ using c10::DeviceType;
         dlprim::Tensor dx=todp(grad_input_c);
         dlprim::Tensor dy=todp(grad_output_c);
 
-        dlprim::core::pointwise_operation({x,dy},{dx},{},"y0 = (-3 < x0 && x0 < 3) ? x1 / 6 : 0;",getExecutionContext(self));
+        dlprim::core::pointwise_operation({x,dy},{dx},{},"y0 = (-3 < x0 && x0 < 3) ? x1 / 6 : 0;");
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -795,8 +790,7 @@ using c10::DeviceType;
                 } else {
                     y0 = x1;
                 }
-            )xxx",
-            getExecutionContext(self));
+            )xxx");
         sync_if_needed(self.device());
         return out;
     }
@@ -928,8 +922,7 @@ using c10::DeviceType;
             R"xxx(
                 y0 = 1.0f / (1.0f + exp(-x0));
                 y0 = x1 * y0 * ( 1.0f + x0 * (1.0f - y0));
-            )xxx",
-            getExecutionContext(self));
+            )xxx");
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -972,7 +965,7 @@ using c10::DeviceType;
         
         dlprim::Tensor x=todp(self_c);
         dlprim::Tensor y=todp(out_c);
-        dlprim::core::pointwise_operation({x},{y},{slope},"y0 = x0 > 0 ? x0 : w0 * x0;",getExecutionContext(self));
+        dlprim::core::pointwise_operation({x},{y},{slope},"y0 = x0 > 0 ? x0 : w0 * x0;");
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -993,7 +986,7 @@ using c10::DeviceType;
         dlprim::Tensor y=todp(self_c);
         dlprim::Tensor dy=todp(grad_output_c);
         dlprim::Tensor dx=todp(grad_input_c);
-        dlprim::core::pointwise_operation({y,dy},{dx},{slope},"y0 = x0 > 0 ? x1 : w0 * x1;",getExecutionContext(self));
+        dlprim::core::pointwise_operation({y,dy},{dx},{slope},"y0 = x0 > 0 ? x1 : w0 * x1;");
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -1280,13 +1273,13 @@ using c10::DeviceType;
         dlprim::Tensor X = todp(self_c);
         auto q = getExecutionContext(self);
         if(min && max)
-            dlprim::core::pointwise_operation({X},{Y},{min->to<double>(),max->to<double>()},"y0 = max(w0,min(w1,x0));",q);
+            dlprim::core::pointwise_operation({X},{Y},{min->to<double>(),max->to<double>()},"y0 = max(w0,min(w1,x0));");
         else if(min)
-            dlprim::core::pointwise_operation({X},{Y},{min->to<double>()},"y0 = max(w0,x0);",q);
+            dlprim::core::pointwise_operation({X},{Y},{min->to<double>()},"y0 = max(w0,x0);");
         else if(max)
-            dlprim::core::pointwise_operation({X},{Y},{max->to<double>()},"y0 = min(w0,x0);",q);
+            dlprim::core::pointwise_operation({X},{Y},{max->to<double>()},"y0 = min(w0,x0);");
         else
-            dlprim::core::pointwise_operation({X},{Y},{},"y0 = x0;",q);
+            dlprim::core::pointwise_operation({X},{Y},{},"y0 = x0;");
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -1304,7 +1297,7 @@ using c10::DeviceType;
         dlprim::Tensor X = todp(self_c);
         auto q = getExecutionContext(self);
         
-        dlprim::core::pointwise_operation({X},{Y},{min.to<double>()},"y0 = max(w0,x0);",q);
+        dlprim::core::pointwise_operation({X},{Y},{min.to<double>()},"y0 = max(w0,x0);");
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -1334,9 +1327,9 @@ using c10::DeviceType;
 #else
         if(approximate == "tanh")
 #endif
-            dlprim::core::pointwise_operation({X},{Y},{},"y0 = 0.5f * x0 * (1.0f + tanh(0.7978845608028654f * x0 * (1.0f + 0.044715f * x0 * x0)));",q); // 0.7978845608028654 = sqrt(2/pi)
+            dlprim::core::pointwise_operation({X},{Y},{},"y0 = 0.5f * x0 * (1.0f + tanh(0.7978845608028654f * x0 * (1.0f + 0.044715f * x0 * x0)));"); // 0.7978845608028654 = sqrt(2/pi)
         else {
-            dlprim::core::pointwise_operation({X},{Y},{},"y0 = x0 * (1.0f + erf(x0 * 0.7071067811865475f  )) / 2.0f;",q); // 0.7071067811865475 = 1/sqrt(2)
+            dlprim::core::pointwise_operation({X},{Y},{},"y0 = x0 * (1.0f + erf(x0 * 0.7071067811865475f  )) / 2.0f;"); // 0.7071067811865475 = 1/sqrt(2)
         }
             
         if (!out.is_contiguous())
@@ -1390,7 +1383,7 @@ using c10::DeviceType;
                     cdf);
             )xxx";
 
-        dlprim::core::pointwise_operation({X,dY},{dX},{},eq,q);
+        dlprim::core::pointwise_operation({X,dY},{dX},{},eq);
         
         if (!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -1414,11 +1407,11 @@ using c10::DeviceType;
                 //"dtype eps = w0; "
                 //"z = x0; " // default
                 //"z = x0 > 1.0 - eps ? "
-                "y0 = log(z / (1.0f - z)); ",q);
+                "y0 = log(z / (1.0f - z)); ");
         }
         else {
             dlprim::core::pointwise_operation({X},{Y},{},
-                "y0 = log(x0 / (1.0f - x0));",q);
+                "y0 = log(x0 / (1.0f - x0));");
         }
         if(!out.is_contiguous())
             out.copy_(out_c);
@@ -1462,7 +1455,7 @@ using c10::DeviceType;
         dlprim::Tensor Y = todp(out_c);
         auto q = getExecutionContext(out);
         dlprim::core::pointwise_operation({},{Y},{dstart,dstep},
-            "y0 = w0 + index*w1;",q);
+            "y0 = w0 + index*w1;");
         if(!out.is_contiguous())
             out.copy_(out_c);
 
@@ -1494,8 +1487,7 @@ using c10::DeviceType;
                     R"xxx(
                     y1 = exp(-abs(x0));
                     y0 = min(dtype(0),x0) - log( dtype(1.0) + y1);
-                    )xxx",
-                    getExecutionContext(self));
+                    )xxx");
         std::cout << "	after\n";
         if(!output.is_contiguous())
             output.copy_(output_c);
@@ -1539,8 +1531,7 @@ using c10::DeviceType;
                     dtype maxd = is_negative ? dtype(1.0): dtype(0.0);
                     dtype s = is_negative ? dtype(1.0): dtype(-1.0);
                     y0 = (maxd - s * (x1 / (dtype(1) + x1))) * x2;
-                    )xxx",
-                    getExecutionContext(self));
+                    )xxx");
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);;
