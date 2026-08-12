@@ -91,7 +91,7 @@ using c10::DeviceType;
 		auto q = getExecutionContext(self);
 		dlprim::Context ctx(q);
 		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
-					{x.specs(),y.specs()},{loss.specs()},0,dlprim::float_data,
+					{x.specs(),y.specs()},{loss.specs()},0, tart::dtypes::float32, // change laaater perhaps
 					"y0 = typeof_y0(-1.0)*(x1 * max(typeof_x0(-100), log(x0)) + (1-x1) * max(typeof_x0(-100),log(1-x0)));",
 					"reduce_y0 = 0;",
 					"reduce_y0 += y0;");
@@ -175,7 +175,7 @@ using c10::DeviceType;
 		auto q = getExecutionContext(self);
 		dlprim::Context ctx(q);
 		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
-					{x.specs(),lbl.specs()},{y.specs()},0,x.dtype(),
+					{x.specs(),lbl.specs()},{y.specs()},0, x.tDtype(),
 					"y0 = (typeof_y0(x0) - typeof_y0(x1))*(typeof_y0(x0) - typeof_y0(x1));",
 					"reduce_y0 = typeof_y0(0);",
 					"reduce_y0 += y0;");

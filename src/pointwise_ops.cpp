@@ -511,7 +511,8 @@ using c10::DeviceType;
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                 ctx,
                 {X.specs()},{Y.specs()},
-                0,dlprim::float_data,
+                0,
+                tart::dtypes::float32,
                 "y0=x0;",
                 (rop == RedOp::prod ? "reduce_y0 =   1;" : "reduce_y0 =   0;"),
                 (rop == RedOp::prod ? "reduce_y0 *= y0;" : "reduce_y0 += y0;")
@@ -1023,7 +1024,8 @@ using c10::DeviceType;
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                     ctx,
                     {X.specs()},{Yval.specs()},
-                    0,X.dtype(),
+                    0,
+                    X.tDtype(),
                     "y0=x0;",
                     "reduce_y0 = " + ext_val + ";",
                     std::string("reduce_y0 = ") + (is_max?"max":"min") + "(reduce_y0,y0);"
@@ -1081,7 +1083,8 @@ using c10::DeviceType;
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                     ctx,
                     {X.specs()},{Yval.specs(),Yind.specs()},
-                    0,dlprim::float_data,
+                    0,
+                    tart::dtypes::float32,
                     "y0=x0; y1=reduce_item;",
                     "reduce_y0 = " + min_val + "; reduce_y1 = -1;",
                     R"xxx(
@@ -1114,7 +1117,8 @@ using c10::DeviceType;
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                     ctx,
                     {X.specs()},{Y.specs()},
-                    0,X.dtype(),
+                    0,
+                    X.tDtype(),
                     "y0=x0;",
                     std::string("reduce_y0 = ") + y0 + ";",
                     std::string("reduce_y0 = y0 ") + (is_min ? "<" : ">") +  " reduce_y0 ? y0 : reduce_y0;"
@@ -1156,7 +1160,8 @@ using c10::DeviceType;
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                 ctx,
                 {x0.specs(),x1.specs()},{y.specs()},
-                0,dlprim::float_data,
+                0,
+                tart::dtypes::float32,
                 "y0=x0*x1;",
                 "reduce_y0 = 0;",
                 "reduce_y0 += y0;");

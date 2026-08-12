@@ -300,7 +300,7 @@ using c10::DeviceType;
             auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                         ctx,
                         {X.specs(),mean.specs(),rstd.specs(),dY.specs()},{dG.specs()},
-                        0,dlprim::float_data,
+                        0, tart::dtypes::float32,
                         "y0=(x0 - x1)*x2*x3;",
                         "reduce_y0 = 0;",
                         "reduce_y0 += y0;");
@@ -314,7 +314,7 @@ using c10::DeviceType;
             auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                         ctx,
                         {dY.specs()},{dB.specs()},
-                        0,dlprim::float_data,
+                        0, tart::dtypes::float32,
                         "y0=x0;",
                         "reduce_y0 = 0;",
                         "reduce_y0 += y0;");
@@ -473,7 +473,7 @@ using c10::DeviceType;
                 auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                             ctx,
                             {X_4d.specs(), m_b.specs(), r_b.specs(), dY_4d.specs()}, {dG.specs()},
-                            0, dlprim::float_data,
+                            0, tart::dtypes::float32,
                             "y0=(x0 - x1)*x2*x3;",
                             "reduce_y0 = 0;",
                             "reduce_y0 += y0;");
@@ -488,7 +488,7 @@ using c10::DeviceType;
                 auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                             ctx,
                             {dY_4d.specs()}, {dB.specs()},
-                            0, dlprim::float_data,
+                            0, tart::dtypes::float32,
                             "y0=x0;",
                             "reduce_y0 = 0;",
                             "reduce_y0 += y0;");

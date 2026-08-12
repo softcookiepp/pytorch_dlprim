@@ -220,7 +220,7 @@ Tensor& host_softmax(
 			
 			dlprim::gpu::spatial_softmax(
 				stream,
-				todp(output.dtype()),
+				dlprim::data_type_to_tart_dtype(todp(output.dtype())),
 				epilogue,
 				output_dp.device_buffer(),
 				output_dp.device_offset(),
@@ -363,7 +363,7 @@ Tensor& host_softmax_backward(
 		
 		dlprim::gpu::spatial_softmax_backward(
 			stream,
-			todp(output.dtype()),
+			dlprim::data_type_to_tart_dtype(todp(output.dtype())),
 			epilogue,
 			gI_dp.device_buffer(),
 			gI_dp.device_offset(),
