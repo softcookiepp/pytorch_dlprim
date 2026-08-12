@@ -144,7 +144,7 @@ using c10::DeviceType;
             cfg.inputs = fi;
             cfg.outputs = fo;
             cfg.optimal_batch_size = batch;
-            cfg.dtype = todp(input.dtype());
+            cfg.dtype = data_type_to_tart_dtype(todp(input.dtype()));
             bool has_bias = bias && bias->numel() > 0;
             auto ip = dlprim::core::IPForward::create(dlprim_ctx,cfg,has_bias);
             dlprim::Tensor B;
@@ -186,7 +186,7 @@ using c10::DeviceType;
             cfg.inputs = fi;
             cfg.outputs = fo;
             cfg.optimal_batch_size = batch;
-            cfg.dtype = todp(dx_tensor.dtype());
+            cfg.dtype = todp(dx_tensor).tDtype();
 
             auto q = getExecutionContext(dy_tensor);
             dlprim::Context dlprim_ctx(q);
@@ -209,7 +209,13 @@ using c10::DeviceType;
             if(has_bias) {
                 dB_tensor = new_tensor_as(dlprim::Shape(W.shape()[0]),dy_tensor);
                 dlprim::Tensor dB=todp(dB_tensor);
-                auto bwd_bias = dlprim::core::BiasBackwardFilter::create(dlprim_ctx,dY.shape(),cfg.dtype);
+                auto bwd_bias = dlprim::core::BiasBackwardFilter::create(dlprim_ctx,dY.shape(),
+					#if 1
+						// temporary hack just to get it to work; will change later
+						dX.dtype());
+					#else
+						cfg.dtype);
+					#endif
                 at::DataPtr ptr;
                 dlprim::Tensor ws = make_workspace(ptr,bwd_bias->workspace(),dy_tensor.device());
                 bwd_bias->enqueue(dY,dB,ws,0,q);
