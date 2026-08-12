@@ -3,8 +3,6 @@
 
 #include <dlprim/ops/elementwise.hpp>
 #include <dlprim/gpu/program_cache.hpp>
-#include <dlprim/json.hpp>
-#include <dlprim/utils/json_helpers.hpp>
 #include <dlprim/core/pointwise.hpp>
 
 #include <dlprim/core/util.hpp>
