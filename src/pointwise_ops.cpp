@@ -238,7 +238,7 @@ using c10::DeviceType;
         dlprim::Tensor x0=todp(self_c);
         dlprim::Tensor y0=todp(out_c);
         float w0 = other.toDouble();
-        dlprim::core::pointwise_operation_broadcast({x0},{y0},{w0},{dlprim::float_data},
+        dlprim::core::pointwise_operation_broadcast({x0},{y0},{w0},{tart::dtypes::float32},
 										"y0 = typeof_y0( typeof_x0(x0) " + op + " typeof_x0(w0) ? 1 : 0 );" ,
                                       getExecutionContext(self));
         
@@ -372,14 +372,14 @@ using c10::DeviceType;
         double value;
         if(isCPUScalar(other,value)) {
             dlprim::Tensor x0(todp(self_c));
-            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.dtype()},
+            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.tDtype()},
                         "precise typeof_x0 left = x0; precise typeof_w0 right = w0;" + op_builder,
                         getExecutionContext(self));
             sync_if_needed(self.device());
         }
         else if(isCPUScalar(self,value)) {
             dlprim::Tensor x0(todp(other_c));
-            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.dtype()},
+            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.tDtype()},
                         "precise typeof_w0 left = w0; precise typeof_x0 right = x0;" + op_builder,
                         getExecutionContext(other));
             sync_if_needed(other.device());
@@ -1181,7 +1181,7 @@ using c10::DeviceType;
         
         dlprim::Tensor x(todp(self_c));
         dlprim::Tensor y(todp(out_c));
-        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.dtype()},
+        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.tDtype()},
                     "y0 = typeof_y0(x0 != typeof_x0(w0));", 
                     getExecutionContext(self));
         
@@ -1227,7 +1227,7 @@ using c10::DeviceType;
         
         dlprim::Tensor x(todp(self_c));
         dlprim::Tensor y(todp(out_c));
-        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.dtype()},
+        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.tDtype()},
                     "y0 = typeof_y0( x0 == typeof_x0(w0) );",
                     getExecutionContext(self));
         

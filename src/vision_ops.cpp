@@ -617,7 +617,7 @@ using c10::DeviceType;
         dlprim::core::pointwise_operation_broadcast(
                 {dp_qkv,dp_bias},{dp_out},
                 {scale,double(D)},
-                {dp_qkv.dtype(),dlprim::int64_data},
+                {dp_qkv.tDtype(), tart::dtypes::int64},
                 R"xxx(
                     uint position_d1 = uint(index.s[1]);
                     typeof_x0 scale = position_d1 < uint(w1) ? w0 : typeof_x0(1);
