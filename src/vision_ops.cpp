@@ -73,7 +73,7 @@ using c10::DeviceType;
 
             dlprim::ExecutionContext q = getExecutionContext(self);
             dlprim::Context ctx(q);
-            auto pool = dlprim::core::Pooling2DForward::create_global_avg_pooling(ctx,X.shape(),todp(self.dtype()));
+            auto pool = dlprim::core::Pooling2DForward::create_global_avg_pooling(ctx,X.shape(),todp(self).tDtype());
             pool->enqueue(X,Y,q);
         }
         else {
@@ -101,7 +101,7 @@ using c10::DeviceType;
 
             dlprim::ExecutionContext q = getExecutionContext(self);
             dlprim::Context ctx(q);
-            auto pool = dlprim::core::AvgPooling2DBackward::create_global(ctx,X.shape(),todp(self.dtype()));
+            auto pool = dlprim::core::AvgPooling2DBackward::create_global(ctx,X.shape(),todp(self).tDtype());
             pool->enqueue(dx,dy,0,q);
         }
         else {
@@ -273,7 +273,7 @@ using c10::DeviceType;
             dlprim::Tensor Y = todp(out);
             dlprim::ExecutionContext q = getExecutionContext(self);
             dlprim::Context dlprim_ctx(q);
-            auto pool = dlprim::core::Pooling2DForward::create_max_pooling(dlprim_ctx,kernel,pad,strd,todp(self.dtype()));
+            auto pool = dlprim::core::Pooling2DForward::create_max_pooling(dlprim_ctx,kernel,pad,strd,todp(self).tDtype());
             pool->enqueue(X,Y,q);
             sync_if_needed(self.device());
             
@@ -314,7 +314,7 @@ using c10::DeviceType;
             dlprim::ExecutionContext q = getExecutionContext(grad_output);
             dlprim::Context dlprim_ctx(q);
 
-            auto pool=dlprim::core::MaxPooling2DBackward::create(dlprim_ctx,kernel,pad,strd,todp(input.dtype()));
+            auto pool=dlprim::core::MaxPooling2DBackward::create(dlprim_ctx,kernel,pad,strd,todp(input).tDtype());
             pool->enqueue(x,dx,dy,0,q);
             sync_if_needed(grad_output.device());
             return {grad_input,torch::Tensor(),torch::Tensor(),torch::Tensor(),torch::Tensor(),torch::Tensor()};
@@ -353,7 +353,7 @@ using c10::DeviceType;
         auto pool = dlprim::core::Pooling2DForward::create_avg_pooling(
                         ctx,
                         ker,pad,strd,
-                        count_include_pad,todp(self.dtype())
+                        count_include_pad, todp(self).tDtype()
                     );                  
         pool->enqueue(X,Y,q);    
         sync_if_needed(self.device());
@@ -386,7 +386,7 @@ using c10::DeviceType;
         auto pool = dlprim::core::AvgPooling2DBackward::create(
                         ctx,
                         ker,pad,strd,
-                        count_include_pad,todp(grad_input.dtype())
+                        count_include_pad,todp(grad_input).tDtype()
                     );                  
         pool->enqueue(dX,dY,0,q);    
         sync_if_needed(self.device());
