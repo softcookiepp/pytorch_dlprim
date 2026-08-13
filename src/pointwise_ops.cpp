@@ -682,7 +682,7 @@ using c10::DeviceType;
         dlprim::Context ctx(q);
         
 
-        dlprim::core::SliceCopy cp(ctx,todp(out.dtype()));
+        dlprim::core::SliceCopy cp(ctx, todp(out).tDtype());
         for(size_t i=0,pos=0;i<list.size();i++) {
             Tensor new_tensor;
             dlprim::Tensor x;
