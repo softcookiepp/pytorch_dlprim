@@ -40,7 +40,7 @@ using c10::DeviceType;
 		case 1: reduce=true; scale = 1.0f/x.shape()[0]; break; // Mean
 		case 2: reduce=true; break; // sum
 		}
-		dlprim::core::nll_loss_forward(x,lbl,y,reduce,scale,getExecutionContext(self));
+		dlprim::core::nll_loss_forward(x,lbl,y,reduce,scale);
 		sync_if_needed(self.device());
 		return std::tuple<Tensor &,Tensor &>(output,total_weight);
 	}
@@ -62,7 +62,7 @@ using c10::DeviceType;
 		case 1: reduce=true; scale = 1.0f/dx.shape()[0]; break; // Mean
 		case 2: reduce=true; break; // sum
 		}
-		dlprim::core::nll_loss_backward(dx,lbl,dy,reduce,scale,0.0f,getExecutionContext(self));
+		dlprim::core::nll_loss_backward(dx,lbl,dy,reduce,scale,0.0f);
 		sync_if_needed(self.device());
 		return grad_input;
 	}
@@ -88,8 +88,6 @@ using c10::DeviceType;
 			target_shape = x.shape();
 		Tensor loss_tensor = new_tensor_as(target_shape,self_c);
 		dlprim::Tensor loss(todp(loss_tensor));
-		auto q = getExecutionContext(self);
-		dlprim::Context ctx(q);
 		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
 					{x.specs(),y.specs()},{loss.specs()},0, tart::dtypes::float32, // change laaater perhaps
 					"y0 = typeof_y0(-1.0)*(x1 * max(typeof_x0(-100), log(x0)) + (1-x1) * max(typeof_x0(-100),log(1-x0)));",
@@ -119,8 +117,7 @@ using c10::DeviceType;
 
 		// -w (y - x) / (x - x^2)
 		dlprim::core::pointwise_operation_broadcast({x,y,dloss},{dx},{scale},
-				"y0 = -(x1 - x0) / max(1e-12f,x0 - x0*x0) * x2 * w0;",
-				getExecutionContext(self));
+				"y0 = -(x1 - x0) / max(1e-12f,x0 - x0*x0) * x2 * w0;");
 		sync_if_needed(self.device());
 		return grad_input;
 
@@ -172,8 +169,6 @@ using c10::DeviceType;
 		}
 		Tensor output = new_tensor_as(reduce ? dlprim::Shape() : x.shape(),self_c);
 		dlprim::Tensor y=todp(output);
-		auto q = getExecutionContext(self);
-		dlprim::Context ctx(q);
 		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
 					{x.specs(),lbl.specs()},{y.specs()},0, x.dtype(),
 					"y0 = (typeof_y0(x0) - typeof_y0(x1))*(typeof_y0(x0) - typeof_y0(x1));",
@@ -199,7 +194,7 @@ using c10::DeviceType;
 		dlprim::Tensor dx = todp(result);
 		double scale = reduction == 1 ? (1.0f/x.shape().total_size()) : 1.0;
 		dlprim::core::pointwise_operation_broadcast({dy,x,lbl},{dx},{scale},
-			"y0 = typeof_y0(2)*(typeof_y0(x1) - typeof_y0(x2)) * typeof_y0(x0) * typeof_y0(w0);",getExecutionContext(self.device()));
+			"y0 = typeof_y0(2)*(typeof_y0(x1) - typeof_y0(x2)) * typeof_y0(x0) * typeof_y0(w0);");
 		sync_if_needed(self.device());
 		return result;
 	}

@@ -48,13 +48,6 @@ dlprim::Context CLContextManager::getContext(int id)
 	return dlprim::Context(device);
 }
 
-//static
-dlprim::ExecutionContext CLContextManager::getCommandQueue(int id)
-{
-	tart::device_ptr device = dlprim::Context::getInstance().getDevice(id);
-	return dlprim::ExecutionContext(device);
-}
-
 // static
 void CLContextManager::release(std::unique_ptr<CLMemAllocation> &&mem)
 {

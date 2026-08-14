@@ -71,8 +71,6 @@ using c10::DeviceType;
             result = new_tensor_as(dlprim::Shape(X.shape()[0],X.shape()[1],1,1),self);
             dlprim::Tensor Y = todp(result);
 
-            dlprim::ExecutionContext q = getExecutionContext(self);
-            dlprim::Context ctx(q);
             auto pool = dlprim::core::Pooling2DForward::create_global_avg_pooling(ctx,X.shape(),todp(self.dtype()));
             pool->enqueue(X,Y,q);
         }
@@ -99,8 +97,6 @@ using c10::DeviceType;
             result = new_tensor_as(X.shape(),self);
             dlprim::Tensor dx = todp(result);
 
-            dlprim::ExecutionContext q = getExecutionContext(self);
-            dlprim::Context ctx(q);
             auto pool = dlprim::core::AvgPooling2DBackward::create_global(ctx,X.shape(),todp(self.dtype()));
             pool->enqueue(dx,dy,0,q);
         }
@@ -138,8 +134,6 @@ using c10::DeviceType;
 
             Tensor result = new_tensor_as(os,input);
             dlprim::Tensor Y = todp(result);
-            dlprim::ExecutionContext q = getExecutionContext(input);
-            dlprim::Context dlprim_ctx(q);
             dlprim::core::IPSettings cfg;
             cfg.inputs = fi;
             cfg.outputs = fo;
@@ -187,9 +181,6 @@ using c10::DeviceType;
             cfg.outputs = fo;
             cfg.optimal_batch_size = batch;
             cfg.dtype = todp(dx_tensor.dtype());
-
-            auto q = getExecutionContext(dy_tensor);
-            dlprim::Context dlprim_ctx(q);
 
             dlprim::Shape X_shape(batch,fi);
             dlprim::Shape Y_shape(batch,fo);
@@ -265,8 +256,6 @@ using c10::DeviceType;
             torch::Tensor out = new_tensor_as(y_shape,self);
 
             dlprim::Tensor Y = todp(out);
-            dlprim::ExecutionContext q = getExecutionContext(self);
-            dlprim::Context dlprim_ctx(q);
             auto pool = dlprim::core::Pooling2DForward::create_max_pooling(dlprim_ctx,kernel,pad,strd,todp(self.dtype()));
             pool->enqueue(X,Y,q);
             sync_if_needed(self.device());
@@ -305,9 +294,6 @@ using c10::DeviceType;
             torch::Tensor grad_input = new_tensor_as(x.shape(),grad_output);
             dlprim::Tensor dx = todp(grad_input);
 
-            dlprim::ExecutionContext q = getExecutionContext(grad_output);
-            dlprim::Context dlprim_ctx(q);
-
             auto pool=dlprim::core::MaxPooling2DBackward::create(dlprim_ctx,kernel,pad,strd,todp(input.dtype()));
             pool->enqueue(x,dx,dy,0,q);
             sync_if_needed(grad_output.device());
@@ -341,9 +327,7 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous();
         dlprim::Tensor X=todp(self_c);
         dlprim::Tensor Y=todp(out);
-        dlprim::ExecutionContext q(getExecutionContext(self));
-        dlprim::Context ctx(q);
-        
+
         auto pool = dlprim::core::Pooling2DForward::create_avg_pooling(
                         ctx,
                         ker,pad,strd,
@@ -374,8 +358,6 @@ using c10::DeviceType;
         Tensor grad_output_c = grad_output.contiguous();
         dlprim::Tensor dY=todp(grad_output_c);
         dlprim::Tensor dX=todp(grad_input);
-        dlprim::ExecutionContext q(getExecutionContext(self));
-        dlprim::Context ctx(q);
         
         auto pool = dlprim::core::AvgPooling2DBackward::create(
                         ctx,
@@ -453,10 +435,6 @@ using c10::DeviceType;
         if(bmm) {
             TORCH_CHECK(A.sizes()[0] == B.sizes()[0] && A.sizes()[0] == C.sizes()[0],"Matrices must have same batch i.e. 0 dimention");
         }
-
-
-        dlprim::ExecutionContext q(getExecutionContext(self));
-        dlprim::Context ctx(q);
 
 		tart::buffer_ptr Abuf = buffer_from_tensor(A);
         int64_t    Aoff = A.storage_offset();
@@ -539,8 +517,7 @@ using c10::DeviceType;
                 tgt = x;
             }
             dlprim::core::pointwise_operation_broadcast({x,off},{tgt},{alpha,beta},
-                    "y0 = x0 * w0 + x1 * w1;",
-                    getExecutionContext(self));
+                    "y0 = x0 * w0 + x1 * w1;");
             if(!out.is_contiguous()) {
                 out.copy_(p);
             }
@@ -617,7 +594,6 @@ using c10::DeviceType;
                     typeof_x0 scale = position_d1 < uint(w1) ? w0 : typeof_x0(1);
                     y0 = (x0 + x1)*scale;
                 )xxx",
-                getExecutionContext(qkv),
                 false); // don't shrink broadcast to make sure we have correct dims
         Tensor q_k_v_cont_as_q_k_v = q_k_v_same_order;
         q_k_v_cont_as_q_k_v = torch::transpose(q_k_v_cont_as_q_k_v,1,2);
@@ -640,7 +616,7 @@ using c10::DeviceType;
         double scale_w = scales_w ? *scales_w : -1;
         dlprim::Tensor x = todp(self_c);
         dlprim::Tensor y = todp(out_c);
-        dlprim::core::interpolate2d(x,y,scale_h,scale_w,method,align_c,getExecutionContext(self));
+        dlprim::core::interpolate2d(x,y,scale_h,scale_w,method,align_c);
         if(!out.is_contiguous())
             out.copy_(out_c);
         sync_if_needed(self.device());
@@ -657,7 +633,7 @@ using c10::DeviceType;
         double scale_w = scales_w ? *scales_w : -1;
         dlprim::Tensor dx = todp(grad_input_c);
         dlprim::Tensor dy = todp(grad_output_c);
-        dlprim::core::interpolate2d_backward(dx,dy,scale_h,scale_w,method,align_c,0.0,getExecutionContext(grad_output));
+        dlprim::core::interpolate2d_backward(dx,dy,scale_h,scale_w,method,align_c,0.0);
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
         sync_if_needed(grad_output.device());

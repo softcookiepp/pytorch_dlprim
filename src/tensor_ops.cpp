@@ -126,7 +126,6 @@ using c10::DeviceType;
         if(dst.device().type() == c10::DeviceType::CPU && self.device().type() == OpenCLDeviceType) {
             Tensor c_src = make_contiguous_as_target_type(self,dst);
             dlprim::Tensor t = todp(c_src);
-            auto ec = getExecutionContext(self);
             if(dst.is_contiguous()) {
                 void *ptr = dst.data_ptr();
                 t.to_host(ec,ptr);
@@ -141,7 +140,6 @@ using c10::DeviceType;
         }
         else if(self.device().type() == c10::DeviceType::CPU && dst.device().type() == OpenCLDeviceType) {
             Tensor c_src = make_contiguous_as_target_type(self,dst);
-            auto ec = getExecutionContext(dst);
             if(dst.is_contiguous()) {
                 dlprim::Tensor t(todp(dst));
                 t.to_device(ec,c_src.data_ptr());
@@ -156,7 +154,7 @@ using c10::DeviceType;
         }
         else if(self.device().type() == OpenCLDeviceType && dst.device().type() == OpenCLDeviceType) {
             if(self.is_contiguous() && dst.is_contiguous()) {
-                dlprim::core::pointwise_operation_broadcast({todp(self)},{todp(dst)},{},"y0=x0;",getExecutionContext(self.device()));
+                dlprim::core::pointwise_operation_broadcast({todp(self)},{todp(dst)},{},"y0=x0;");
             }
             else {
                 auto src_sizes  = self.sizes();
@@ -207,7 +205,6 @@ using c10::DeviceType;
 		PTD_TIMER_GUARD("fill_");
         GUARD;
         dlprim::Tensor t(todp(self));
-        auto q = getExecutionContext(self);
         dlprim::core::fill_tensor(t,value.to<double>());
         sync_if_needed(self.device());
         return self;
@@ -258,7 +255,7 @@ using c10::DeviceType;
             uint64_t u64;
             char data[16];
         } data;
-        x.to_host(getExecutionContext(self),data.data);
+        x.to_host(data.data);
         switch(x.dtype()()) {
         case tart::DataType::eFloat32:    return data.f;
         case tart::DataType::eFloat64:   return data.d;
@@ -313,9 +310,8 @@ using c10::DeviceType;
         dlprim::Tensor x = todp(self_c);
         dlprim::Tensor m = todp(mask_c);
         TORCH_CHECK(x.shape() == m.shape(),"Broadasting is not implemented in masked_select yet");
-        auto ec = getExecutionContext(self);
-        x.to_host(ec);
-        m.to_host(ec);
+        x.to_host();
+        m.to_host();
         size_t N = 0;
         switch(m.dtype()()) {
         case tart::DataType::eFloat32:
@@ -354,7 +350,7 @@ using c10::DeviceType;
         Tensor res=new_tensor_as(dlprim::Shape(N),self);
         if(N > 0) {
             dlprim::Tensor y=todp(res);
-            y.to_device(getExecutionContext(self),x.host_data());
+            y.to_device(x.host_data());
         }
         sync_if_needed(self.device());
         return res;
@@ -415,7 +411,6 @@ using c10::DeviceType;
 			{
                 tart::buffer_ptr dst = *( (tart::buffer_ptr*)(new_mem.get()) );
                 tart::buffer_ptr src = *( (tart::buffer_ptr*)(data.get()) );
-                auto q = getExecutionContext(self);
                 src->copyTo(dst, 0, 0, storage_size);
             } 
             data = std::move(new_mem);

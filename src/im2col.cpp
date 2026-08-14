@@ -118,8 +118,6 @@ static void im2col_out_vk_template(
 		
 		Tensor input_n;
 		Tensor output_n;
-		
-		dlprim::ExecutionContext q = getExecutionContext(input);
 
 		for (int64_t elt = 0; elt < batch_size; elt++)
 		{
@@ -129,7 +127,7 @@ static void im2col_out_vk_template(
 			dlprim::Tensor input_n_dp = todp(input_n);
 			dlprim::Tensor output_n_dp = todp(output_n);
 
-			dlprim::gpu::im2col(q,
+			dlprim::gpu::im2col(
 				input_n_dp.device_buffer(),
 				input_n_dp.device_offset(),
 				n_input_plane,
@@ -249,11 +247,10 @@ void col2im_out_vk_template(
 						stride_width + 1;
 		//throw std::runtime_error("col2im_batched not implemented!");
 		
-		dlprim::ExecutionContext q = getExecutionContext(output);
 		dlprim::Tensor input_dp = todp(input);
 		dlprim::Tensor output_dp = todp(output);
 		
-		dlprim::gpu::col2im_batched(q,
+		dlprim::gpu::col2im_batched(
 			input_dp.device_buffer(),
 			input_dp.device_offset(),
 			input_batch_stride,

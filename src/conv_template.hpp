@@ -35,8 +35,6 @@ void slow_conv_dilated_all_vk_template(
 {
 	// not needed; tart takes care of that
 	//slow_conv_dilated_location_check(__func__, input, weight, bias, grad_output);
-	dlprim::ExecutionContext stream = getExecutionContext(input);
-	dlprim::Context ctx(stream);
 	
 	auto options = input.options();
 	// The rear part of input tensor sizes:
@@ -121,7 +119,7 @@ void slow_conv_dilated_all_vk_template(
 				
 				// Extract columns:
 				hvol2col(
-					stream,
+
 					input_n_dp.device_buffer(),
 					input_n_dp.device_offset(),
 					nInputPlane,
@@ -176,7 +174,7 @@ void slow_conv_dilated_all_vk_template(
 				weight_dp.device_buffer(), weight_dp.device_offset(), columns.size(0), // b
 				beta,
 				columns_dp.device_buffer(), columns_dp.device_offset(), columns.size(1), // c
-				stream.queue());
+				dlprim::tensorDevice(grad_output_n_dp));
 				
 			// Unpack columns back into input:
 			Tensor grad_input_n = grad_input.select(0, elt);
@@ -202,7 +200,7 @@ void slow_conv_dilated_all_vk_template(
 		if (grad_weight.defined()) {
 			// Extract columns:
 			hvol2col(
-				stream,
+
 				input_n_dp.device_buffer(),
 				input_n_dp.device_offset(),
 				nInputPlane,
@@ -274,9 +272,6 @@ void slow_conv_transpose2d_out_vk_template(
 	int64_t stride_width = stride[1];
 	int64_t output_padding_height = output_padding[0];
 	int64_t output_padding_width = output_padding[1];
-	
-	dlprim::ExecutionContext stream = getExecutionContext(input);
-	dlprim::Context ctx(stream);
 
 	Tensor input_ = input.contiguous();
 	Tensor weight_ = weight.contiguous();
@@ -351,10 +346,10 @@ void slow_conv_transpose2d_out_vk_template(
 				columns_dp.device_buffer(),
 				columns_dp.device_offset(),
 				n,
-				stream.queue());
+				dlprim::tensorDevice(input_n_dp));
 
 			dlprim::gpu::col2im(
-				stream,
+
 				columns_dp.device_buffer(),
 				columns_dp.device_offset(),
 				n_output_plane,
@@ -409,7 +404,7 @@ void slow_conv_transpose2d_out_vk_template(
 					output_n_dp.device_buffer(),
 					output_n_dp.device_offset(),
 					n_,
-					stream.queue());
+					dlprim::tensorDevice(output_n_dp));
 			}
 		}
 
@@ -577,9 +572,6 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 			output_padding.size() == 2,
 			"It is expected stride equals to 2, but got size ",
 			output_padding.size());
-	
-	dlprim::ExecutionContext stream = getExecutionContext(input_);
-	dlprim::Context ctx(stream);
 
 	int n_input_plane = weight_.size(0);
 	int n_output_plane = weight_.size(1);
@@ -665,7 +657,7 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 			if (need_columns)
 			{
 				dlprim::gpu::im2col(
-					stream,
+
 					grad_output_n_dp.device_buffer(),
 					grad_output_n_dp.device_offset(),
 					n_output_plane,
@@ -714,7 +706,7 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 				beta,
 				grad_input_n_dp.device_buffer(), grad_input_n_dp.device_offset(),
 				n,
-				stream.queue());
+				dlprim::tensorDevice(gemm_in_ptr));
 		}
 
 		// Resize output
@@ -762,9 +754,6 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 			output_padding.size() == 2,
 			"It is expected stride equals to 2, but got size ",
 			output_padding.size());
-
-	dlprim::ExecutionContext stream = getExecutionContext(input_);
-	dlprim::Context ctx(stream);
 
 	int64_t kernel_height = kernel_size[0];
 	int64_t kernel_width = kernel_size[1];
@@ -866,7 +855,7 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 				if (need_columns)
 				{
 					dlprim::gpu::im2col(
-						stream,
+
 						grad_output_n_dp.device_buffer(),
 						grad_output_n_dp.device_offset(),
 						n_output_plane,
@@ -916,7 +905,7 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 					beta,
 					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(),
 					n,
-					stream.queue());
+					dlprim::deviceTensor(gemm_in_ptr));
 			}
 		}
 

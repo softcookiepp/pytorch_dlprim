@@ -48,7 +48,6 @@ Tensor& host_softmax(
 	if (input.numel() > 0)
 	{
 		int64_t inner_size = 1;
-		auto stream = getExecutionContext(input_);
 		for (int64_t i = 0; i < dim; ++i)
 			outer_size *= input.size(i);
 		for (int64_t i = dim + 1; i < input.dim(); ++i)
@@ -219,7 +218,6 @@ Tensor& host_softmax(
 				throw std::runtime_error("only forward, non-log softmax is implemented");
 			
 			dlprim::gpu::spatial_softmax(
-				stream,
 				(todp(output.dtype())),
 				epilogue,
 				output_dp.device_buffer(),
@@ -300,7 +298,6 @@ Tensor& host_softmax_backward(
 		inner_size *= output.size(i);
 		
 // See descriptions of kernels above.
-	auto stream = getExecutionContext(output_);
 	if (inner_size == 1)
 	{
 #if 1
@@ -362,7 +359,6 @@ Tensor& host_softmax_backward(
 		auto grad_dp = todp(grad);
 		
 		dlprim::gpu::spatial_softmax_backward(
-			stream,
 			(todp(output.dtype())),
 			epilogue,
 			gI_dp.device_buffer(),

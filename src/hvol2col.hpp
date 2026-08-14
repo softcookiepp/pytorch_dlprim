@@ -1,7 +1,6 @@
 #pragma once
 
 void hvol2col(
-		const dlprim::ExecutionContext& stream,
 		const tart::buffer_ptr& data_hvol,
 		const uint32_t data_hvol_offset,
 		const int channels,
@@ -22,7 +21,6 @@ void hvol2col(
 		throw std::runtime_error("not implemented");
 #else
 		vol2col<Dtype>(
-				stream,
 				data_hvol,
 				channels,
 				input_size[0],
@@ -49,7 +47,6 @@ void hvol2col(
 	else if (dim == 2)
 	{
 		dlprim::gpu::im2col(
-				stream,
 				data_hvol,
 				data_hvol_offset,
 				channels,
@@ -72,7 +69,6 @@ void hvol2col(
 }
 
 void col2hvol(
-		const dlprim::ExecutionContext& stream,
 		const tart::buffer_ptr& data_col,
 		const uint32_t data_col_offset,
 		const int channels,
@@ -93,7 +89,6 @@ void col2hvol(
 		throw std::runtime_error("col2hvol with 3 dims not implemented");
 #else
 		col2vol<Dtype, Dtype>(
-				stream,
 				data_col,
 				channels,
 				input_size[0],
@@ -120,7 +115,6 @@ void col2hvol(
 	if (dim == 2)
 	{
 		dlprim::gpu::col2im(
-			stream,
 			data_col,
 			data_col_offset,
 			channels,

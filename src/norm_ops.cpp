@@ -27,11 +27,10 @@ using c10::DeviceType;
         TORCH_CHECK(weight_present == bias_present,"Can have affince or not affine but not partial")
         bool affine = weight_present && bias_present;
         TORCH_CHECK(mean_present && var_present,"Running sums are expected to be present")
-        dlprim::ExecutionContext q=getExecutionContext(input);
-        dlprim::Context ctx(q);
 
         Tensor input_c = input.contiguous();
         dlprim::Tensor X = todp(input_c);
+        tart::device_ptr device = dlprim::tensorDevice(X);
         Tensor result = new_tensor_as(X.shape(),input);
         dlprim::Tensor Y = todp(result);
         dlprim::Tensor gamma,beta;
@@ -51,7 +50,7 @@ using c10::DeviceType;
             calc_var = todp(calc_var_pt);
         }
 
-        auto bn = dlprim::core::BatchNormFwdBwd::create(ctx,X.shape(),X.dtype());
+        auto bn = dlprim::core::BatchNormFwdBwd::create(device,X.shape(),X.dtype());
         size_t ws_size = bn->workspace();
         
         DataPtr tmp;
@@ -61,13 +60,13 @@ using c10::DeviceType;
 
         if(training) {
             size_t M = X.shape().total_size() / X.shape()[1];
-            bn->enqueue_calculate_batch_stats(X,calc_mean,calc_var,ws,q);
+            bn->enqueue_calculate_batch_stats(X,calc_mean,calc_var,ws);
             bn->enqueue_update_running_stats(
                             momentum,(1.0f-momentum),
                             calc_mean,mean,
                             (momentum * M) / (M-1),(1.0f-momentum),
                             calc_var,var,
-                            ws,q);
+                            ws);
             fwd_mean = calc_mean;
             fwd_var  = calc_var;
         }
@@ -76,10 +75,10 @@ using c10::DeviceType;
             fwd_var  = var;
         }
         if(affine) {
-            bn->enqueue_forward_affine(X,Y,gamma,beta,fwd_mean,fwd_var,eps,ws,q);
+            bn->enqueue_forward_affine(X,Y,gamma,beta,fwd_mean,fwd_var,eps,ws);
         }
         else {
-            bn->enqueue_forward_direct(X,Y,fwd_mean,fwd_var,eps,ws,q);
+            bn->enqueue_forward_direct(X,Y,fwd_mean,fwd_var,eps,ws);
         }
         return std::tuple<Tensor,Tensor,Tensor>(result,calc_mean_pt,calc_var_pt);
     }
@@ -100,12 +99,13 @@ using c10::DeviceType;
         GUARD;
         bool weight_present = weight && weight->numel()>0; 
         bool affine = weight_present;
-        dlprim::ExecutionContext q=getExecutionContext(input);
-        dlprim::Context ctx(q);
 
         dlprim::Tensor dY = todp(grad_out);
         dlprim::Tensor X = todp(input);
         dlprim::Tensor W;
+        
+        tart::device_ptr device = tensorDevice(X);
+        
         if(weight_present)
             W = todp(*weight);
         Tensor x_diff,gamma_diff,beta_diff;
@@ -127,7 +127,7 @@ using c10::DeviceType;
             dB = todp(beta_diff);
         }
 
-        auto bn = dlprim::core::BatchNormFwdBwd::create(ctx,X.shape(),X.dtype());
+        auto bn = dlprim::core::BatchNormFwdBwd::create(device, X.shape(),X.dtype());
         size_t ws_size = bn->workspace();
         
         DataPtr tmp;
@@ -177,8 +177,6 @@ using c10::DeviceType;
         bool weight_present = weight && weight->numel()>0; 
         bool bias_present = bias && bias->numel()>0; 
 
-        dlprim::ExecutionContext q=getExecutionContext(input);
-        dlprim::Context ctx(q);
 
         Tensor input_c = input.contiguous();
         dlprim::Tensor X = todp(input_c);
@@ -261,8 +259,6 @@ using c10::DeviceType;
         bool weight_present = weight && weight->numel()>0; 
         bool bias_present = bias && bias->numel() > 0;
 
-        dlprim::ExecutionContext q=getExecutionContext(input);
-        dlprim::Context ctx(q);
         Tensor grad_out_c = grad_out.contiguous();
         Tensor input_c = input.contiguous();
         dlprim::Tensor dY = todp(grad_out_c);
@@ -366,9 +362,6 @@ using c10::DeviceType;
         int64_t C = C_sym.expect_int();
         int64_t HxW = HxW_sym.expect_int();
 
-        dlprim::ExecutionContext q = getExecutionContext(input);
-        dlprim::Context ctx(q);
-
         Tensor input_c = input.contiguous();
         dlprim::Tensor X = todp(input_c);
         
@@ -440,9 +433,6 @@ using c10::DeviceType;
         int64_t HxW = HxW_sym.expect_int();
         int64_t B = N * group;
         int64_t L = (C / group) * HxW;
-
-        dlprim::ExecutionContext q = getExecutionContext(grad_out);
-        dlprim::Context ctx(q);
 
         Tensor grad_out_c = grad_out.contiguous();
         Tensor input_c = input.contiguous();
