@@ -259,17 +259,17 @@ using c10::DeviceType;
             char data[16];
         } data;
         x.to_host(getExecutionContext(self),data.data);
-        switch(x.dtype()) {
-        case dlprim::float_data:    return data.f;
-        case dlprim::double_data:   return data.d;
-        case dlprim::int8_data:     return data.i8;
-        case dlprim::uint8_data:    return data.u8;
-        case dlprim::int16_data:    return data.i16;
-        case dlprim::uint16_data:   return data.u16;
-        case dlprim::int32_data:    return (int64_t)data.i32;
-        case dlprim::uint32_data:   return (int64_t)data.u32;
-        case dlprim::int64_data:    return (int64_t)data.i64;
-        case dlprim::uint64_data:   return (int64_t)data.u64;
+        switch(x.dtype()()) {
+        case tart::DataType::eFloat32:    return data.f;
+        case tart::DataType::eFloat64:   return data.d;
+        case tart::DataType::eInt8:     return data.i8;
+        case tart::DataType::eUint8:    return data.u8;
+        case tart::DataType::eInt16:    return data.i16;
+        case tart::DataType::eUint16:   return data.u16;
+        case tart::DataType::eInt32:    return (int64_t)data.i32;
+        case tart::DataType::eUint32:   return (int64_t)data.u32;
+        case tart::DataType::eInt64:    return (int64_t)data.i64;
+        case tart::DataType::eUint64:   return (int64_t)data.u64;
         default:
             TORCH_CHECK(!"Not implemented dtype","Not implemented data type");
         }
@@ -292,7 +292,7 @@ using c10::DeviceType;
     size_t select_impl(T *mask,dlprim::Tensor &/*m*/,dlprim::Tensor &v)
     {
         void *p=v.host_data();
-        switch(dlprim::data_type_to_tart_dtype(v.dtype()).size()) {
+        switch((v.dtype()).size()) {
         case 1: return select_impl_by(static_cast<int8_t  *>(p),mask,v.shape().total_size());
         case 2: return select_impl_by(static_cast<int16_t *>(p),mask,v.shape().total_size());
         case 4: return select_impl_by(static_cast<int32_t *>(p),mask,v.shape().total_size());
@@ -317,35 +317,35 @@ using c10::DeviceType;
         x.to_host(ec);
         m.to_host(ec);
         size_t N = 0;
-        switch(m.dtype()) {
-        case dlprim::float_data:
+        switch(m.dtype()()) {
+        case tart::DataType::eFloat32:
             N = select_impl(m.data<float>(),m,x);
             break;
-        case dlprim::double_data:
+        case tart::DataType::eFloat64:
             N = select_impl(m.data<double>(),m,x);
             break;
-        case dlprim::int8_data:
+        case tart::DataType::eInt8:
             N = select_impl(m.data<int8_t>(),m,x);
             break;
-        case dlprim::uint8_data:
+        case tart::DataType::eUint8:
             N = select_impl(m.data<uint8_t>(),m,x);
             break;
-        case dlprim::int16_data:
+        case tart::DataType::eInt16:
             N = select_impl(m.data<int16_t>(),m,x);
             break;
-        case dlprim::uint16_data:
+        case tart::DataType::eUint16:
             N = select_impl(m.data<uint16_t>(),m,x);
             break;
-        case dlprim::int32_data:
+        case tart::DataType::eInt32:
             N = select_impl(m.data<int32_t>(),m,x);
             break;
-        case dlprim::uint32_data:
+        case tart::DataType::eUint32:
             N = select_impl(m.data<uint32_t>(),m,x);
             break;
-        case dlprim::int64_data:
+        case tart::DataType::eInt64:
             N = select_impl(m.data<int64_t>(),m,x);
             break;
-        case dlprim::uint64_data:
+        case tart::DataType::eUint64:
             N = select_impl(m.data<uint64_t>(),m,x);
             break;
         default:
@@ -406,8 +406,8 @@ using c10::DeviceType;
         }
         c10::ArrayRef<int64_t> sizes(vsizes.data(),vsizes.size());
 
-        dlprim::DataType dt = todp(self.dtype());
-        new_size*=dlprim::data_type_to_tart_dtype(dt).size();
+        tart::DType dt = todp(self).dtype();
+        new_size*=(dt).size();
         
         if(new_size >= storage_size && new_size > 0) {
             at::DataPtr new_mem = CLContextManager::allocate(self.device(),new_size);

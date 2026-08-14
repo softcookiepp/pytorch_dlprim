@@ -26,37 +26,38 @@ using c10::DeviceType;
 
 
     using torch::Tensor;
-
-    dlprim::core::Conv2DSettings conv_config(bool transposed,dlprim::Tensor &X,dlprim::Tensor &W,
-                    IntArrayRef padding,IntArrayRef stride,IntArrayRef dilation,IntArrayRef output_padding,int groups)
-    {
-        TORCH_CHECK(stride.size()==2 && padding.size() == 2 && dilation.size() == 2,"Expecting size of parameters=2");
-        if(transposed)
-            TORCH_CHECK(output_padding.size() == 2,"Expecting transposed size == 2")
-        dlprim::Convolution2DConfigBase cfg_base;
-        if(!transposed) {
-            cfg_base.channels_in = W.shape()[1] * groups;
-            cfg_base.channels_out = W.shape()[0];
-        }
-        else {
-            cfg_base.channels_out = W.shape()[1] * groups;
-            cfg_base.channels_in = W.shape()[0];
-        }
-        for(int i=0;i<2;i++) {
-            cfg_base.kernel[i] = W.shape()[i+2];
-            cfg_base.pad[i] = padding[i];
-            cfg_base.stride[i] = stride[i];
-            cfg_base.dilate[i] = dilation[i];
-            cfg_base.groups = groups;
-        }
-        if(!transposed) {
-            return dlprim::core::Conv2DSettings(cfg_base,X.shape(),X.dtype()); 
-        }
-        else {
-            int op[2] = {int(output_padding[0]),int(output_padding[1])};
-            return dlprim::core::Conv2DSettings(cfg_base,dlprim::core::Conv2DBase::get_output_shape_transposed(cfg_base,X.shape(),op),X.dtype());
-        }
-    }
+	#if 0
+		dlprim::core::Conv2DSettings conv_config(bool transposed,dlprim::Tensor &X,dlprim::Tensor &W,
+						IntArrayRef padding,IntArrayRef stride,IntArrayRef dilation,IntArrayRef output_padding,int groups)
+		{
+			TORCH_CHECK(stride.size()==2 && padding.size() == 2 && dilation.size() == 2,"Expecting size of parameters=2");
+			if(transposed)
+				TORCH_CHECK(output_padding.size() == 2,"Expecting transposed size == 2")
+			dlprim::Convolution2DConfigBase cfg_base;
+			if(!transposed) {
+				cfg_base.channels_in = W.shape()[1] * groups;
+				cfg_base.channels_out = W.shape()[0];
+			}
+			else {
+				cfg_base.channels_out = W.shape()[1] * groups;
+				cfg_base.channels_in = W.shape()[0];
+			}
+			for(int i=0;i<2;i++) {
+				cfg_base.kernel[i] = W.shape()[i+2];
+				cfg_base.pad[i] = padding[i];
+				cfg_base.stride[i] = stride[i];
+				cfg_base.dilate[i] = dilation[i];
+				cfg_base.groups = groups;
+			}
+			if(!transposed) {
+				return dlprim::core::Conv2DSettings(cfg_base,X.shape(),X.dtype()); 
+			}
+			else {
+				int op[2] = {int(output_padding[0]),int(output_padding[1])};
+				return dlprim::core::Conv2DSettings(cfg_base,dlprim::core::Conv2DBase::get_output_shape_transposed(cfg_base,X.shape(),op),X.dtype());
+			}
+		}
+	#endif
 
     Tensor _adaptive_avg_pool2d(const Tensor & self, IntArrayRef output_size) // {"schema": "aten::_adaptive_avg_pool2d
     {
@@ -212,7 +213,7 @@ using c10::DeviceType;
                 auto bwd_bias = dlprim::core::BiasBackwardFilter::create(dlprim_ctx,dY.shape(),
 					#if 1
 						// temporary hack just to get it to work; will change later
-						dX.dtype());
+						dlprim::float_data);
 					#else
 						cfg.dtype);
 					#endif
