@@ -2,31 +2,34 @@
 
 namespace ptdlprim {
 
-    dlprim::DataType todp(c10::ScalarType tp)
+    const tart::DType& todp(c10::ScalarType tp)
     {
         switch(tp)
         {
 			case c10::kFloat:
-				return dlprim::float_data;
+				return tart::dtypes::float32;
 			case c10::kDouble:
-				return dlprim::double_data;
+				tart::dtypes::float64;
 			case c10::kHalf:
-				return dlprim::half_data;
-			case c10::kBFloat16:
-				return dlprim::bfloat16_data;
+				tart::dtypes::float16;
+			#if 0
+				// not implemented yet, sorries
+				case c10::kBFloat16:
+					return dlprim::bfloat16_data;
+			#endif
 			case c10::kLong:
-				return dlprim::int64_data;
+				return tart::dtypes::int64;
 			case c10::kInt:
-				return dlprim::int32_data;
+				return tart::dtypes::int32;
 			case c10::kShort:
-				return dlprim::int16_data;
+				return tart::dtypes::int16;
 			case c10::kChar:
-				return dlprim::int8_data;
+				return tart::dtypes::int8;
 			case c10::kByte:
-				return dlprim::uint8_data;
+				return tart::dtypes::uint8;
 			case c10::kBool:
 				TORCH_CHECK(sizeof(bool)==1,"Need to make sure tensors have same size");
-				return dlprim::uint8_data;
+				return tart::dtypes::uint8;
 			default:
 				throw std::runtime_error(std::string("Unsupported data type:") + c10::toString(tp));
         }
@@ -65,8 +68,8 @@ namespace ptdlprim {
         size_t n = 1;
         for(auto const &v:size)
             n*=v;
-        dlprim::DataType dt = todp(type);
-        size_t mem = std::max(size_t(1),n)*dlprim::data_type_to_tart_dtype(dt).size();
+        tart::DType dt = todp(type);
+        size_t mem = std::max(size_t(1),n)*dt.size();
         c10::Storage storage(c10::Storage::use_byte_size_t(),mem,CLContextManager::allocate(dev,mem));
 
         c10::DispatchKeySet ks = c10::DispatchKeySet{c10::DispatchKey::OpenCL, c10::DispatchKey::AutogradOpenCL};
@@ -99,7 +102,7 @@ namespace ptdlprim {
         dlprim::Tensor ws;
         if(ws_size) {
             ws_ptr = std::move(CLContextManager::allocate(dev,ws_size));
-            ws = dlprim::Tensor( *((tart::buffer_ptr*)ws_ptr.get()), 0, dlprim::Shape(ws_size), dlprim::uint8_data);
+            ws = dlprim::Tensor( *((tart::buffer_ptr*)ws_ptr.get()), 0, dlprim::Shape(ws_size), tart::dtypes::uint8);
         }
         return ws;
     }

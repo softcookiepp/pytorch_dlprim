@@ -145,7 +145,7 @@ using c10::DeviceType;
             cfg.inputs = fi;
             cfg.outputs = fo;
             cfg.optimal_batch_size = batch;
-            cfg.dtype = data_type_to_tart_dtype(todp(input.dtype()));
+            cfg.dtype = (todp(input.dtype()));
             bool has_bias = bias && bias->numel() > 0;
             auto ip = dlprim::core::IPForward::create(dlprim_ctx,cfg,has_bias);
             dlprim::Tensor B;
@@ -473,7 +473,7 @@ using c10::DeviceType;
         int64_t    Coff = C.storage_offset();
 
         if(bmm == 0) {
-            auto gemm_op = dlprim::gpu::GEMM::get_optimal_gemm(q.queue(), dlprim::data_type_to_tart_dtype(todp(A.dtype())),At,Bt,M,N,K);
+            auto gemm_op = dlprim::gpu::GEMM::get_optimal_gemm(q.queue(), (todp(A.dtype())),At,Bt,M,N,K);
             gemm_op->gemm(M,N,K,
                     Abuf,Aoff,lda,
                     Bbuf,Boff,ldb,
@@ -485,7 +485,7 @@ using c10::DeviceType;
             int step_A = A.strides()[0];
             int step_B = B.strides()[0];
             int step_C = C.strides()[0];
-            dlprim::gpu::GEMM::batch_sgemm(dlprim::data_type_to_tart_dtype(todp(A.dtype())),
+            dlprim::gpu::GEMM::batch_sgemm((todp(A.dtype())),
                 At,Bt,
                 batch,M,N,K,
                 Abuf,Aoff,step_A,lda,

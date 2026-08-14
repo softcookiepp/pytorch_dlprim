@@ -8,9 +8,9 @@ namespace ptdlprim {
         CLContextManager::sync_if_needed(d.index());
     }
 
-    dlprim::DataType todp(c10::ScalarType tp);
+    inline const tart::DType& todp(c10::ScalarType tp);
     
-    inline dlprim::DataType todp(caffe2::TypeMeta meta)
+    inline const tart::DType& todp(caffe2::TypeMeta meta)
     {
         return todp(meta.toScalarType());
     }
