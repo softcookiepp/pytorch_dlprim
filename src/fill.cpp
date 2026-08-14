@@ -1,7 +1,6 @@
 #include "CLTensor.h"
 #include "utils.h"
 
-#include <dlprim/ops/elementwise.hpp>
 #include <dlprim/gpu/program_cache.hpp>
 #include <dlprim/core/pointwise.hpp>
 
@@ -9,7 +8,6 @@
 #include <dlprim/core/pointwise.hpp>
 #include <dlprim/core/ip.hpp>
 #include <dlprim/core/bn.hpp>
-#include <dlprim/core/conv.hpp>
 #include <dlprim/core/interpolate.hpp>
 #include <dlprim/core/bias.hpp>
 #include <dlprim/core/pool.hpp>

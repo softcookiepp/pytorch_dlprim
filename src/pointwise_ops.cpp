@@ -6,7 +6,6 @@
 #include <dlprim/core/ip.hpp>
 #include <dlprim/core/bn.hpp>
 #include <dlprim/core/util.hpp>
-#include <dlprim/core/conv.hpp>
 #include <dlprim/core/bias.hpp>
 #include <dlprim/core/pool.hpp>
 #include <dlprim/core/loss.hpp>

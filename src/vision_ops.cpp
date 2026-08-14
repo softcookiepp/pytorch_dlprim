@@ -5,7 +5,6 @@
 #include <dlprim/core/pointwise.hpp>
 #include <dlprim/core/ip.hpp>
 #include <dlprim/core/bn.hpp>
-#include <dlprim/core/conv.hpp>
 #include <dlprim/core/interpolate.hpp>
 #include <dlprim/core/bias.hpp>
 #include <dlprim/core/pool.hpp>
@@ -210,13 +209,7 @@ using c10::DeviceType;
             if(has_bias) {
                 dB_tensor = new_tensor_as(dlprim::Shape(W.shape()[0]),dy_tensor);
                 dlprim::Tensor dB=todp(dB_tensor);
-                auto bwd_bias = dlprim::core::BiasBackwardFilter::create(dlprim_ctx,dY.shape(),
-					#if 1
-						// temporary hack just to get it to work; will change later
-						dlprim::float_data);
-					#else
-						cfg.dtype);
-					#endif
+                auto bwd_bias = dlprim::core::BiasBackwardFilter::create(dlprim_ctx,dY.shape(), cfg.dtype);
                 at::DataPtr ptr;
                 dlprim::Tensor ws = make_workspace(ptr,bwd_bias->workspace(),dy_tensor.device());
                 bwd_bias->enqueue(dY,dB,ws,0,q);
