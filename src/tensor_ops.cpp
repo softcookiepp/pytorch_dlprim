@@ -406,7 +406,7 @@ using c10::DeviceType;
         }
         c10::ArrayRef<int64_t> sizes(vsizes.data(),vsizes.size());
 
-        tart::DType dt = todp(self).dtype();
+        tart::DType dt = todp(self.dtype());
         new_size*=(dt).size();
         
         if(new_size >= storage_size && new_size > 0) {

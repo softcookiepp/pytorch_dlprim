@@ -148,7 +148,7 @@ static void im2col_out_vk_template(
 				dilation_width,
 				output_n_dp.device_buffer(),
 				output_n_dp.device_offset(),
-				input_n_dp.tDtype());
+				input_n_dp.dtype());
 		}
 	}
 	
@@ -275,7 +275,7 @@ void col2im_out_vk_template(
 			output_dp.device_buffer(),
 			output_dp.device_offset(),
 			output_batch_stride,
-			output_dp.tDtype());
+			output_dp.dtype());
 	}
 #if 0
 	);

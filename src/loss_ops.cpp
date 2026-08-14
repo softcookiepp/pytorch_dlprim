@@ -175,7 +175,7 @@ using c10::DeviceType;
 		auto q = getExecutionContext(self);
 		dlprim::Context ctx(q);
 		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
-					{x.specs(),lbl.specs()},{y.specs()},0, x.tDtype(),
+					{x.specs(),lbl.specs()},{y.specs()},0, x.dtype(),
 					"y0 = (typeof_y0(x0) - typeof_y0(x1))*(typeof_y0(x0) - typeof_y0(x1));",
 					"reduce_y0 = typeof_y0(0);",
 					"reduce_y0 += y0;");

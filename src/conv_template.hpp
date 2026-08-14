@@ -133,7 +133,7 @@ void slow_conv_dilated_all_vk_template(
 					dilation_size,
 					columns_dp.device_buffer(),
 					columns_dp.device_offset(),
-					input_n_dp.tDtype(),
+					input_n_dp.dtype(),
 					dim);
 				const float alpha = 1.0;
 				const float beta = 1.0;
@@ -194,7 +194,7 @@ void slow_conv_dilated_all_vk_template(
 					dilation_size,
 					grad_input_n_dp.device_buffer(),
 					grad_input_n_dp.device_offset(),
-					grad_input_n_dp.tDtype(),
+					grad_input_n_dp.dtype(),
 					dim);
 		}
 
@@ -214,7 +214,7 @@ void slow_conv_dilated_all_vk_template(
 				dilation_size,
 				columns_dp.device_buffer(),
 				columns_dp.device_offset(),
-				columns_dp.tDtype(),
+				columns_dp.dtype(),
 				dim);
 				
 			const float alpha = 1.0;
@@ -372,8 +372,8 @@ void slow_conv_transpose2d_out_vk_template(
 				dilation_width,
 				output_n_dp.device_buffer(),
 				output_n_dp.device_offset(),
-				output_n_dp.tDtype(),
-				output_n_dp.tDtype());
+				output_n_dp.dtype(),
+				output_n_dp.dtype());
 
 
 			// Do Bias after:
@@ -683,7 +683,7 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 					dilation_width,
 					grad_columns_dp.device_buffer(),
 					grad_columns_dp.device_offset(),
-					grad_columns_dp.tDtype());
+					grad_columns_dp.dtype());
 			}
 
 			// M,N,K are dims of matrix A and B
@@ -884,7 +884,7 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 						dilation_width,
 						columns_dp.device_buffer(),
 						columns_dp.device_offset(),
-						columns_dp.tDtype());
+						columns_dp.dtype());
 				}
 
 

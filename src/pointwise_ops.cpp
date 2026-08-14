@@ -372,14 +372,14 @@ using c10::DeviceType;
         double value;
         if(isCPUScalar(other,value)) {
             dlprim::Tensor x0(todp(self_c));
-            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.tDtype()},
+            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.dtype()},
                         "precise typeof_x0 left = x0; precise typeof_w0 right = w0;" + op_builder,
                         getExecutionContext(self));
             sync_if_needed(self.device());
         }
         else if(isCPUScalar(self,value)) {
             dlprim::Tensor x0(todp(other_c));
-            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.tDtype()},
+            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.dtype()},
                         "precise typeof_w0 left = w0; precise typeof_x0 right = x0;" + op_builder,
                         getExecutionContext(other));
             sync_if_needed(other.device());
@@ -681,8 +681,8 @@ using c10::DeviceType;
         dlprim::ExecutionContext q(getExecutionContext(ref_tensor));
         dlprim::Context ctx(q);
         
-
-        dlprim::core::SliceCopy cp(ctx, todp(out).tDtype());
+		
+        dlprim::core::SliceCopy cp(ctx, todp(out.dtype()));
         for(size_t i=0,pos=0;i<list.size();i++) {
             Tensor new_tensor;
             dlprim::Tensor x;
@@ -1025,7 +1025,7 @@ using c10::DeviceType;
                     ctx,
                     {X.specs()},{Yval.specs()},
                     0,
-                    X.tDtype(),
+                    X.dtype(),
                     "y0=x0;",
                     "reduce_y0 = " + ext_val + ";",
                     std::string("reduce_y0 = ") + (is_max?"max":"min") + "(reduce_y0,y0);"
@@ -1118,7 +1118,7 @@ using c10::DeviceType;
                     ctx,
                     {X.specs()},{Y.specs()},
                     0,
-                    X.tDtype(),
+                    X.dtype(),
                     "y0=x0;",
                     std::string("reduce_y0 = ") + y0 + ";",
                     std::string("reduce_y0 = y0 ") + (is_min ? "<" : ">") +  " reduce_y0 ? y0 : reduce_y0;"
@@ -1181,7 +1181,7 @@ using c10::DeviceType;
         
         dlprim::Tensor x(todp(self_c));
         dlprim::Tensor y(todp(out_c));
-        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.tDtype()},
+        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.dtype()},
                     "y0 = typeof_y0(x0 != typeof_x0(w0));", 
                     getExecutionContext(self));
         
@@ -1227,7 +1227,7 @@ using c10::DeviceType;
         
         dlprim::Tensor x(todp(self_c));
         dlprim::Tensor y(todp(out_c));
-        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.tDtype()},
+        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.dtype()},
                     "y0 = typeof_y0( x0 == typeof_x0(w0) );",
                     getExecutionContext(self));
         

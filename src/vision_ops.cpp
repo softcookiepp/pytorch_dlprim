@@ -74,7 +74,7 @@ using c10::DeviceType;
 
             dlprim::ExecutionContext q = getExecutionContext(self);
             dlprim::Context ctx(q);
-            auto pool = dlprim::core::Pooling2DForward::create_global_avg_pooling(ctx,X.shape(),todp(self).tDtype());
+            auto pool = dlprim::core::Pooling2DForward::create_global_avg_pooling(ctx,X.shape(),todp(self.dtype()));
             pool->enqueue(X,Y,q);
         }
         else {
@@ -102,7 +102,7 @@ using c10::DeviceType;
 
             dlprim::ExecutionContext q = getExecutionContext(self);
             dlprim::Context ctx(q);
-            auto pool = dlprim::core::AvgPooling2DBackward::create_global(ctx,X.shape(),todp(self).tDtype());
+            auto pool = dlprim::core::AvgPooling2DBackward::create_global(ctx,X.shape(),todp(self.dtype()));
             pool->enqueue(dx,dy,0,q);
         }
         else {
@@ -187,7 +187,7 @@ using c10::DeviceType;
             cfg.inputs = fi;
             cfg.outputs = fo;
             cfg.optimal_batch_size = batch;
-            cfg.dtype = todp(dx_tensor).tDtype();
+            cfg.dtype = todp(dx_tensor.dtype());
 
             auto q = getExecutionContext(dy_tensor);
             dlprim::Context dlprim_ctx(q);
@@ -274,7 +274,7 @@ using c10::DeviceType;
             dlprim::Tensor Y = todp(out);
             dlprim::ExecutionContext q = getExecutionContext(self);
             dlprim::Context dlprim_ctx(q);
-            auto pool = dlprim::core::Pooling2DForward::create_max_pooling(dlprim_ctx,kernel,pad,strd,todp(self).tDtype());
+            auto pool = dlprim::core::Pooling2DForward::create_max_pooling(dlprim_ctx,kernel,pad,strd,todp(self.dtype()));
             pool->enqueue(X,Y,q);
             sync_if_needed(self.device());
             
@@ -315,7 +315,7 @@ using c10::DeviceType;
             dlprim::ExecutionContext q = getExecutionContext(grad_output);
             dlprim::Context dlprim_ctx(q);
 
-            auto pool=dlprim::core::MaxPooling2DBackward::create(dlprim_ctx,kernel,pad,strd,todp(input).tDtype());
+            auto pool=dlprim::core::MaxPooling2DBackward::create(dlprim_ctx,kernel,pad,strd,todp(input.dtype()));
             pool->enqueue(x,dx,dy,0,q);
             sync_if_needed(grad_output.device());
             return {grad_input,torch::Tensor(),torch::Tensor(),torch::Tensor(),torch::Tensor(),torch::Tensor()};
@@ -354,7 +354,7 @@ using c10::DeviceType;
         auto pool = dlprim::core::Pooling2DForward::create_avg_pooling(
                         ctx,
                         ker,pad,strd,
-                        count_include_pad, todp(self).tDtype()
+                        count_include_pad, todp(self.dtype())
                     );                  
         pool->enqueue(X,Y,q);    
         sync_if_needed(self.device());
@@ -387,7 +387,7 @@ using c10::DeviceType;
         auto pool = dlprim::core::AvgPooling2DBackward::create(
                         ctx,
                         ker,pad,strd,
-                        count_include_pad,todp(grad_input).tDtype()
+                        count_include_pad,todp(grad_input.dtype())
                     );                  
         pool->enqueue(dX,dY,0,q);    
         sync_if_needed(self.device());
@@ -618,7 +618,7 @@ using c10::DeviceType;
         dlprim::core::pointwise_operation_broadcast(
                 {dp_qkv,dp_bias},{dp_out},
                 {scale,double(D)},
-                {dp_qkv.tDtype(), tart::dtypes::int64},
+                {dp_qkv.dtype(), tart::dtypes::int64},
                 R"xxx(
                     uint position_d1 = uint(index.s[1]);
                     typeof_x0 scale = position_d1 < uint(w1) ? w0 : typeof_x0(1);
