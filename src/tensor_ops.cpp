@@ -128,13 +128,13 @@ using c10::DeviceType;
             dlprim::Tensor t = todp(c_src);
             if(dst.is_contiguous()) {
                 void *ptr = dst.data_ptr();
-                t.to_host(ec,ptr);
+                t.to_host(ptr);
             }
             else {
                 TensorOptions options = TensorOptions().memory_format(MemoryFormat::Contiguous);
                 Tensor dst_c = at::empty_like(dst,options);
                 void *ptr = dst_c.data_ptr();
-                t.to_host(ec,ptr);
+                t.to_host(ptr);
                 dst.copy_(dst_c);
             }
         }
@@ -142,13 +142,13 @@ using c10::DeviceType;
             Tensor c_src = make_contiguous_as_target_type(self,dst);
             if(dst.is_contiguous()) {
                 dlprim::Tensor t(todp(dst));
-                t.to_device(ec,c_src.data_ptr());
+                t.to_device(c_src.data_ptr());
             }
             else {
                 TensorOptions options = TensorOptions().memory_format(MemoryFormat::Contiguous);
                 Tensor temp = at::empty_like(dst,options);
                 dlprim::Tensor t(todp(temp));
-                t.to_device(ec,c_src.data_ptr());
+                t.to_device(c_src.data_ptr());
                 dst.copy_(temp);
             }
         }

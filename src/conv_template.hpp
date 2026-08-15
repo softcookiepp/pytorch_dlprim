@@ -144,7 +144,7 @@ void slow_conv_dilated_all_vk_template(
 					weight_dp.device_buffer(), weight_dp.device_offset(), columns.size(0),
 					beta,
 					output_n_dp.device_buffer(), output_n_dp.device_offset(), columns.size(1),
-					stream.queue());
+					dlprim::tensorDevice(columns_dp));
 			#endif
 		}
 		else
@@ -180,7 +180,7 @@ void slow_conv_dilated_all_vk_template(
 			Tensor grad_input_n = grad_input.select(0, elt);
 			dlprim::Tensor grad_input_n_dp = todp(grad_input_n);
 			col2hvol(
-					stream,
+
 					columns_dp.device_buffer(),
 					columns_dp.device_offset(),
 					nInputPlane,
@@ -229,7 +229,7 @@ void slow_conv_dilated_all_vk_template(
 				grad_output_n_dp.device_buffer(), grad_output_n_dp.device_offset(), columns.size(1), // b
 				beta,
 				grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(), columns.size(0), // c
-				stream.queue());
+				dlprim::tensorDevice(columns_dp));
 		}
 
 		// Gradient of bias:
@@ -706,7 +706,7 @@ static void slow_conv_transpose2d_backward_out_vk_template(
 				beta,
 				grad_input_n_dp.device_buffer(), grad_input_n_dp.device_offset(),
 				n,
-				dlprim::tensorDevice(gemm_in_ptr));
+				dlprim::tensorDevice(grad_input_n_dp));
 		}
 
 		// Resize output
@@ -905,7 +905,7 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 					beta,
 					grad_weight_dp.device_buffer(), grad_weight_dp.device_offset(),
 					n,
-					dlprim::deviceTensor(gemm_in_ptr));
+					gemm_in_ptr->getDevice());
 			}
 		}
 

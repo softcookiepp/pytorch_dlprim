@@ -149,7 +149,7 @@ using c10::DeviceType;
                     (bwd_beta  ? &dB : nullptr),
                     0.0,
                     eps,
-                    ws,q);
+                    ws);
         }
         else {
             bn->enqueue_backward_direct(
@@ -158,7 +158,7 @@ using c10::DeviceType;
                     mean,var,
                     dX,0.0,
                     eps,
-                    ws,q);
+                    ws);
 
         }
         sync_if_needed(input.device());
@@ -199,8 +199,8 @@ using c10::DeviceType;
         calc_var = todp(calc_var_pt);
         calc_rstd_pt  = new_tensor_as(dlprim::Shape(B),input);
         calc_rstd = todp(calc_rstd_pt);
-
-        auto bn = dlprim::core::BatchNormFwdBwd::create(ctx,X.shape(),X.dtype());
+		tart::device_ptr device = dlprim::tensorDevice(calc_mean);
+        auto bn = dlprim::core::BatchNormFwdBwd::create(device,X.shape(),X.dtype());
         size_t ws_size = bn->workspace();
         
         DataPtr tmp;
@@ -208,29 +208,26 @@ using c10::DeviceType;
 
         dlprim::Tensor fwd_mean,fwd_var;
 
-        bn->enqueue_calculate_batch_stats(X,calc_mean,calc_var,ws,q);
-        bn->enqueue_forward_get_rstd(X,Y,calc_mean,calc_var,eps,calc_rstd,ws,q);
+        bn->enqueue_calculate_batch_stats(X,calc_mean,calc_var,ws);
+        bn->enqueue_forward_get_rstd(X,Y,calc_mean,calc_var,eps,calc_rstd,ws);
 
         Y.reshape(src_shape);
         if(weight_present && bias_present) {
             dlprim::Tensor w = todp(*weight);
             dlprim::Tensor b = todp(*bias);
             dlprim::core::pointwise_operation_broadcast({Y,w,b},{Y},{},
-                                      "y0 = x0 * x1 + x2;",
-                                      q);
+                                      "y0 = x0 * x1 + x2;");
 
         }
         else if(weight_present) {
             dlprim::Tensor w = todp(*weight);
             dlprim::core::pointwise_operation_broadcast({Y,w},{Y},{},
-                                      "y0 = x0 * x1;",
-                                      q);
+                                      "y0 = x0 * x1;");
         }
         else if(bias_present) {
             dlprim::Tensor b = todp(*bias);
             dlprim::core::pointwise_operation_broadcast({Y,b},{Y},{},
-                                      "y0 = x0 + x1;",
-                                      q);
+                                      "y0 = x0 + x1;");
         }
         return std::tuple<Tensor,Tensor,Tensor>(result,calc_mean_pt,calc_rstd_pt);
     }
@@ -264,7 +261,7 @@ using c10::DeviceType;
         dlprim::Tensor dY = todp(grad_out_c);
         dlprim::Tensor X = todp(input_c);
         auto src_shape = X.shape();
-
+		tart::device_ptr device = dlprim::tensorDevice(X);
         int B = X.shape().total_size() / N;
         auto bn_shape = dlprim::Shape(1,B,N);
         X.reshape(bn_shape);
@@ -294,34 +291,34 @@ using c10::DeviceType;
             mean.reshape(dlprim::Shape(1,B,1));
             rstd.reshape(dlprim::Shape(1,B,1));
             auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                        ctx,
+                        device,
                         {X.specs(),mean.specs(),rstd.specs(),dY.specs()},{dG.specs()},
                         0, tart::dtypes::float32,
                         "y0=(x0 - x1)*x2*x3;",
                         "reduce_y0 = 0;",
                         "reduce_y0 += y0;");
             WSGuard wsg(op->workspace(),input.device());
-            op->enqueue({X,mean,rstd,dY},{dG},wsg.ws,{},{1},{0},q);
+            op->enqueue({X,mean,rstd,dY},{dG},wsg.ws,{},{1},{0});
         }
         if(bwd_beta) {
             beta_diff = new_tensor_as(norm_shape,input);
             dB = todp(beta_diff);
             dB.reshape(dlprim::Shape(N));
             auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                        ctx,
+                        device,
                         {dY.specs()},{dB.specs()},
                         0, tart::dtypes::float32,
                         "y0=x0;",
                         "reduce_y0 = 0;",
                         "reduce_y0 += y0;");
             WSGuard wsg(op->workspace(),input.device());
-            op->enqueue({dY},{dB},wsg.ws,{},{1},{0},q);
+            op->enqueue({dY},{dB},wsg.ws,{},{1},{0});
         }
         if(bwd_data) {
             x_diff = new_tensor_as(src_shape,input);
             dX = todp(x_diff);
             dX.reshape(bn_shape);
-            auto bn = dlprim::core::BatchNormFwdBwd::create(ctx,bn_shape,X.dtype());
+            auto bn = dlprim::core::BatchNormFwdBwd::create(device,bn_shape,X.dtype());
             size_t ws_size = bn->workspace();
             
             DataPtr tmp;
@@ -335,15 +332,14 @@ using c10::DeviceType;
                 auto pt_dYW_diff = new_tensor_as(dY.shape(),input);
                 dYW_diff = todp(pt_dYW_diff);
                 dlprim::core::pointwise_operation_broadcast({dY,W},{dYW_diff},{},{},
-                        "y0 = x0 * x1;", 
-                        q);
+                        "y0 = x0 * x1;");
             }
 
             bn->enqueue_backward_rstd(
                     X,dYW_diff,
                     mean,rstd,
                     dX,0.0,
-                    ws,q);
+                    ws);
         }
 
         sync_if_needed(input.device());
@@ -380,8 +376,8 @@ using c10::DeviceType;
         Tensor rstd_pt = new_tensor_as(dlprim::Shape(B), input);
         dlprim::Tensor mean = todp(mean_pt);
         dlprim::Tensor rstd = todp(rstd_pt);
-
-        auto bn = dlprim::core::BatchNormFwdBwd::create(ctx, bn_shape, X.dtype());
+		tart::device_ptr device = dlprim::tensorDevice(mean);
+        auto bn = dlprim::core::BatchNormFwdBwd::create(device, bn_shape, X.dtype());
         size_t ws_size = bn->workspace();
         DataPtr tmp;
         dlprim::Tensor ws = make_workspace(tmp, ws_size, input.device());
@@ -389,9 +385,9 @@ using c10::DeviceType;
         Tensor calc_var_pt = new_tensor_as(dlprim::Shape(B), input);
         dlprim::Tensor calc_var = todp(calc_var_pt);
 		
-        bn->enqueue_calculate_batch_stats(X, mean, calc_var, ws, q);
+        bn->enqueue_calculate_batch_stats(X, mean, calc_var, ws);
         
-        bn->enqueue_forward_get_rstd(X, Y, mean, calc_var, eps, rstd, ws, q);
+        bn->enqueue_forward_get_rstd(X, Y, mean, calc_var, eps, rstd, ws);
 
         Y.reshape(src_shape);
         if (weight_present || bias_present) {
@@ -410,11 +406,11 @@ using c10::DeviceType;
                 b.reshape(wb_shape);
             }
             if (weight_present && bias_present) {
-                dlprim::core::pointwise_operation_broadcast({Y, w, b}, {Y}, {}, "y0 = x0 * x1 + x2;", q);
+                dlprim::core::pointwise_operation_broadcast({Y, w, b}, {Y}, {}, "y0 = x0 * x1 + x2;");
             } else if (weight_present) {
-                dlprim::core::pointwise_operation_broadcast({Y, w}, {Y}, {}, "y0 = x0 * x1;", q);
+                dlprim::core::pointwise_operation_broadcast({Y, w}, {Y}, {}, "y0 = x0 * x1;");
             } else {
-                dlprim::core::pointwise_operation_broadcast({Y, b}, {Y}, {}, "y0 = x0 + x1;", q);
+                dlprim::core::pointwise_operation_broadcast({Y, b}, {Y}, {}, "y0 = x0 + x1;");
             }
         }
 
@@ -455,13 +451,13 @@ using c10::DeviceType;
             
             dlprim::Tensor m_b = todp(mean).alias(dlprim::Shape(N, group, 1, 1));
             dlprim::Tensor r_b = todp(rstd).alias(dlprim::Shape(N, group, 1, 1));
-
+			tart::device_ptr device = dlprim::tensorDevice(m_b);
             if (bwd_gamma) {
                 gamma_diff = new_tensor_as(dlprim::Shape(C), input);
                 dlprim::Tensor dG = todp(gamma_diff);
                 dG.reshape(dlprim::Shape(1, group, C/group, 1));
                 auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                            ctx,
+                            device,
                             {X_4d.specs(), m_b.specs(), r_b.specs(), dY_4d.specs()}, {dG.specs()},
                             0, tart::dtypes::float32,
                             "y0=(x0 - x1)*x2*x3;",
@@ -469,14 +465,14 @@ using c10::DeviceType;
                             "reduce_y0 += y0;");
                 DataPtr wsg_ptr;
                 dlprim::Tensor wsg = make_workspace(wsg_ptr, op->workspace(), input.device());
-                op->enqueue({X_4d, m_b, r_b, dY_4d}, {dG}, wsg, {}, {1}, {0}, q);
+                op->enqueue({X_4d, m_b, r_b, dY_4d}, {dG}, wsg, {}, {1}, {0});
             }
             if (bwd_beta) {
                 beta_diff = new_tensor_as(dlprim::Shape(C), input);
                 dlprim::Tensor dB = todp(beta_diff);
                 dB.reshape(dlprim::Shape(1, group, C/group, 1));
                 auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                            ctx,
+                            device,
                             {dY_4d.specs()}, {dB.specs()},
                             0, tart::dtypes::float32,
                             "y0=x0;",
@@ -484,7 +480,7 @@ using c10::DeviceType;
                             "reduce_y0 += y0;");
                 DataPtr wsg_ptr;
                 dlprim::Tensor wsg = make_workspace(wsg_ptr, op->workspace(), input.device());
-                op->enqueue({dY_4d}, {dB}, wsg, {}, {1}, {0}, q);
+                op->enqueue({dY_4d}, {dB}, wsg, {}, {1}, {0});
             }
         }
 		std::cout << "	doing (bwd_data)\n";
@@ -492,8 +488,8 @@ using c10::DeviceType;
             x_diff = new_tensor_as(src_shape, input);
             dlprim::Tensor dX = todp(x_diff);
             dX.reshape(bn_shape);
-
-            auto bn = dlprim::core::BatchNormFwdBwd::create(ctx, bn_shape, X.dtype());
+			tart::device_ptr device = dlprim::tensorDevice(dX);
+            auto bn = dlprim::core::BatchNormFwdBwd::create(device, bn_shape, X.dtype());
             size_t ws_size = bn->workspace();
             DataPtr tmp;
             dlprim::Tensor ws = make_workspace(tmp, ws_size, input.device());
@@ -514,13 +510,13 @@ using c10::DeviceType;
                 dYW_diff.reshape(dlprim::Shape(N, group, C / group, HxW));
                 W.reshape(dlprim::Shape(1, group, C / group, 1));
                 
-                dlprim::core::pointwise_operation_broadcast({dY, W}, {dYW_diff}, {}, "y0 = x0 * x1;", q);
+                dlprim::core::pointwise_operation_broadcast({dY, W}, {dYW_diff}, {}, "y0 = x0 * x1;");
                 
                 dY.reshape(bn_shape);
                 dYW_diff.reshape(bn_shape);
             }
 			std::cout << "	doing bn->enqueue_backward_rstd(X, dYW_diff, m_b, r_b, dX, 0.0, ws, q);\n";
-            bn->enqueue_backward_rstd(X, dYW_diff, m_b, r_b, dX, 0.0, ws, q);
+            bn->enqueue_backward_rstd(X, dYW_diff, m_b, r_b, dX, 0.0, ws);
             std::cout << "	finished bn->enqueue_backward_rstd(X, dYW_diff, m_b, r_b, dX, 0.0, ws, q);\n";
         }
 

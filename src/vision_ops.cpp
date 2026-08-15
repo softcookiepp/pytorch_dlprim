@@ -71,8 +71,8 @@ using c10::DeviceType;
             result = new_tensor_as(dlprim::Shape(X.shape()[0],X.shape()[1],1,1),self);
             dlprim::Tensor Y = todp(result);
 
-            auto pool = dlprim::core::Pooling2DForward::create_global_avg_pooling(ctx,X.shape(),todp(self.dtype()));
-            pool->enqueue(X,Y,q);
+            auto pool = dlprim::core::Pooling2DForward::create_global_avg_pooling(dlprim::tensorDevice(X), X.shape(), todp(self.dtype()));
+            pool->enqueue(X,Y);
         }
         else {
             result = new_tensor_as(X.shape(),self);
@@ -97,8 +97,8 @@ using c10::DeviceType;
             result = new_tensor_as(X.shape(),self);
             dlprim::Tensor dx = todp(result);
 
-            auto pool = dlprim::core::AvgPooling2DBackward::create_global(ctx,X.shape(),todp(self.dtype()));
-            pool->enqueue(dx,dy,0,q);
+            auto pool = dlprim::core::AvgPooling2DBackward::create_global(dlprim::tensorDevice(X), X.shape(),todp(self.dtype()));
+            pool->enqueue(dx,dy,0);
         }
         else {
             result = new_tensor_as(dy.shape(),self);
@@ -140,13 +140,13 @@ using c10::DeviceType;
             cfg.optimal_batch_size = batch;
             cfg.dtype = (todp(input.dtype()));
             bool has_bias = bias && bias->numel() > 0;
-            auto ip = dlprim::core::IPForward::create(dlprim_ctx,cfg,has_bias);
+            auto ip = dlprim::core::IPForward::create(dlprim::tensorDevice(Y), cfg, has_bias);
             dlprim::Tensor B;
             if(has_bias)
                 B=todp(*bias);
             X.reshape(dlprim::Shape(batch,fi));
             Y.reshape(dlprim::Shape(batch,fo));
-            ip->enqueue(X,W,(has_bias ? &B : nullptr),Y,q);
+            ip->enqueue(X,W,(has_bias ? &B : nullptr),Y);
             ctx->save_for_backward({cinput,weight});
             ctx->saved_data["has_bias"]=has_bias;
 
@@ -188,22 +188,22 @@ using c10::DeviceType;
             X.reshape(X_shape);
             dX.reshape(X_shape);
             dY.reshape(Y_shape);
+			tart::device_ptr device = dlprim::tensorDevice(dX);
+            auto bwd_data = dlprim::core::IPBackwardData::create(device, cfg);
+            bwd_data->enqueue(dX,W,dY,0);
 
-            auto bwd_data = dlprim::core::IPBackwardData::create(dlprim_ctx,cfg);
-            bwd_data->enqueue(dX,W,dY,0,q);
-
-            auto bwd_filter = dlprim::core::IPBackwardFilter::create(dlprim_ctx,cfg);
-            bwd_filter->enqueue(X,dW,dY,0,q);
+            auto bwd_filter = dlprim::core::IPBackwardFilter::create(device, cfg);
+            bwd_filter->enqueue(X,dW,dY,0);
 
             bool has_bias = ctx->saved_data["has_bias"].toBool();
             torch::Tensor dB_tensor;
             if(has_bias) {
                 dB_tensor = new_tensor_as(dlprim::Shape(W.shape()[0]),dy_tensor);
                 dlprim::Tensor dB=todp(dB_tensor);
-                auto bwd_bias = dlprim::core::BiasBackwardFilter::create(dlprim_ctx,dY.shape(), cfg.dtype);
+                auto bwd_bias = dlprim::core::BiasBackwardFilter::create(device,dY.shape(), cfg.dtype);
                 at::DataPtr ptr;
                 dlprim::Tensor ws = make_workspace(ptr,bwd_bias->workspace(),dy_tensor.device());
-                bwd_bias->enqueue(dY,dB,ws,0,q);
+                bwd_bias->enqueue(dY,dB,ws,0);
             }
 
             sync_if_needed(grad_output.device());
@@ -254,10 +254,10 @@ using c10::DeviceType;
                     dlprim::core::calc_pooling_output_size(x_shape[3],kernel[1],pad[1],strd[1],ceil_mode));
 
             torch::Tensor out = new_tensor_as(y_shape,self);
-
+			tart::device_ptr device = dlprim::tensorDevice(X);
             dlprim::Tensor Y = todp(out);
-            auto pool = dlprim::core::Pooling2DForward::create_max_pooling(dlprim_ctx,kernel,pad,strd,todp(self.dtype()));
-            pool->enqueue(X,Y,q);
+            auto pool = dlprim::core::Pooling2DForward::create_max_pooling(device,kernel,pad,strd,todp(self.dtype()));
+            pool->enqueue(X,Y);
             sync_if_needed(self.device());
             
             ctx->save_for_backward({self_cont});
@@ -293,9 +293,9 @@ using c10::DeviceType;
             dlprim::Tensor x=todp(input_c);
             torch::Tensor grad_input = new_tensor_as(x.shape(),grad_output);
             dlprim::Tensor dx = todp(grad_input);
-
-            auto pool=dlprim::core::MaxPooling2DBackward::create(dlprim_ctx,kernel,pad,strd,todp(input.dtype()));
-            pool->enqueue(x,dx,dy,0,q);
+			tart::device_ptr device = dlprim::tensorDevice(dx);
+            auto pool=dlprim::core::MaxPooling2DBackward::create(device,kernel,pad,strd,todp(input.dtype()));
+            pool->enqueue(x,dx,dy,0);
             sync_if_needed(grad_output.device());
             return {grad_input,torch::Tensor(),torch::Tensor(),torch::Tensor(),torch::Tensor(),torch::Tensor()};
         }
@@ -327,13 +327,13 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous();
         dlprim::Tensor X=todp(self_c);
         dlprim::Tensor Y=todp(out);
-
+		tart::device_ptr device = dlprim::tensorDevice(X);
         auto pool = dlprim::core::Pooling2DForward::create_avg_pooling(
-                        ctx,
+                        device,
                         ker,pad,strd,
                         count_include_pad, todp(self.dtype())
                     );                  
-        pool->enqueue(X,Y,q);    
+        pool->enqueue(X,Y);    
         sync_if_needed(self.device());
         return out;
     }
@@ -358,13 +358,13 @@ using c10::DeviceType;
         Tensor grad_output_c = grad_output.contiguous();
         dlprim::Tensor dY=todp(grad_output_c);
         dlprim::Tensor dX=todp(grad_input);
-        
+        tart::device_ptr device = dlprim::tensorDevice(dX);
         auto pool = dlprim::core::AvgPooling2DBackward::create(
-                        ctx,
+                        device,
                         ker,pad,strd,
                         count_include_pad,todp(grad_input.dtype())
                     );                  
-        pool->enqueue(dX,dY,0,q);    
+        pool->enqueue(dX,dY,0);    
         sync_if_needed(self.device());
         return grad_input;
     }
@@ -442,14 +442,14 @@ using c10::DeviceType;
         int64_t    Boff = B.storage_offset();
         tart::buffer_ptr Cbuf = buffer_from_tensor(C);
         int64_t    Coff = C.storage_offset();
-
+		tart::device_ptr device = Abuf->getDevice();
         if(bmm == 0) {
-            auto gemm_op = dlprim::gpu::GEMM::get_optimal_gemm(q.queue(), (todp(A.dtype())),At,Bt,M,N,K);
+            auto gemm_op = dlprim::gpu::GEMM::get_optimal_gemm(device, (todp(A.dtype())),At,Bt,M,N,K);
             gemm_op->gemm(M,N,K,
                     Abuf,Aoff,lda,
                     Bbuf,Boff,ldb,
                     Cbuf,Coff,ldc,
-                    nullptr,0,0,M*N,q);
+                    nullptr,0,0,M*N);
         }
         else {
             int batch = A.sizes()[0];
@@ -462,7 +462,7 @@ using c10::DeviceType;
                 Abuf,Aoff,step_A,lda,
                 Bbuf,Boff,step_B,ldb,
                 Cbuf,Coff,step_C,ldc,
-                0.0f,q);
+                0.0f);
         }
         if(Cc)
             out.copy_(C);

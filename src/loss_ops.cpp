@@ -88,13 +88,13 @@ using c10::DeviceType;
 			target_shape = x.shape();
 		Tensor loss_tensor = new_tensor_as(target_shape,self_c);
 		dlprim::Tensor loss(todp(loss_tensor));
-		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
+		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(dlprim::tensorDevice(loss),
 					{x.specs(),y.specs()},{loss.specs()},0, tart::dtypes::float32, // change laaater perhaps
 					"y0 = typeof_y0(-1.0)*(x1 * max(typeof_x0(-100), log(x0)) + (1-x1) * max(typeof_x0(-100),log(1-x0)));",
 					"reduce_y0 = 0;",
 					"reduce_y0 += y0;");
 		WSGuard wsg(op->workspace(),self.device());
-		op->enqueue({x,y},{loss},wsg.ws,{},{scale},{0},q);
+		op->enqueue({x,y},{loss},wsg.ws,{},{scale},{0});
 		sync_if_needed(self.device());
 		return loss_tensor;
 	}
@@ -169,13 +169,13 @@ using c10::DeviceType;
 		}
 		Tensor output = new_tensor_as(reduce ? dlprim::Shape() : x.shape(),self_c);
 		dlprim::Tensor y=todp(output);
-		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(ctx,
+		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(dlprim::tensorDevice(y),
 					{x.specs(),lbl.specs()},{y.specs()},0, x.dtype(),
 					"y0 = (typeof_y0(x0) - typeof_y0(x1))*(typeof_y0(x0) - typeof_y0(x1));",
 					"reduce_y0 = typeof_y0(0);",
 					"reduce_y0 += y0;");
 		WSGuard wsg(op->workspace(),self.device());
-		op->enqueue({x,lbl},{y},wsg.ws,{},{scale},{0},q);
+		op->enqueue({x,lbl},{y},wsg.ws,{},{scale},{0});
 		sync_if_needed(self.device());
 
 		return output;

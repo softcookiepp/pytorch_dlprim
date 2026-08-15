@@ -496,7 +496,7 @@ using c10::DeviceType;
         double scale = (rop == RedOp::mean) ? double(Y.shape().total_size()) / double(X.shape().total_size()) : 1;
 
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                ctx,
+                dlprim::tensorDevice(X),
                 {X.specs()},{Y.specs()},
                 0,
                 tart::dtypes::float32,
@@ -506,7 +506,7 @@ using c10::DeviceType;
         );
 
         WSGuard wsg(op->workspace(),self.device());
-        op->enqueue({X},{Y},wsg.ws,{},{scale},{0},q);
+        op->enqueue({X},{Y},wsg.ws,{},{scale},{0});
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -666,7 +666,7 @@ using c10::DeviceType;
             Y = todp(out);
         }
 		
-        dlprim::core::SliceCopy cp(ctx, todp(out.dtype()));
+        dlprim::core::SliceCopy cp(dlprim::tensorDevice(Y), todp(out.dtype()));
         for(size_t i=0,pos=0;i<list.size();i++) {
             Tensor new_tensor;
             dlprim::Tensor x;
@@ -681,7 +681,7 @@ using c10::DeviceType;
             cp.tensor_slice_copy(dim,slice,
                                       Y,pos,
                                       x,0,
-                                      0.0,q);
+                                      0.0);
             pos += slice;
         }
         
@@ -1004,7 +1004,7 @@ using c10::DeviceType;
 
         std::string ext_val = dlprim::data_type_to_opencl_numeric_limit(X.dtype(),(is_max ? dlprim::dt_min_val : dlprim::dt_max_val));
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                    ctx,
+                    dlprim::tensorDevice(X),
                     {X.specs()},{Yval.specs()},
                     0,
                     X.dtype(),
@@ -1013,7 +1013,7 @@ using c10::DeviceType;
                     std::string("reduce_y0 = ") + (is_max?"max":"min") + "(reduce_y0,y0);"
                     );
         WSGuard ws_guard(op->workspace(),self.device());
-        op->enqueue({X},{Yval},ws_guard.ws,{},{1,1},{0,0},q);
+        op->enqueue({X},{Yval},ws_guard.ws,{},{1,1},{0,0});
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -1061,7 +1061,7 @@ using c10::DeviceType;
 
         std::string min_val = dlprim::data_type_to_opencl_numeric_limit(X.dtype(),dlprim::dt_min_val);
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                    ctx,
+                    dlprim::tensorDevice(Yval),
                     {X.specs()},{Yval.specs(),Yind.specs()},
                     0,
                     tart::dtypes::float32,
@@ -1075,7 +1075,7 @@ using c10::DeviceType;
                     )xxx"
                     );
         WSGuard ws_guard(op->workspace(),self.device());
-        op->enqueue({X},{Yval,Yind},ws_guard.ws,{},{1,1},{0,0},q);
+        op->enqueue({X},{Yval,Yind},ws_guard.ws,{},{1,1},{0,0});
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -1093,7 +1093,7 @@ using c10::DeviceType;
         dlprim::Tensor Y = todp(result);
         std::string y0 = dlprim::data_type_to_opencl_numeric_limit(X.dtype(),(is_min ? dlprim::dt_max_val : dlprim::dt_min_val));
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                    ctx,
+                    dlprim::tensorDevice(Y),
                     {X.specs()},{Y.specs()},
                     0,
                     X.dtype(),
@@ -1102,7 +1102,7 @@ using c10::DeviceType;
                     std::string("reduce_y0 = y0 ") + (is_min ? "<" : ">") +  " reduce_y0 ? y0 : reduce_y0;"
                     );
         WSGuard ws_guard(op->workspace(),self.device());
-        op->enqueue({X},{Y},ws_guard.ws,{},{1},{0},q);
+        op->enqueue({X},{Y},ws_guard.ws,{},{1},{0});
         
         if (!self.is_contiguous())
             self.copy_(self_c);
@@ -1134,7 +1134,7 @@ using c10::DeviceType;
         Tensor result = new_tensor_as(dlprim::Shape(),self_c);
         dlprim::Tensor y=todp(result);
         auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                ctx,
+                dlprim::tensorDevice(y),
                 {x0.specs(),x1.specs()},{y.specs()},
                 0,
                 tart::dtypes::float32,
@@ -1143,7 +1143,7 @@ using c10::DeviceType;
                 "reduce_y0 += y0;");
 
         WSGuard wsg(op->workspace(),self.device());
-        op->enqueue({x0,x1},{y},wsg.ws,{},{1},{0},q);
+        op->enqueue({x0,x1},{y},wsg.ws,{},{1},{0});
         sync_if_needed(self.device());
         return result;
     }
