@@ -70,10 +70,12 @@ void slow_conv_dilated_all_vk_template(
 	
 	dlprim::Tensor columns_dp = todp(columns);
 	dlprim::Tensor weight_dp = todp(weight);
+	
+	tart::device_ptr device = dlprim::tensorDevice(columns_dp);
 
 	// For each elt in batch, do:
 	for (int elt = 0; elt < batchSize; elt++)
-	{
+	{		
 		// Matrix multiply per output:
 		Tensor input_n = input.select(0, elt);
 		dlprim::Tensor input_n_dp = todp(input_n);
@@ -115,7 +117,6 @@ void slow_conv_dilated_all_vk_template(
 					weight_dp.device_buffer(), (size_t)weight_dp.device_offset(), output_n_dp.device_buffer(),
 					(size_t)output_n_dp.device_offset(), stream.queue(), nullptr);
 			#else
-				
 				
 				// Extract columns:
 				hvol2col(
