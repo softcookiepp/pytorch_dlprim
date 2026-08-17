@@ -1,19 +1,15 @@
-#pragma once
+#ifndef PTDLPRIM_UTILS_H
+#define PTDLPRIM_UTILS_H
+
 #include "CLTensor.h"
 
 namespace ptdlprim {
     /// 
-    inline void sync_if_needed(c10::Device const &d)
-    {
-        CLContextManager::sync_if_needed(d.index());
-    }
+    void sync_if_needed(c10::Device const &d);
 
-    inline const tart::DType& todp(c10::ScalarType tp);
+    const tart::DType& todp(c10::ScalarType tp);
     
-    inline const tart::DType& todp(caffe2::TypeMeta meta)
-    {
-        return todp(meta.toScalarType());
-    }
+    const tart::DType& todp(caffe2::TypeMeta meta);
 
 	tart::buffer_ptr buffer_from_tensor(torch::Tensor const &tt);
 
@@ -37,3 +33,5 @@ namespace ptdlprim {
 
 
 } // namespace
+
+#endif // PTDLPRIM_UTILS_H

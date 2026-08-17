@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 project(dlprim_backend)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(Python_FIND_VIRTUALENV FIRST)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 execute_process(COMMAND which python3)
@@ -74,7 +76,7 @@ if(1)
 
 	# Link against LibTorch
 	message(${Python3_LIBRARIES})
-	target_link_libraries(pt_vk ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core)# ${Python3_LIBRARIES})
+	target_link_libraries(pt_vk PUBLIC ${TORCH_LIBRARIES} ${OCL_LIB} dlprim_core)# ${Python3_LIBRARIES})
 	if(WIN32)
 		target_link_libraries(pt_vk ${Python3_LIBRARIES})
 	endif()

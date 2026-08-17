@@ -1,6 +1,18 @@
 #include "utils.h"
 
-namespace ptdlprim {
+namespace ptdlprim
+{
+	void sync_if_needed(c10::Device const &d)
+	{
+        CLContextManager::sync_if_needed(d.index());
+    }
+
+    const tart::DType& todp(c10::ScalarType tp);
+    
+    const tart::DType& todp(caffe2::TypeMeta meta)
+    {
+        return todp(meta.toScalarType());
+    }
 
     const tart::DType& todp(c10::ScalarType tp)
     {
