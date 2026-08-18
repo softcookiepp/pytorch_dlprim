@@ -197,13 +197,11 @@ using c10::DeviceType;
 
             bool has_bias = ctx->saved_data["has_bias"].toBool();
             torch::Tensor dB_tensor;
-            if(has_bias) {
+            if(has_bias)
+            {
                 dB_tensor = new_tensor_as(dlprim::Shape(W.shape()[0]),dy_tensor);
                 dlprim::Tensor dB=todp(dB_tensor);
-                auto bwd_bias = dlprim::core::BiasBackwardFilter::create(device,dY.shape(), cfg.dtype);
-                at::DataPtr ptr;
-                dlprim::Tensor ws = make_workspace(ptr,bwd_bias->workspace(),dy_tensor.device());
-                bwd_bias->enqueue(dY,dB,ws,0);
+				dlprim::core::enqueueBackwardBiasFilter(dY, dB, 0);
             }
 
             sync_if_needed(grad_output.device());
