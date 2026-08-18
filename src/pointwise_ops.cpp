@@ -666,7 +666,6 @@ using c10::DeviceType;
             Y = todp(out);
         }
 		
-        dlprim::core::SliceCopy cp(dlprim::tensorDevice(Y), todp(out.dtype()));
         for(size_t i=0,pos=0;i<list.size();i++) {
             Tensor new_tensor;
             dlprim::Tensor x;
@@ -678,10 +677,7 @@ using c10::DeviceType;
             else
                 x=list[i];
             size_t slice = list[i].shape()[dim];
-            cp.tensor_slice_copy(dim,slice,
-                                      Y,pos,
-                                      x,0,
-                                      0.0);
+			dlprim::core::tensorSliceCopy(dim, slice, Y, pos, x, 0, 0.0);
             pos += slice;
         }
         
