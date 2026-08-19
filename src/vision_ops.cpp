@@ -140,13 +140,16 @@ using c10::DeviceType;
             cfg.optimal_batch_size = batch;
             cfg.dtype = (todp(input.dtype()));
             bool has_bias = bias && bias->numel() > 0;
-            auto ip = dlprim::core::IPForward::create(dlprim::tensorDevice(Y), cfg, has_bias);
-            dlprim::Tensor B;
-            if(has_bias)
-                B=todp(*bias);
-            X.reshape(dlprim::Shape(batch,fi));
-            Y.reshape(dlprim::Shape(batch,fo));
-            ip->enqueue(X,W,(has_bias ? &B : nullptr),Y);
+			X.reshape(dlprim::Shape(batch,fi));
+			Y.reshape(dlprim::Shape(batch,fo));
+			if(has_bias)
+			{
+				dlprim::Tensor B;
+				B=todp(*bias);
+				dlprim::core::ipForward(X, W, Y, dlprim::StandardActivations::identity, B);
+			}
+			else
+				dlprim::core::ipForward(X, W, Y);
             ctx->save_for_backward({cinput,weight});
             ctx->saved_data["has_bias"]=has_bias;
 
