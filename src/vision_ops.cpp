@@ -192,12 +192,7 @@ using c10::DeviceType;
             dX.reshape(X_shape);
             dY.reshape(Y_shape);
 			tart::device_ptr device = dlprim::tensorDevice(dX);
-			#if 1
-				dlprim::core::ipBackwardData(dX,W,dY,0);
-			#else
-				auto bwd_data = dlprim::core::IPBackwardData::create(device, cfg);
-				bwd_data->enqueue(dX,W,dY,0);
-			#endif
+			dlprim::core::ipBackwardData(dX,W,dY,0);
 
             auto bwd_filter = dlprim::core::IPBackwardFilter::create(device, cfg);
             bwd_filter->enqueue(X,dW,dY,0);
