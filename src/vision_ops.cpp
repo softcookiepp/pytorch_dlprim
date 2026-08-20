@@ -243,8 +243,7 @@ using c10::DeviceType;
             torch::Tensor out = new_tensor_as(y_shape,self);
 			tart::device_ptr device = dlprim::tensorDevice(X);
             dlprim::Tensor Y = todp(out);
-            auto pool = dlprim::core::Pooling2DForward::create_max_pooling(device,kernel,pad,strd,todp(self.dtype()));
-            pool->enqueue(X,Y);
+			dlprim::core::pooling2dFwd(false, {kernel[0], kernel[1]}, {pad[0], pad[1]}, {strd[0], strd[1]}, false, X, Y);
             sync_if_needed(self.device());
             
             ctx->save_for_backward({self_cont});
@@ -281,8 +280,7 @@ using c10::DeviceType;
             torch::Tensor grad_input = new_tensor_as(x.shape(),grad_output);
             dlprim::Tensor dx = todp(grad_input);
 			tart::device_ptr device = dlprim::tensorDevice(dx);
-            auto pool=dlprim::core::MaxPooling2DBackward::create(device,kernel,pad,strd,todp(input.dtype()));
-            pool->enqueue(x,dx,dy,0);
+			dlprim::core::pooling2dBwd(false, {kernel[0], kernel[1]}, {pad[0], pad[1]}, {strd[0], strd[1]}, false, &x, dx, dy, 0);
             sync_if_needed(grad_output.device());
             return {grad_input,torch::Tensor(),torch::Tensor(),torch::Tensor(),torch::Tensor(),torch::Tensor()};
         }
@@ -315,12 +313,8 @@ using c10::DeviceType;
         dlprim::Tensor X=todp(self_c);
         dlprim::Tensor Y=todp(out);
 		tart::device_ptr device = dlprim::tensorDevice(X);
-        auto pool = dlprim::core::Pooling2DForward::create_avg_pooling(
-                        device,
-                        ker,pad,strd,
-                        count_include_pad, todp(self.dtype())
-                    );                  
-        pool->enqueue(X,Y);    
+		throw std::runtime_error("dlprim::core::pooling2dFwd(true, ");
+		dlprim::core::pooling2dFwd(true, {ker[0], ker[1]}, {pad[0], pad[1]}, {strd[0], strd[1]}, false, X, Y);
         sync_if_needed(self.device());
         return out;
     }
@@ -346,12 +340,18 @@ using c10::DeviceType;
         dlprim::Tensor dY=todp(grad_output_c);
         dlprim::Tensor dX=todp(grad_input);
         tart::device_ptr device = dlprim::tensorDevice(dX);
-        auto pool = dlprim::core::AvgPooling2DBackward::create(
-                        device,
-                        ker,pad,strd,
-                        count_include_pad,todp(grad_input.dtype())
-                    );                  
-        pool->enqueue(dX,dY,0);    
+        #if 1
+			throw std::runtime_error("dlprim::core::pooling2dBwd(true, ");
+			dlprim::core::pooling2dBwd(true, {ker[0], ker[1]}, {pad[0], pad[1]}, {strd[0], strd[1]}, false, nullptr, dX, dY, 0);
+			throw std::runtime_error("poop");
+        #else
+			auto pool = dlprim::core::AvgPooling2DBackward::create(
+							device,
+							ker,pad,strd,
+							count_include_pad,todp(grad_input.dtype())
+						);                  
+			pool->enqueue(dX,dY,0); 
+		#endif
         sync_if_needed(self.device());
         return grad_input;
     }
