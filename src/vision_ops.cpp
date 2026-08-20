@@ -134,11 +134,6 @@ using c10::DeviceType;
 
             Tensor result = new_tensor_as(os,input);
             dlprim::Tensor Y = todp(result);
-            dlprim::core::IPSettings cfg;
-            cfg.inputs = fi;
-            cfg.outputs = fo;
-            cfg.optimal_batch_size = batch;
-            cfg.dtype = (todp(input.dtype()));
             bool has_bias = bias && bias->numel() > 0;
 			X.reshape(dlprim::Shape(batch,fi));
 			Y.reshape(dlprim::Shape(batch,fo));
@@ -179,12 +174,6 @@ using c10::DeviceType;
             torch::Tensor dW_tensor = new_tensor_as(W.shape(),dy_tensor);
             dlprim::Tensor dW = todp(dW_tensor);
 
-            dlprim::core::IPSettings cfg;
-            cfg.inputs = fi;
-            cfg.outputs = fo;
-            cfg.optimal_batch_size = batch;
-            cfg.dtype = todp(dx_tensor.dtype());
-
             dlprim::Shape X_shape(batch,fi);
             dlprim::Shape Y_shape(batch,fo);
 
@@ -193,9 +182,7 @@ using c10::DeviceType;
             dY.reshape(Y_shape);
 			tart::device_ptr device = dlprim::tensorDevice(dX);
 			dlprim::core::ipBackwardData(dX,W,dY,0);
-
-            auto bwd_filter = dlprim::core::IPBackwardFilter::create(device, cfg);
-            bwd_filter->enqueue(X,dW,dY,0);
+			dlprim::core::ipBackwardFilter(X, dW, dY, 0);
 
             bool has_bias = ctx->saved_data["has_bias"].toBool();
             torch::Tensor dB_tensor;
