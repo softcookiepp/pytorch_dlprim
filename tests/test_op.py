@@ -341,7 +341,7 @@ def test_all(device):
 	print("MaxPool2d")
 	test_fwd_bwd([([4,8,2,2],-1)],torch.nn.MaxPool2d((1,1)),device)
 	print("AvgPool2d")
-	test_fwd_bwd([([4,8,2,2],-1)],torch.nn.MaxPool2d((1,1)),device)
+	test_fwd_bwd([([4,8,2,2],-1)],torch.nn.AvgPool2d((1,1)),device)
 	print("Abs")
 	test_fwd_bwd([([4,3],-1)],torch.abs,device)
 	print("Abs_")

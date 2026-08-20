@@ -313,7 +313,6 @@ using c10::DeviceType;
         dlprim::Tensor X=todp(self_c);
         dlprim::Tensor Y=todp(out);
 		tart::device_ptr device = dlprim::tensorDevice(X);
-		throw std::runtime_error("dlprim::core::pooling2dFwd(true, ");
 		dlprim::core::pooling2dFwd(true, {ker[0], ker[1]}, {pad[0], pad[1]}, {strd[0], strd[1]}, false, X, Y);
         sync_if_needed(self.device());
         return out;
@@ -341,9 +340,7 @@ using c10::DeviceType;
         dlprim::Tensor dX=todp(grad_input);
         tart::device_ptr device = dlprim::tensorDevice(dX);
         #if 1
-			throw std::runtime_error("dlprim::core::pooling2dBwd(true, ");
 			dlprim::core::pooling2dBwd(true, {ker[0], ker[1]}, {pad[0], pad[1]}, {strd[0], strd[1]}, false, nullptr, dX, dY, 0);
-			throw std::runtime_error("poop");
         #else
 			auto pool = dlprim::core::AvgPooling2DBackward::create(
 							device,
