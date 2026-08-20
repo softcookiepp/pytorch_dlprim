@@ -67,12 +67,11 @@ using c10::DeviceType;
         int w=X.shape()[3];
         TORCH_CHECK((output_size[0]==1 && output_size[1]==1) || (output_size[0]==h && output_size[1]==w),"Only global pooling or no-pooling supported");
         Tensor result;
+        
         if(output_size[0]==1 && output_size[1] == 1) {
             result = new_tensor_as(dlprim::Shape(X.shape()[0],X.shape()[1],1,1),self);
             dlprim::Tensor Y = todp(result);
-
-            auto pool = dlprim::core::Pooling2DForward::create_global_avg_pooling(dlprim::tensorDevice(X), X.shape(), todp(self.dtype()));
-            pool->enqueue(X,Y);
+			dlprim::core::globalPoolingFwd(true, X, Y);
         }
         else {
             result = new_tensor_as(X.shape(),self);
@@ -92,13 +91,12 @@ using c10::DeviceType;
         dlprim::Tensor X = todp(self_c);
         dlprim::Tensor dy = todp(grad_output_c);
         torch::Tensor result;
+        std::cout << "	dy shape: " << dy.shape()[2] << ", " << dy.shape()[3] << std::endl;
         TORCH_CHECK((dy.shape()[2]==1 && dy.shape()[3]==1) || (dy.shape() == X.shape()),"Only global pooling or no-pooling supported");
         if(dy.shape()[2]==1 && dy.shape()[3]==1) {
             result = new_tensor_as(X.shape(),self);
             dlprim::Tensor dx = todp(result);
-
-            auto pool = dlprim::core::AvgPooling2DBackward::create_global(dlprim::tensorDevice(X), X.shape(),todp(self.dtype()));
-            pool->enqueue(dx,dy,0);
+			dlprim::core::globalPoolingFwd(true, dx, dy);
         }
         else {
             result = new_tensor_as(dy.shape(),self);
