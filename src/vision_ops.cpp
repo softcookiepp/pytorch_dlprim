@@ -339,16 +339,7 @@ using c10::DeviceType;
         dlprim::Tensor dY=todp(grad_output_c);
         dlprim::Tensor dX=todp(grad_input);
         tart::device_ptr device = dlprim::tensorDevice(dX);
-        #if 1
-			dlprim::core::pooling2dBwd(true, {ker[0], ker[1]}, {pad[0], pad[1]}, {strd[0], strd[1]}, false, nullptr, dX, dY, 0);
-        #else
-			auto pool = dlprim::core::AvgPooling2DBackward::create(
-							device,
-							ker,pad,strd,
-							count_include_pad,todp(grad_input.dtype())
-						);                  
-			pool->enqueue(dX,dY,0); 
-		#endif
+		dlprim::core::pooling2dBwd(true, {ker[0], ker[1]}, {pad[0], pad[1]}, {strd[0], strd[1]}, false, nullptr, dX, dY, 0);
         sync_if_needed(self.device());
         return grad_input;
     }
