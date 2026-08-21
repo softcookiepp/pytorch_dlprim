@@ -50,7 +50,24 @@ using c10::DeviceType;
     {
 		PTD_TIMER_GUARD("normal_");
         GUARD;
+        #if 0
+			std::cout << "	strides: ";
+			for (auto& s : self.strides())
+				std::cout << s << ", ";
+			std::cout << std::endl;
+		#endif
+		// So strides in torch C++ API line up to the python shape.
+		// Lets see if dlprim shape does the same thing...
         dlprim::Tensor rnd=todp(self);
+        #if 0
+			std::cout << "	shape (dlprim): ";
+			for (auto s : rnd.shape())
+				std::cout << s << ", ";
+			std::cout << std::endl;
+		#endif
+		// Ok, it is confirmed. The shape in dlprim has the same orientation as the shape in pytorch.
+		// That is, the most contiguous dimension starts from the right.
+        
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
         dlprim::core::fill_random(rnd,seq.seed,seq.sequence,dlprim::core::rnd_normal,mean,std*std);
         sync_if_needed(self.device());
