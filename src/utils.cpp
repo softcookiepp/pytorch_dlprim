@@ -61,6 +61,7 @@ namespace ptdlprim
     dlprim::Tensor todp(torch::Tensor const &tt)
     {
         TORCH_CHECK(tt.device().type() == OpenCLDeviceType,"OpenCL device is required for tensor");
+        // So this is going to cause problems, and may explain why this backend is failing to pass a lot of the tests copied directly from torch.
         TORCH_CHECK(tt.is_contiguous(),"dlprim::Tensor must be contiguous");
         auto sizes = tt.sizes();
         auto offset = tt.storage_offset();
