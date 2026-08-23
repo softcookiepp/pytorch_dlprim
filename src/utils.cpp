@@ -64,15 +64,46 @@ namespace ptdlprim
         // So this is going to cause problems, and may explain why this backend is failing to pass a lot of the tests copied directly from torch.
         TORCH_CHECK(tt.is_contiguous(),"dlprim::Tensor must be contiguous");
         auto sizes = tt.sizes();
+        auto strides = tt.strides();
         auto offset = tt.storage_offset();
         auto dtype = tt.dtype();
         tart::buffer_ptr buf = buffer_from_tensor(tt);
         dlprim::Shape sp;
+        dlprim::Shape st;
         if(sizes.empty())
+		{
+			// This may be causing some problems.
             sp = dlprim::Shape(1); // scalar
+            st = dlprim::Shape(1);
+		}
         else
-            sp = dlprim::Shape::from_range(sizes.begin(),sizes.end());
-        dlprim::Tensor res(buf,offset,sp,todp(dtype));
+        {
+            sp = dlprim::Shape::from_range(sizes.begin(), sizes.end());
+            st = dlprim::Shape::from_range(strides.begin(), strides.end());
+		}
+        dlprim::Tensor res(buf,offset,sp, st, todp(dtype));
+        if (!res.isContiguous())
+		{
+			std::cout << "	torch shape: ";
+			for (auto& s : tt.sizes())
+				std::cout << s << ", ";
+			std::cout << std::endl;
+			std::cout << "	torch strides: ";
+			for (auto& s : tt.strides())
+				std::cout << s << ", ";
+			std::cout << std::endl;
+			std::cout << "	dlprim shape: ";
+			for (auto s : res.shape())
+				std::cout << s << ", ";
+			std::cout << std::endl;
+			std::cout << "	dlprim strides: ";
+			for (auto s : res.stride())
+				std::cout << s << ", ";
+			std::cout << std::endl;
+			if (tt.is_contiguous())
+				throw std::runtime_error("dlprim tensor marked as non-contiguous, when it should be marked as contiguous");
+			throw std::runtime_error("accidentally made non-contiguous tensor");
+		}
         return res;
     }
 

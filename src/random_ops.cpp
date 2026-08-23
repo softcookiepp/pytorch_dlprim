@@ -51,7 +51,7 @@ using c10::DeviceType;
 		PTD_TIMER_GUARD("normal_");
         GUARD;
         #if 0
-			std::cout << "	strides: ";
+			std::cout << "	torch strides: ";
 			for (auto& s : self.strides())
 				std::cout << s << ", ";
 			std::cout << std::endl;
@@ -60,8 +60,12 @@ using c10::DeviceType;
 		// Lets see if dlprim shape does the same thing...
         dlprim::Tensor rnd=todp(self);
         #if 0
-			std::cout << "	shape (dlprim): ";
+			std::cout << "	dlprim shape: ";
 			for (auto s : rnd.shape())
+				std::cout << s << ", ";
+			std::cout << std::endl;
+			std::cout << "	dlprim strides: ";
+			for (auto s : rnd.stride())
 				std::cout << s << ", ";
 			std::cout << std::endl;
 		#endif
