@@ -116,8 +116,7 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous();
         dlprim::Tensor x0=todp(self_c);
         float scale = other.to<double>();
-        dlprim::core::pointwise_operation({x0},{x0},{scale},
-                                          "y0 = x0*w0;");
+		dlprim::core::pointwiseOpStrided({x0}, {x0}, {scale}, dlprim::core::PointwiseOp::eScale);
         
         if (!self.is_contiguous())
             self.copy_(self_c);
@@ -138,8 +137,12 @@ using c10::DeviceType;
             Tensor self_c = self.contiguous();
             dlprim::Tensor x0=todp(self_c);
             float w0 = alpha.toDouble() * value;
-            dlprim::core::pointwise_operation({x0},{y0},{w0},
-                                      "y0 = x0 + w0;");
+            #if 1
+				dlprim::core::pointwiseOpStrided({x0}, {y0}, {w0}, dlprim::core::PointwiseOp::eAddScalar);
+            #else
+				dlprim::core::pointwise_operation({x0},{y0},{w0},
+										  "y0 = x0 + w0;");
+			#endif
         }
         else if(isCPUScalar(self,value)) {
             dev_to_sync = other.device();
@@ -147,6 +150,7 @@ using c10::DeviceType;
             dlprim::Tensor x0=todp(other_c);
             float w0 = value;
             float w1 = alpha.toDouble();
+            // not implemented quite yet
             dlprim::core::pointwise_operation({x0},{y0},{w0,w1},
                                       "y0 = w0 + x0 * w1;");
         }
@@ -296,8 +300,11 @@ using c10::DeviceType;
         double val = exponent.toDouble();
         dlprim::Tensor x = todp(self_c);
         dlprim::Tensor y = todp(out_c);
-        
-        dlprim::core::pointwise_operation({x},{y},{val},"y0=pow(x0,w0);");
+        #if 1
+			dlprim::core::pointwiseOpStrided({x}, {y}, {val}, dlprim::core::PointwiseOp::ePow);
+        #else
+			dlprim::core::pointwise_operation({x},{y},{val},"y0=pow(x0,w0);");
+		#endif
 
         if(!out.is_contiguous())
             out.copy_(out_c);
@@ -315,15 +322,25 @@ using c10::DeviceType;
         dlprim::Tensor x0=todp(self_c);
         dlprim::Tensor y0=todp(out_c);
         double value=0;
-        if(isCPUScalar(other,value)) {
-            dlprim::core::pointwise_operation({x0},{y0},{double(1.0/value)},
-                                        "y0 = x0*w0;");
+        if(isCPUScalar(other,value))
+        {
+			#if 1
+				dlprim::core::pointwiseOpStrided({x0}, {y0}, {1.0/value}, dlprim::core::PointwiseOp::eScale);
+			#else
+				dlprim::core::pointwise_operation({x0},{y0},{double(1.0/value)},
+											"y0 = x0*w0;");
+			#endif
         }
         else {
             Tensor other_c = other.contiguous();
             dlprim::Tensor x1=todp(other_c);
-            dlprim::core::pointwise_operation_broadcast({x0,x1},{y0},{},
-										"y0 = typeof_y0(x0) / typeof_y0(x1);");
+            #if 0
+				// oh wait, this is broadcasted. no can do
+				dlprim::core::pointwiseOpStrided({x0, x1}, {y0}, {}, dlprim::core::PointwiseOp::eDiv);
+            #else
+				dlprim::core::pointwise_operation_broadcast({x0,x1},{y0},{},
+											"y0 = typeof_y0(x0) / typeof_y0(x1);");
+			#endif
         }
         
         if (!out.is_contiguous())
@@ -430,7 +447,11 @@ using c10::DeviceType;
         dlprim::Tensor dx=todp(grad_input_c);
         dlprim::Tensor Y=todp(self_c);
         float th = threshold.toDouble();
-        dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;");
+        #if 0
+			dlprim::core::pointwiseOpStrided({Y, dy}, {dx}, {th}, ?); // threshold operator thingy not implemented
+        #else
+			dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;");
+		#endif
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
         
@@ -548,7 +569,11 @@ using c10::DeviceType;
         dlprim::Tensor Y(todp(out));
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
-        dlprim::core::pointwise_operation({X},{Y},{w0,w1},"y0=max(w0,min(w1,x0));");
+        #if 0
+			dlprim::core::pointwiseOpStrided({X}, {Y}, {w0, w1}, ?); // hardtanh not implemented
+        #else
+			dlprim::core::pointwise_operation({X},{Y},{w0,w1},"y0 = max(w0, min(w1, x0));");
+		#endif
         sync_if_needed(self.device());
         return out;
     }
