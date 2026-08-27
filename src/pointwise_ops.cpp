@@ -596,7 +596,11 @@ using c10::DeviceType;
         dlprim::Tensor X=todp(self_c);
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
-        dlprim::core::pointwise_operation({X},{X},{w0,w1},"y0=max(w0,min(w1,x0));");
+        #if 1
+			dlprim::core::pointwiseOpStrided({X}, {X}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
+        #else
+			dlprim::core::pointwise_operation({X},{X},{w0,w1},"y0=max(w0,min(w1,x0));");
+        #endif
         if(!self.is_contiguous())
             self.copy_(self_c);
         sync_if_needed(self.device());
