@@ -170,10 +170,17 @@ using c10::DeviceType;
 
 				tart::buffer_ptr selfBuf = buffer_from_tensor(self);
 				tart::buffer_ptr dstBuf = buffer_from_tensor(dst);
-				dlprim::core::copy_strided(shape, selfBuf, src_offset, src_std,
-                                                 dstBuf, tgt_offset,tgt_std,
-                                                 (todp(self.dtype())),
-                                                 (todp(dst.dtype())));
+				#if 0
+					// This does not seem to be quite there yet :c
+					dlprim::Tensor X = todp(self, true);
+					dlprim::Tensor Y = todp(dst, true);
+					dlprim::core::pointwiseOpStrided({X}, {Y}, {}, dlprim::core::PointwiseOp::eIdentity);
+				#else
+					dlprim::core::copy_strided(shape, selfBuf, src_offset, src_std,
+													 dstBuf, tgt_offset,tgt_std,
+													 (todp(self.dtype())),
+													 (todp(dst.dtype())));
+				#endif
             }
             if(non_blocking)
                 sync_if_needed(self.device());

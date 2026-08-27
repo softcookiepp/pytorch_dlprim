@@ -83,7 +83,7 @@ namespace ptdlprim
             st = dlprim::Shape::from_range(strides.begin(), strides.end());
 		}
         dlprim::Tensor res(buf,offset,sp, st, todp(dtype));
-        if (!res.isContiguous())
+        if (!res.isContiguous() && !skipContiguousCheck)
 		{
 			std::cout << "	torch shape: ";
 			for (auto& s : tt.sizes())
