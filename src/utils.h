@@ -13,7 +13,7 @@ namespace ptdlprim {
 
 	tart::buffer_ptr buffer_from_tensor(torch::Tensor const &tt);
 
-    dlprim::Tensor todp(torch::Tensor const &tt);
+    dlprim::Tensor todp(torch::Tensor const &tt, const bool skipContiguousCheck = false);
     torch::Tensor new_ocl_tensor(torch::IntArrayRef size,c10::Device dev,c10::ScalarType type=c10::kFloat);
 
     torch::Tensor new_tensor_as(dlprim::Shape const &s,torch::Tensor const &as);

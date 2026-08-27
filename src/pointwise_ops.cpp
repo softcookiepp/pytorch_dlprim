@@ -112,17 +112,23 @@ using c10::DeviceType;
 
     Tensor & mul_scalar_(Tensor & self, const Scalar & other)
     {
-        GUARD;
-        Tensor self_c = self.contiguous();
-        dlprim::Tensor x0=todp(self_c);
-        float scale = other.to<double>();
-		dlprim::core::pointwiseOpStrided({x0}, {x0}, {scale}, dlprim::core::PointwiseOp::eScale);
-        
-        if (!self.is_contiguous())
-            self.copy_(self_c);
-        
-        sync_if_needed(self.device());
-        return self;
+		GUARD;
+		#if 1
+			dlprim::Tensor x0 = todp(self, true);
+			float scale = other.to<double>();
+			dlprim::core::pointwiseOpStrided({x0}, {x0}, {scale}, dlprim::core::PointwiseOp::eScale);
+		#else
+			Tensor self_c = self.contiguous();
+			dlprim::Tensor x0=todp(self_c);
+			float scale = other.to<double>();
+			dlprim::core::pointwiseOpStrided({x0}, {x0}, {scale}, dlprim::core::PointwiseOp::eScale);
+			
+			if (!self.is_contiguous())
+				self.copy_(self_c);
+			
+			sync_if_needed(self.device());
+		#endif
+		return self;
     }
     
     // {"schema": "aten::add.out(Tensor self, Tensor other, *, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
