@@ -156,9 +156,12 @@ using c10::DeviceType;
             dlprim::Tensor x0=todp(other_c);
             float w0 = value;
             float w1 = alpha.toDouble();
-            // not implemented quite yet
-            dlprim::core::pointwise_operation({x0},{y0},{w0,w1},
-                                      "y0 = w0 + x0 * w1;");
+            #if 1
+				dlprim::core::pointwiseOpStrided({x0}, {y0}, {w1, w0}, dlprim::core::PointwiseOp::eAxpb);
+            #else
+				dlprim::core::pointwise_operation({x0},{y0},{w0,w1},
+										  "y0 = w0 + x0 * w1;");
+			#endif
         }
         else {
             Tensor self_c = self.contiguous();
