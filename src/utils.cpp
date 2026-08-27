@@ -105,6 +105,14 @@ namespace ptdlprim
 				throw std::runtime_error("dlprim tensor marked as non-contiguous, when it should be marked as contiguous");
 			throw std::runtime_error("accidentally made non-contiguous tensor");
 		}
+		if (!sizes.empty())
+		{
+			for (size_t i = 0; i < res.shape().size(); i += 1)
+			{
+				TORCH_CHECK(res.shape()[i] == tt.sizes()[i]);
+				TORCH_CHECK(res.stride()[i] == tt.strides()[i]);
+			}
+		}
         return res;
     }
 

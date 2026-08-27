@@ -561,8 +561,8 @@ def test_concat(dev):
    
 		for n,d in [('direct',get_diff(y1,y1d)),
 					('out',get_diff(y2,y2d)),
-					('out/s base',get_diff(y3s,y3sd)),
-					('outs/',get_diff(y3,y3d))]:
+					('out/s',get_diff(y3,y3d)),
+					('out/s base',get_diff(y3s,y3sd))]:
 			print("%10s %.5f" % (n,d))
 			if d > 0:
 				raise Exception("Failed concat:" + n)
