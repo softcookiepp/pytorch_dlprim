@@ -679,7 +679,8 @@ using c10::DeviceType;
     Tensor & abs_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0 = x0 < 0 ? -x0 : x0;");
+        return unitary_op(self, out, dlprim::core::PointwiseOp::eAbs);
+        //return unitary_op(self,out,"y0 = x0 < 0 ? -x0 : x0;");
     }
 
     // {"schema": "aten::sgn.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
