@@ -13,6 +13,7 @@
 #include <dlprim/core/activation.hpp>
 
 #include <iostream>
+#include <limits>
 namespace ptdlprim {
 
 using namespace torch;
@@ -1314,7 +1315,6 @@ using c10::DeviceType;
         GUARD;
         TORCH_CHECK(is_integer(self, true),"~ is valid for integer types");
         if (self.dtype() == c10::kBool) // boolean operations throw a giant wrench in the entire thing :c
-		//	return unitary_op(self, out, "y0 = uint8_t(!bool(x0));");
 			return unitary_op(self, out, dlprim::core::PointwiseOp::eLogicalNot);
         return unitary_op(self, out, dlprim::core::PointwiseOp::eBitwiseNot);
         //return unitary_op(self,out,(self.dtype() == c10::kBool ? "y0 = uint8_t(!bool(x0));" : "y0 = ~x0;"));
@@ -1328,14 +1328,11 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous(), out_c = out.contiguous();
         dlprim::Tensor Y = todp(out_c);
         dlprim::Tensor X = todp(self_c);
-        if(min && max)
-            dlprim::core::pointwise_operation({X},{Y},{min->to<double>(),max->to<double>()},"y0 = max(w0,min(w1,x0));");
-        else if(min)
-            dlprim::core::pointwise_operation({X},{Y},{min->to<double>()},"y0 = max(w0,x0);");
-        else if(max)
-            dlprim::core::pointwise_operation({X},{Y},{max->to<double>()},"y0 = min(w0,x0);");
-        else
-            dlprim::core::pointwise_operation({X},{Y},{},"y0 = x0;");
+        float minW = -1.0*std::numeric_limits<float>::infinity();
+        float maxW = std::numeric_limits<float>::infinity();
+        if (min) minW = min->to<float>();
+		if (max) maxW = max->to<float>();
+		dlprim::core::pointwiseOpStrided({X}, {Y}, {minW, maxW}, dlprim::core::PointwiseOp::eClamp);
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -1347,25 +1344,15 @@ using c10::DeviceType;
     // {"schema": "aten::clamp.out(Tensor self, Scalar min, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & clamp_min_out(const Tensor & self, const Scalar & min, Tensor & out)
     {
-        GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        dlprim::Tensor Y = todp(out_c);
-        dlprim::Tensor X = todp(self_c);
-        
-        dlprim::core::pointwise_operation({X},{Y},{min.to<double>()},"y0 = max(w0,x0);");
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-        
-        sync_if_needed(self.device());
-        return out;
+		return clamp_out(self, min, std::numeric_limits<float>::infinity(), out);
     }
     
     // {"schema": "aten::ceil.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & ceil_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0 = ceil(x0);");
+        return unitary_op(self,out, dlprim::core::PointwiseOp::eCeil);
+        // return unitary_op(self,out,"y0 = ceil(x0);");
     }
 
     // {"schema": "aten::gelu.out(Tensor self, *, str approximate='none', Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -1375,16 +1362,18 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous(), out_c = out.contiguous();
         dlprim::Tensor Y = todp(out_c);
         dlprim::Tensor X = todp(self_c);
-        TORCH_CHECK(approximate == "none" || approximate == "tanh","Unsupported variant")
-#if 1
-		if (true)
-#else
-        if(approximate == "tanh")
-#endif
-            dlprim::core::pointwise_operation({X},{Y},{},"y0 = 0.5f * x0 * (1.0f + tanh(0.7978845608028654f * x0 * (1.0f + 0.044715f * x0 * x0)));"); // 0.7978845608028654 = sqrt(2/pi)
-        else {
-            dlprim::core::pointwise_operation({X},{Y},{},"y0 = x0 * (1.0f + erf(x0 * 0.7071067811865475f  )) / 2.0f;"); // 0.7071067811865475 = 1/sqrt(2)
-        }
+        TORCH_CHECK(approximate == "none" || approximate == "tanh", "Unsupported variant")
+        #if 1
+			if (approximate == "tanh")
+				dlprim::core::pointwiseOpStrided({X}, {Y}, {}, dlprim::core::PointwiseOp::eGeluApproximate);
+			else
+				dlprim::core::pointwiseOpStrided({X}, {Y}, {}, dlprim::core::PointwiseOp::eGelu);
+        #else
+			if(approximate == "tanh")
+				dlprim::core::pointwise_operation({X},{Y},{},"y0 = 0.5f * x0 * (1.0f + tanh(0.7978845608028654f * x0 * (1.0f + 0.044715f * x0 * x0)));"); // 0.7978845608028654 = sqrt(2/pi)
+			else
+				dlprim::core::pointwise_operation({X},{Y},{},"y0 = x0 * (1.0f + erf(x0 * 0.7071067811865475f  )) / 2.0f;"); // 0.7071067811865475 = 1/sqrt(2)
+        #endif
             
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -1410,34 +1399,37 @@ using c10::DeviceType;
         char const *eq;
         // 1.128379167095512558561 = 2/ sqrt(pi)
         // 0.7071067811865475 = 1/sqrt(2)
-#if 1
-		if (true)
-#else
-        if(approximate == "tanh")
-#endif
-            eq = R"xxx(
-                dtype alpha = 1.128379167095512558561f * 0.7071067811865475f;
-                dtype koeff = 0.044715f;
-                dtype beta  = alpha * koeff * 3.0f;
-                dtype Y = tanh(alpha * fma(koeff,x0*x0*x0,x0));
-                y0 = 0.5f * x1 * fma(
-                    fma(-x0,Y * Y, x0),
-                    fma(beta,x0*x0,alpha),
-                    1 + Y                  
-                );
-            )xxx";
-        else
-            eq = R"xxx(
-                dtype alpha = 1.128379167095512558561f * 0.7071067811865475f * 0.5f; 
-                dtype cdf = 0.5f * (1.0f + erf(x0 * 0.7071067811865475f));
-                y0 = x1 * fma(
-                    alpha * x0,
-                    exp(-0.5f * x0*x0),
-                    cdf);
-            )xxx";
-
-        dlprim::core::pointwise_operation({X,dY},{dX},{},eq);
-        
+		#if 1
+			if (approximate == "tanh")
+				dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {}, dlprim::core::PointwiseOp::eGeluApproximateBwd);
+			else
+				dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {}, dlprim::core::PointwiseOp::eGeluBwd);
+		#else
+			if(approximate == "tanh")
+				eq = R"xxx(
+					dtype alpha = 1.128379167095512558561f * 0.7071067811865475f;
+					dtype koeff = 0.044715f;
+					dtype beta  = alpha * koeff * 3.0f;
+					dtype Y = tanh(alpha * fma(koeff,x0*x0*x0,x0));
+					y0 = 0.5f * x1 * fma(
+						fma(-x0,Y * Y, x0),
+						fma(beta,x0*x0,alpha),
+						1 + Y                  
+					);
+				)xxx";
+			else
+				eq = R"xxx(
+					dtype alpha = 1.128379167095512558561f * 0.7071067811865475f * 0.5f; 
+					dtype cdf = 0.5f * (1.0f + erf(x0 * 0.7071067811865475f));
+					y0 = x1 * fma(
+						alpha * x0,
+						exp(-0.5f * x0*x0),
+						cdf);
+				)xxx";
+		
+			dlprim::core::pointwise_operation({X,dY},{dX},{},eq);
+		#endif
+		
         if (!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
 
