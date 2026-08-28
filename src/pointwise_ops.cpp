@@ -687,7 +687,8 @@ using c10::DeviceType;
     Tensor & sgn_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0 = x0 < 0 ? -1 : (x0 > 0 ? 1 : 0) ;");
+		return unitary_op(self,out,dlprim::core::PointwiseOp::eSgn);
+		// return unitary_op(self,out,"y0 = x0 < 0 ? -1 : (x0 > 0 ? 1 : 0) ;");
     }
 
     template<typename TL>
@@ -778,7 +779,8 @@ using c10::DeviceType;
         
         Tensor self_c = self.contiguous();
         dlprim::Tensor x=todp(self_c);
-        dlprim::core::pointwise_operation({x},{x},{},"y0 = x0 <= -3.0f ? 0 : (x0>=3.0f ? x0 : x0*(x0+3.0f)/6.0f);");
+        dlprim::core::pointwiseOpStrided({x},{x},{}, dlprim::core::PointwiseOp::eHardswish);
+        // dlprim::core::pointwise_operation({x},{x},{},"y0 = x0 <= -3.0f ? 0 : (x0>=3.0f ? x0 : x0*(x0+3.0f)/6.0f);");
         
         if (!self.is_contiguous())
             self.copy_(self_c);
@@ -790,7 +792,8 @@ using c10::DeviceType;
     Tensor & hardsigmoid_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0 = x0 <= -3.0f ? 0 : (x0>=3.0f ? 1.0f : x0/6.0f + 0.5f);");
+        return unitary_op(self,out, dlprim::core::PointwiseOp::eHardsigmoid);
+        // return unitary_op(self,out,"y0 = x0 <= -3.0f ? 0 : (x0>=3.0f ? 1.0f : x0/6.0f + 0.5f);");
     }
     // {"schema": "aten::hardsigmoid_backward.grad_input(Tensor grad_output, Tensor self, *, Tensor(a!) grad_input) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & hardsigmoid_backward_out(const Tensor & grad_output, const Tensor & self, Tensor & grad_input)
@@ -804,7 +807,8 @@ using c10::DeviceType;
         dlprim::Tensor dx=todp(grad_input_c);
         dlprim::Tensor dy=todp(grad_output_c);
 
-        dlprim::core::pointwise_operation({x,dy},{dx},{},"y0 = (-3 < x0 && x0 < 3) ? x1 / 6 : 0;");
+        dlprim::core::pointwiseOpStrided({x, dy}, {dx},{}, dlprim::core::PointwiseOp::eHardsigmoidBwd);
+        //dlprim::core::pointwise_operation({x,dy},{dx},{},"y0 = (-3 < x0 && x0 < 3) ? x1 / 6 : 0;");
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -825,16 +829,20 @@ using c10::DeviceType;
         
         Tensor self_c = self.contiguous();
         dlprim::Tensor x =todp(self_c);
-        dlprim::core::pointwise_operation({x,dy},{dx},{},
-            R"xxx(
-                if (x0 < -3.0f) {
-                    y0 = 0;
-                } else if (x0 <= 3.0f) {
-                    y0 =  x1 * ((x0 / 3.0f) + 0.5f);
-                } else {
-                    y0 = x1;
-                }
-            )xxx");
+        #if 1
+			dlprim::core::pointwiseOpStrided({x, dy}, {dx}, {}, dlprim::core::PointwiseOp::eHardswishBwd);
+        #else
+			dlprim::core::pointwise_operation({x,dy},{dx},{},
+				R"xxx(
+					if (x0 < -3.0f) {
+						y0 = 0;
+					} else if (x0 <= 3.0f) {
+						y0 =  x1 * ((x0 / 3.0f) + 0.5f);
+					} else {
+						y0 = x1;
+					}
+				)xxx");
+		#endif
         sync_if_needed(self.device());
         return out;
     }
@@ -948,7 +956,8 @@ using c10::DeviceType;
     Tensor & silu_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0 = x0 / (1.0f + exp(-x0));");
+        return unitary_op(self,out, dlprim::core::PointwiseOp::eSilu);
+        // return unitary_op(self,out,"y0 = x0 / (1.0f + exp(-x0));");
     }
 
     // {"schema": "aten::silu_backward.grad_input(Tensor grad_output, Tensor self, *, Tensor(a!) grad_input) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -962,11 +971,15 @@ using c10::DeviceType;
         dlprim::Tensor x=todp(self_c);
         dlprim::Tensor dy=todp(grad_output_c);
         dlprim::Tensor dx=todp(grad_input);
-        dlprim::core::pointwise_operation({x,dy},{dx},{},
-            R"xxx(
-                y0 = 1.0f / (1.0f + exp(-x0));
-                y0 = x1 * y0 * ( 1.0f + x0 * (1.0f - y0));
-            )xxx");
+        #if 1
+			dlprim::core::pointwiseOpStrided({x, dy}, {dx}, {}, dlprim::core::PointwiseOp::eSiluBwd);
+        #else
+			dlprim::core::pointwise_operation({x,dy},{dx},{},
+				R"xxx(
+					y0 = 1.0f / (1.0f + exp(-x0));
+					y0 = x1 * y0 * ( 1.0f + x0 * (1.0f - y0));
+				)xxx");
+		#endif
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -1009,7 +1022,8 @@ using c10::DeviceType;
         
         dlprim::Tensor x=todp(self_c);
         dlprim::Tensor y=todp(out_c);
-        dlprim::core::pointwise_operation({x},{y},{slope},"y0 = x0 > 0 ? x0 : w0 * x0;");
+        dlprim::core::pointwiseOpStrided({x},{y},{slope}, dlprim::core::PointwiseOp::eLeakyRelu);
+        // dlprim::core::pointwise_operation({x},{y},{slope},"y0 = x0 > 0 ? x0 : w0 * x0;");
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -1030,7 +1044,8 @@ using c10::DeviceType;
         dlprim::Tensor y=todp(self_c);
         dlprim::Tensor dy=todp(grad_output_c);
         dlprim::Tensor dx=todp(grad_input_c);
-        dlprim::core::pointwise_operation({y,dy},{dx},{slope},"y0 = x0 > 0 ? x1 : w0 * x1;");
+        dlprim::core::pointwiseOpStrided({y,dy},{dx},{slope}, dlprim::core::PointwiseOp::eLeakyReluBwd);
+        //dlprim::core::pointwise_operation({y,dy},{dx},{slope},"y0 = x0 > 0 ? x1 : w0 * x1;");
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -1297,8 +1312,11 @@ using c10::DeviceType;
     Tensor & bitwise_not_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        TORCH_CHECK(is_integer(self,true),"~ is valid for integer types");
-        return unitary_op(self,out,(self.dtype() == c10::kBool ? "y0 = uint8_t(!bool(x0));" : "y0 = ~x0;"));
+        TORCH_CHECK(is_integer(self, true),"~ is valid for integer types");
+        if (self.dtype() == c10::kBool) // boolean operations throw a giant wrench in the entire thing :c
+			return unitary_op(self, out, "y0 = uint8_t(!bool(x0));");
+        return unitary_op(self, out, dlprim::core::PointwiseOp::eBitwiseNot);
+        //return unitary_op(self,out,(self.dtype() == c10::kBool ? "y0 = uint8_t(!bool(x0));" : "y0 = ~x0;"));
     }
 
 
