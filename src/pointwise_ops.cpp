@@ -194,6 +194,22 @@ using c10::DeviceType;
         return out;
     }
     
+    Tensor& unitary_op(const Tensor& self, Tensor& out, const dlprim::core::PointwiseOp op)
+    {
+		GUARD;
+		Tensor self_c = self.contiguous(), out_c = out.contiguous();
+        
+        dlprim::Tensor x=todp(self_c);
+        dlprim::Tensor y=todp(out_c);
+        dlprim::core::pointwiseOpStrided({x}, {y}, {}, op);
+        
+        if (!out.is_contiguous())
+            out.copy_(out_c);
+        
+        sync_if_needed(self.device());
+        return out;
+	}
+    
 
     // {"schema": "aten::exp.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & exp_out(const Tensor & self, Tensor & out)
@@ -344,7 +360,7 @@ using c10::DeviceType;
             Tensor other_c = other.contiguous();
             dlprim::Tensor x1=todp(other_c);
             #if 0
-				// oh wait, this is broadcasted. no can do
+				// oh wait, this is broadcasted. no can do..at least not yet
 				dlprim::core::pointwiseOpStrided({x0, x1}, {y0}, {}, dlprim::core::PointwiseOp::eDiv);
             #else
 				dlprim::core::pointwise_operation_broadcast({x0,x1},{y0},{},
@@ -633,7 +649,11 @@ using c10::DeviceType;
         dlprim::Tensor x=todp(self_c);
         Tensor out = new_tensor_as(x.shape(),self);
         dlprim::Tensor y=todp(out);
-        dlprim::core::pointwise_operation({x},{y},{},"y0 = x0 < 0 ? -x0 : x0;");
+        #if 1
+			dlprim::core::pointwiseOpStrided({x}, {y}, {}, dlprim::core::PointwiseOp::eAbs);
+        #else
+			dlprim::core::pointwise_operation({x},{y},{},"y0 = x0 < 0 ? -x0 : x0;");
+		#endif
         sync_if_needed(self.device());
         return out;
     }
