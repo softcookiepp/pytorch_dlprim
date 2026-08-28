@@ -1314,7 +1314,8 @@ using c10::DeviceType;
         GUARD;
         TORCH_CHECK(is_integer(self, true),"~ is valid for integer types");
         if (self.dtype() == c10::kBool) // boolean operations throw a giant wrench in the entire thing :c
-			return unitary_op(self, out, "y0 = uint8_t(!bool(x0));");
+		//	return unitary_op(self, out, "y0 = uint8_t(!bool(x0));");
+			return unitary_op(self, out, dlprim::core::PointwiseOp::eLogicalNot);
         return unitary_op(self, out, dlprim::core::PointwiseOp::eBitwiseNot);
         //return unitary_op(self,out,(self.dtype() == c10::kBool ? "y0 = uint8_t(!bool(x0));" : "y0 = ~x0;"));
     }
