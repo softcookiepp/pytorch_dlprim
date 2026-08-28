@@ -215,14 +215,15 @@ using c10::DeviceType;
     Tensor & exp_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0 = exp(x0);");
+        return unitary_op(self, out, dlprim::core::PointwiseOp::eExp);//"y0 = exp(x0);");
     }
 
     // {"schema": "aten::log.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & log_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0 = log(x0);");
+        return unitary_op(self, out, dlprim::core::PointwiseOp::eLog);
+        //return unitary_op(self,out,"y0 = log(x0);");
     }
 
     // {"schema": "aten::sub.out(Tensor self, Tensor other, *, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -313,7 +314,8 @@ using c10::DeviceType;
     Tensor & sqrt_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0 = sqrt(x0);");
+        return unitary_op(self, out, dlprim::core::PointwiseOp::eSqrt);
+        //return unitary_op(self,out,"y0 = sqrt(x0);");
     }
 
     // {"schema": "aten::pow.Tensor_Scalar_out(Tensor self, Scalar exponent, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -668,7 +670,8 @@ using c10::DeviceType;
     Tensor & atan_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"precise dtype y0_precise; y0_precise = atan(x0); y0 = y0_precise;");
+        return unitary_op(self, out, dlprim::core::PointwiseOp::eAtan);
+        //return unitary_op(self,out,"precise dtype y0_precise; y0_precise = atan(x0); y0 = y0_precise;");
     }
 
 

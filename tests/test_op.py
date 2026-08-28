@@ -375,6 +375,15 @@ def test_all(device):
 	test_fwd_bwd([([4,3],-1)],torch.nn.SiLU(),device)
 	print("SiLU_")
 	test_fwd_bwd([([4,3],-1)],lambda x:torch.nn.SiLU(inplace=True)(x*1.0),device)
+	
+	print("Log")
+	test_fwd_bwd([([4,3],-1)], torch.log, device)
+	
+	print("Exp")
+	test_fwd_bwd([([4,3],-1)], torch.exp, device)
+	
+	print("Sqrt")
+	test_fwd_bwd([([4,3],-1)], torch.sqrt, device)
 
 	#print("GELU")
 	#test_fwd_bwd([([4,3],-1)],torch.nn.GELU(),device)
