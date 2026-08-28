@@ -578,8 +578,8 @@ using c10::DeviceType;
         dlprim::Tensor Y(todp(out));
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
-        #if 0
-			dlprim::core::pointwiseOpStrided({X}, {Y}, {w0, w1}, ?); // hardtanh not implemented
+        #if 1
+			dlprim::core::pointwiseOpStrided({X}, {Y}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
         #else
 			dlprim::core::pointwise_operation({X},{Y},{w0,w1},"y0 = max(w0, min(w1, x0));");
 		#endif
@@ -618,7 +618,8 @@ using c10::DeviceType;
         dlprim::Tensor dX = todp(result);
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
-        dlprim::core::pointwise_operation({X,dY},{dX},{w0,w1},"y0 = (w0 <= x0 && x0 <= w1) ? x1 : 0;");
+        dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanhBwd);
+        //dlprim::core::pointwise_operation({X,dY},{dX},{w0,w1},"y0 = (w0 <= x0 && x0 <= w1) ? x1 : 0;");
         sync_if_needed(self.device());
         return result;
     }
