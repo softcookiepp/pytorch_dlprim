@@ -1444,19 +1444,35 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous(), out_c = out.contiguous();
         dlprim::Tensor X = todp(self_c);
         dlprim::Tensor Y = todp(out_c);
-        if(eps) {
-            double e = *eps;
-            dlprim::core::pointwise_operation({X},{Y},{e},
-                "dtype z = min(1.0f-w0,max(w0,x0)); "
-                //"dtype eps = w0; "
-                //"z = x0; " // default
-                //"z = x0 > 1.0 - eps ? "
-                "y0 = log(z / (1.0f - z)); ");
-        }
-        else {
-            dlprim::core::pointwise_operation({X},{Y},{},
-                "y0 = log(x0 / (1.0f - x0));");
-        }
+        // all push constants are float, kernel will reinterpret cast it back to uint during execution
+        uint32_t useEps = 0;
+        float epsArg;
+		if (eps)
+		{
+			useEps = 1;
+			epsArg = static_cast<float>(*eps);
+		}
+		float useEpsArg;
+		TORCH_CHECK(sizeof(float) == sizeof(uint32_t)); // paranoia
+		std::memcpy(&useEpsArg, &useEps, sizeof(float));
+        #if 1
+			dlprim::core::pointwiseOpStrided({X}, {Y}, {epsArg, useEpsArg}, dlprim::core::PointwiseOp::eLogit);
+        #else
+			if(eps)
+			{
+				double e = *eps;
+				dlprim::core::pointwise_operation({X},{Y},{e},
+					"dtype z = min(1.0f-w0,max(w0,x0)); "
+					//"dtype eps = w0; "
+					//"z = x0; " // default
+					//"z = x0 > 1.0 - eps ? "
+					"y0 = log(z / (1.0f - z)); ");
+			}
+			else {
+				dlprim::core::pointwise_operation({X},{Y},{},
+					"y0 = log(x0 / (1.0f - x0));");
+			}
+        #endif
         if(!out.is_contiguous())
             out.copy_(out_c);
 
@@ -1526,16 +1542,7 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous(), output_c = output.contiguous(), buffer_c = buffer.contiguous();
         dlprim::Tensor x=todp(self_c), out = todp(output_c), buf = todp(buffer_c);
         std::cout << "	before\n";
-        #if 0
-			// oh wait
-			dlprim::core::pointwiseOpStrided({x}, {out, buf}, {}, dlprim::core::PointwiseOp::eLogSigmoid);
-        #else
-			dlprim::core::pointwise_operation({x},{out,buf},{},
-						R"xxx(
-						y1 = exp(-abs(x0));
-						y0 = min(dtype(0),x0) - log( dtype(1.0) + y1);
-						)xxx");
-		#endif
+		dlprim::core::pointwiseOpStrided({x}, {out, buf}, {}, dlprim::core::PointwiseOp::eLogSigmoid);
         std::cout << "	after\n";
         if(!output.is_contiguous())
             output.copy_(output_c);
