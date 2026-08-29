@@ -1513,8 +1513,8 @@ using c10::DeviceType;
         }
         Tensor out_c = out.contiguous();
         dlprim::Tensor Y = todp(out_c);
-        #if 0
-			dlprim::core::pointwiseOpStrided({Y}, {Y}, {dstart, dstep}, dlprim::core::PointwiseOp::eArange); // ?
+        #if 1
+			dlprim::core::pointwiseOpStrided({Y}, {Y}, {dstart, dstep}, dlprim::core::PointwiseOp::eArange);
         #else
 			dlprim::core::pointwise_operation({},{Y},{dstart,dstep}, "y0 = w0 + index*w1;");
         #endif
@@ -1544,9 +1544,7 @@ using c10::DeviceType;
         GUARD;
         Tensor self_c = self.contiguous(), output_c = output.contiguous(), buffer_c = buffer.contiguous();
         dlprim::Tensor x=todp(self_c), out = todp(output_c), buf = todp(buffer_c);
-        std::cout << "	before\n";
 		dlprim::core::pointwiseOpStrided({x}, {out, buf}, {}, dlprim::core::PointwiseOp::eLogSigmoid);
-        std::cout << "	after\n";
         if(!output.is_contiguous())
             output.copy_(output_c);
 
@@ -1582,15 +1580,18 @@ using c10::DeviceType;
         dlprim::Tensor x = todp(self_c);
         dlprim::Tensor buf = todp(buffer_c);
         dlprim::Tensor dx = todp(grad_input_c);
-
-        dlprim::core::pointwise_operation({x,buf,dy},{dx},{},
-                    R"xxx(
-                    bool is_negative = x0 < 0;
-                    dtype maxd = is_negative ? dtype(1.0): dtype(0.0);
-                    dtype s = is_negative ? dtype(1.0): dtype(-1.0);
-                    y0 = (maxd - s * (x1 / (dtype(1) + x1))) * x2;
-                    )xxx");
-        
+		#if 1
+			// trinary ops not implemented :c
+			dlprim::core::pointwiseOpStrided({x, buf, dy}, {dx}, {}, dlprim::core::PointwiseOp::eLogSigmoidBwd);
+		#else
+			dlprim::core::pointwise_operation({x,buf,dy},{dx},{},
+						R"xxx(
+						bool is_negative = x0 < 0;
+						dtype maxd = is_negative ? dtype(1.0): dtype(0.0);
+						dtype s = is_negative ? dtype(1.0): dtype(-1.0);
+						y0 = (maxd - s * (x1 / (dtype(1) + x1))) * x2;
+						)xxx");
+        #endif
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);;
 
