@@ -1526,7 +1526,7 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous(), output_c = output.contiguous(), buffer_c = buffer.contiguous();
         dlprim::Tensor x=todp(self_c), out = todp(output_c), buf = todp(buffer_c);
         std::cout << "	before\n";
-        #if 0
+        #if 1
 			// oh wait
 			dlprim::core::pointwiseOpStrided({x}, {out, buf}, {}, dlprim::core::eLogSigmoid);
         #else
