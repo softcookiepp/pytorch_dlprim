@@ -1528,7 +1528,7 @@ using c10::DeviceType;
         std::cout << "	before\n";
         #if 1
 			// oh wait
-			dlprim::core::pointwiseOpStrided({x}, {out, buf}, {}, dlprim::core::eLogSigmoid);
+			dlprim::core::pointwiseOpStrided({x}, {out, buf}, {}, dlprim::core::PointwiseOp::eLogSigmoid);
         #else
 			dlprim::core::pointwise_operation({x},{out,buf},{},
 						R"xxx(
