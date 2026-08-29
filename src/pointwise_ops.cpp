@@ -1526,11 +1526,16 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous(), output_c = output.contiguous(), buffer_c = buffer.contiguous();
         dlprim::Tensor x=todp(self_c), out = todp(output_c), buf = todp(buffer_c);
         std::cout << "	before\n";
-        dlprim::core::pointwise_operation({x},{out,buf},{},
-                    R"xxx(
-                    y1 = exp(-abs(x0));
-                    y0 = min(dtype(0),x0) - log( dtype(1.0) + y1);
-                    )xxx");
+        #if 0
+			// oh wait
+			dlprim::core::pointwiseOpStrided({x}, {out, buf}, {}, dlprim::core::eLogSigmoid);
+        #else
+			dlprim::core::pointwise_operation({x},{out,buf},{},
+						R"xxx(
+						y1 = exp(-abs(x0));
+						y0 = min(dtype(0),x0) - log( dtype(1.0) + y1);
+						)xxx");
+		#endif
         std::cout << "	after\n";
         if(!output.is_contiguous())
             output.copy_(output_c);
