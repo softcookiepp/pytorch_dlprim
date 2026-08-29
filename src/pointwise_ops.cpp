@@ -1513,8 +1513,11 @@ using c10::DeviceType;
         }
         Tensor out_c = out.contiguous();
         dlprim::Tensor Y = todp(out_c);
-        dlprim::core::pointwise_operation({},{Y},{dstart,dstep},
-            "y0 = w0 + index*w1;");
+        #if 0
+			dlprim::core::pointwiseOpStrided({Y}, {Y}, {dstart, dstep}, dlprim::core::PointwiseOp::eArange); // ?
+        #else
+			dlprim::core::pointwise_operation({},{Y},{dstart,dstep}, "y0 = w0 + index*w1;");
+        #endif
         if(!out.is_contiguous())
             out.copy_(out_c);
 
