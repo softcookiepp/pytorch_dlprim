@@ -168,22 +168,6 @@ using c10::DeviceType;
         sync_if_needed(dev_to_sync);
         return out;
     }
-
-    Tensor &unitary_op(const Tensor &self,Tensor &out,std::string const &op)
-    {
-        GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        
-        dlprim::Tensor x=todp(self_c);
-        dlprim::Tensor y=todp(out_c);
-        dlprim::core::pointwise_operation({x},{y},{},op);
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-        
-        sync_if_needed(self.device());
-        return out;
-    }
     
     Tensor& unitary_op(const Tensor& self, Tensor& out, const dlprim::core::PointwiseOp op)
     {
@@ -457,11 +441,7 @@ using c10::DeviceType;
         dlprim::Tensor dx=todp(grad_input_c);
         dlprim::Tensor Y=todp(self_c);
         float th = threshold.toDouble();
-        #if 1
-			dlprim::core::pointwiseOpStrided({Y, dy}, {dx}, {th}, dlprim::core::PointwiseOp::eThresholdBwd);
-        #else
-			dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;");
-		#endif
+		dlprim::core::pointwiseOpStrided({Y, dy}, {dx}, {th}, dlprim::core::PointwiseOp::eThresholdBwd);
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
         

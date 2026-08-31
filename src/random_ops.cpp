@@ -102,8 +102,12 @@ using c10::DeviceType;
         dlprim::Tensor M = todp(mask);
         if(train && *train && p > 0) {
             bernoulli_(mask,1-p,c10::nullopt);
-            dlprim::core::pointwise_operation({X,M},{Y},{1/(1-p)},
-                                          "y0 = x0*x1*w0;");
+            #if 1
+				dlprim::core::pointwiseOpStrided({X, M}, {Y}, {1.0/(1.0 - p)}, dlprim::core::PointwiseOp::eDropout);
+            #else
+				dlprim::core::pointwise_operation({X,M},{Y},{1/(1-p)},
+											  "y0 = x0*x1*w0;");
+			#endif
         }
         else {
             torch::fill_(mask,1);
@@ -122,8 +126,12 @@ using c10::DeviceType;
         dlprim::Tensor m = todp(mask_c);
         Tensor res =  new_tensor_as(dy.shape(),grad_output);
         dlprim::Tensor dx = todp(res);
-        dlprim::core::pointwise_operation({dy,m},{dx},{scale},
-                "y0 = x0*x1*w0;");
+        #if 1
+			dlprim::core::pointwiseOpStrided({dy, m}, {dx}, {scale}, dlprim::core::PointwiseOp::eDropout);
+        #else
+			dlprim::core::pointwise_operation({dy,m},{dx},{scale},
+					"y0 = x0*x1*w0;");
+		#endif
         sync_if_needed(grad_output.device());
         return res;
     }
