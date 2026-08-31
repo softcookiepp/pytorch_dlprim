@@ -114,10 +114,11 @@ using c10::DeviceType;
     Tensor & mul_scalar_(Tensor & self, const Scalar & other)
     {
 		GUARD;
-		#if 1
+		#if 0
 			dlprim::Tensor x0 = todp(self, true);
 			float scale = other.to<double>();
 			dlprim::core::pointwiseOpStrided({x0}, {x0}, {scale}, dlprim::core::PointwiseOp::eScale);
+			if (!self.is_contiguous()) throw std::runtime_error("meep!");
 		#else
 			Tensor self_c = self.contiguous();
 			dlprim::Tensor x0=todp(self_c);
@@ -172,15 +173,23 @@ using c10::DeviceType;
     Tensor& unitary_op(const Tensor& self, Tensor& out, const dlprim::core::PointwiseOp op)
     {
 		GUARD;
-		Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        
-        dlprim::Tensor x=todp(self_c);
-        dlprim::Tensor y=todp(out_c);
-        dlprim::core::pointwiseOpStrided({x}, {y}, {}, op);
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-        
+		#if 0
+			dlprim::Tensor x=todp(self);
+			dlprim::Tensor y=todp(out);
+			dlprim::core::pointwiseOpStrided({x}, {y}, {}, op);
+			
+			if (!out.is_contiguous())
+				throw std::runtime_error("meep");
+		#else
+			Tensor self_c = self.contiguous(), out_c = out.contiguous();
+			
+			dlprim::Tensor x=todp(self_c);
+			dlprim::Tensor y=todp(out_c);
+			dlprim::core::pointwiseOpStrided({x}, {y}, {}, op);
+			
+			if (!out.is_contiguous())
+				out.copy_(out_c);
+        #endif
         sync_if_needed(self.device());
         return out;
 	}
