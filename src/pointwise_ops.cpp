@@ -1362,24 +1362,7 @@ using c10::DeviceType;
 		float useEpsArg;
 		TORCH_CHECK(sizeof(float) == sizeof(uint32_t)); // paranoia
 		std::memcpy(&useEpsArg, &useEps, sizeof(float));
-        #if 1
-			dlprim::core::pointwiseOpStrided({X}, {Y}, {epsArg, useEpsArg}, dlprim::core::PointwiseOp::eLogit);
-        #else
-			if(eps)
-			{
-				double e = *eps;
-				dlprim::core::pointwise_operation({X},{Y},{e},
-					"dtype z = min(1.0f-w0,max(w0,x0)); "
-					//"dtype eps = w0; "
-					//"z = x0; " // default
-					//"z = x0 > 1.0 - eps ? "
-					"y0 = log(z / (1.0f - z)); ");
-			}
-			else {
-				dlprim::core::pointwise_operation({X},{Y},{},
-					"y0 = log(x0 / (1.0f - x0));");
-			}
-        #endif
+		dlprim::core::pointwiseOpStrided({X}, {Y}, {epsArg, useEpsArg}, dlprim::core::PointwiseOp::eLogit);
         if(!out.is_contiguous())
             out.copy_(out_c);
 
@@ -1420,11 +1403,7 @@ using c10::DeviceType;
         }
         Tensor out_c = out.contiguous();
         dlprim::Tensor Y = todp(out_c);
-        #if 1
-			dlprim::core::pointwiseOpStrided({Y}, {Y}, {dstart, dstep}, dlprim::core::PointwiseOp::eArange);
-        #else
-			dlprim::core::pointwise_operation({},{Y},{dstart,dstep}, "y0 = w0 + index*w1;");
-        #endif
+		dlprim::core::pointwiseOpStrided({Y}, {Y}, {dstart, dstep}, dlprim::core::PointwiseOp::eArange);
         if(!out.is_contiguous())
             out.copy_(out_c);
 
