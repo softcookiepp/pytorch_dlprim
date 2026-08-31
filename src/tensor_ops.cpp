@@ -170,11 +170,11 @@ using c10::DeviceType;
 
 				tart::buffer_ptr selfBuf = buffer_from_tensor(self);
 				tart::buffer_ptr dstBuf = buffer_from_tensor(dst);
-				#if 0
+				#if 1
 					// This does not seem to be quite there yet :c
 					dlprim::Tensor X = todp(self, true);
 					dlprim::Tensor Y = todp(dst, true);
-					dlprim::core::pointwiseOpStrided({X}, {Y}, {}, dlprim::core::PointwiseOp::eIdentity);
+					dlprim::core::copy_strided(X, Y);
 				#else
 					dlprim::core::copy_strided(shape, selfBuf, src_offset, src_std,
 													 dstBuf, tgt_offset,tgt_std,
