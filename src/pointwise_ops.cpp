@@ -190,7 +190,7 @@ using c10::DeviceType;
     Tensor & exp_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self, out, dlprim::core::PointwiseOp::eExp);//"y0 = exp(x0);");
+        return unitary_op(self, out, dlprim::core::PointwiseOp::eExp);
     }
 
     // {"schema": "aten::log.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
