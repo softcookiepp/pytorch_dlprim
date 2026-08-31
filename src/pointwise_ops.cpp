@@ -276,13 +276,13 @@ using c10::DeviceType;
     Tensor & neg_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0=-x0;");
+        return unitary_op(self,out, dlprim::core::PointwiseOp::eNeg);
     }
     // {"schema": "aten::reciprocal.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & reciprocal_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0=1.0f/x0;");
+        return unitary_op(self,out,dlprim::core::PointwiseOp::eRecip);
     }
 
     // {"schema": "aten::sqrt.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -615,7 +615,7 @@ using c10::DeviceType;
     Tensor & round_out(const Tensor & self, Tensor & out)
     {
         GUARD;
-        return unitary_op(self,out,"y0=round(x0);");
+        return unitary_op(self,out, dlprim::core::PointwiseOp::eRound);
     }
     
     // {"schema": "aten::atan.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
