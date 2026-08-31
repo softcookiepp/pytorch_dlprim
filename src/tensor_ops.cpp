@@ -153,11 +153,11 @@ using c10::DeviceType;
             }
         }
         else if(self.device().type() == OpenCLDeviceType && dst.device().type() == OpenCLDeviceType) {
-            if(self.is_contiguous() && dst.is_contiguous())
-            {
-                dlprim::core::pointwise_operation_broadcast({todp(self)},{todp(dst)},{},"y0=x0;");
-            }
-            else
+			if (self.is_contiguous() && dst.is_contiguous())
+			{
+				dlprim::core::pointwise_operation_broadcast({todp(self)},{todp(dst)},{},"y0=x0;");
+			}
+			else
             {
 				// well this is far simpler now that strides are baked into dlprim tensors!
 				dlprim::Tensor X = todp(self, true);
