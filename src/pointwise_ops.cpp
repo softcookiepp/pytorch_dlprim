@@ -457,8 +457,8 @@ using c10::DeviceType;
         dlprim::Tensor dx=todp(grad_input_c);
         dlprim::Tensor Y=todp(self_c);
         float th = threshold.toDouble();
-        #if 0
-			dlprim::core::pointwiseOpStrided({Y, dy}, {dx}, {th}, ?); // threshold operator thingy not implemented
+        #if 1
+			dlprim::core::pointwiseOpStrided({Y, dy}, {dx}, {th}, dlprim::core::PointwiseOp::eThresholdBwd);
         #else
 			dlprim::core::pointwise_operation({Y,dy},{dx},{th},"y0 = (x0 > w0) ? x1 : 0;");
 		#endif
