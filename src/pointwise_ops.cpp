@@ -144,12 +144,7 @@ using c10::DeviceType;
             Tensor self_c = self.contiguous();
             dlprim::Tensor x0=todp(self_c);
             float w0 = alpha.toDouble() * value;
-            #if 1
-				dlprim::core::pointwiseOpStrided({x0}, {y0}, {w0}, dlprim::core::PointwiseOp::eAddScalar);
-            #else
-				dlprim::core::pointwise_operation({x0},{y0},{w0},
-										  "y0 = x0 + w0;");
-			#endif
+			dlprim::core::pointwiseOpStrided({x0}, {y0}, {w0}, dlprim::core::PointwiseOp::eAddScalar);
         }
         else if(isCPUScalar(self,value)) {
             dev_to_sync = other.device();
@@ -157,12 +152,7 @@ using c10::DeviceType;
             dlprim::Tensor x0=todp(other_c);
             float w0 = value;
             float w1 = alpha.toDouble();
-            #if 1
-				dlprim::core::pointwiseOpStrided({x0}, {y0}, {w1, w0}, dlprim::core::PointwiseOp::eAxpb);
-            #else
-				dlprim::core::pointwise_operation({x0},{y0},{w0,w1},
-										  "y0 = w0 + x0 * w1;");
-			#endif
+			dlprim::core::pointwiseOpStrided({x0}, {y0}, {w1, w0}, dlprim::core::PointwiseOp::eAxpb);
         }
         else {
             Tensor self_c = self.contiguous();
@@ -328,11 +318,8 @@ using c10::DeviceType;
         double val = exponent.toDouble();
         dlprim::Tensor x = todp(self_c);
         dlprim::Tensor y = todp(out_c);
-        #if 1
-			dlprim::core::pointwiseOpStrided({x}, {y}, {val}, dlprim::core::PointwiseOp::ePow);
-        #else
-			dlprim::core::pointwise_operation({x},{y},{val},"y0=pow(x0,w0);");
-		#endif
+
+		dlprim::core::pointwiseOpStrided({x}, {y}, {val}, dlprim::core::PointwiseOp::ePow);
 
         if(!out.is_contiguous())
             out.copy_(out_c);
@@ -352,12 +339,7 @@ using c10::DeviceType;
         double value=0;
         if(isCPUScalar(other,value))
         {
-			#if 1
-				dlprim::core::pointwiseOpStrided({x0}, {y0}, {1.0/value}, dlprim::core::PointwiseOp::eScale);
-			#else
-				dlprim::core::pointwise_operation({x0},{y0},{double(1.0/value)},
-											"y0 = x0*w0;");
-			#endif
+			dlprim::core::pointwiseOpStrided({x0}, {y0}, {1.0/value}, dlprim::core::PointwiseOp::eScale);
         }
         else {
             Tensor other_c = other.contiguous();
@@ -597,11 +579,8 @@ using c10::DeviceType;
         dlprim::Tensor Y(todp(out));
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
-        #if 1
-			dlprim::core::pointwiseOpStrided({X}, {Y}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
-        #else
-			dlprim::core::pointwise_operation({X},{Y},{w0,w1},"y0 = max(w0, min(w1, x0));");
-		#endif
+		dlprim::core::pointwiseOpStrided({X}, {Y}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
+
         sync_if_needed(self.device());
         return out;
     }
@@ -615,11 +594,8 @@ using c10::DeviceType;
         dlprim::Tensor X=todp(self_c);
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
-        #if 1
-			dlprim::core::pointwiseOpStrided({X}, {X}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
-        #else
-			dlprim::core::pointwise_operation({X},{X},{w0,w1},"y0=max(w0,min(w1,x0));");
-        #endif
+		dlprim::core::pointwiseOpStrided({X}, {X}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
+
         if(!self.is_contiguous())
             self.copy_(self_c);
         sync_if_needed(self.device());
@@ -638,7 +614,6 @@ using c10::DeviceType;
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
         dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanhBwd);
-        //dlprim::core::pointwise_operation({X,dY},{dX},{w0,w1},"y0 = (w0 <= x0 && x0 <= w1) ? x1 : 0;");
         sync_if_needed(self.device());
         return result;
     }
@@ -652,11 +627,7 @@ using c10::DeviceType;
         dlprim::Tensor x=todp(self_c);
         Tensor out = new_tensor_as(x.shape(),self);
         dlprim::Tensor y=todp(out);
-        #if 1
-			dlprim::core::pointwiseOpStrided({x}, {y}, {}, dlprim::core::PointwiseOp::eAbs);
-        #else
-			dlprim::core::pointwise_operation({x},{y},{},"y0 = x0 < 0 ? -x0 : x0;");
-		#endif
+		dlprim::core::pointwiseOpStrided({x}, {y}, {}, dlprim::core::PointwiseOp::eAbs);
         sync_if_needed(self.device());
         return out;
     }
@@ -781,7 +752,6 @@ using c10::DeviceType;
         Tensor self_c = self.contiguous();
         dlprim::Tensor x=todp(self_c);
         dlprim::core::pointwiseOpStrided({x},{x},{}, dlprim::core::PointwiseOp::eHardswish);
-        // dlprim::core::pointwise_operation({x},{x},{},"y0 = x0 <= -3.0f ? 0 : (x0>=3.0f ? x0 : x0*(x0+3.0f)/6.0f);");
         
         if (!self.is_contiguous())
             self.copy_(self_c);
@@ -809,7 +779,6 @@ using c10::DeviceType;
         dlprim::Tensor dy=todp(grad_output_c);
 
         dlprim::core::pointwiseOpStrided({x, dy}, {dx},{}, dlprim::core::PointwiseOp::eHardsigmoidBwd);
-        //dlprim::core::pointwise_operation({x,dy},{dx},{},"y0 = (-3 < x0 && x0 < 3) ? x1 / 6 : 0;");
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -830,20 +799,7 @@ using c10::DeviceType;
         
         Tensor self_c = self.contiguous();
         dlprim::Tensor x =todp(self_c);
-        #if 1
-			dlprim::core::pointwiseOpStrided({x, dy}, {dx}, {}, dlprim::core::PointwiseOp::eHardswishBwd);
-        #else
-			dlprim::core::pointwise_operation({x,dy},{dx},{},
-				R"xxx(
-					if (x0 < -3.0f) {
-						y0 = 0;
-					} else if (x0 <= 3.0f) {
-						y0 =  x1 * ((x0 / 3.0f) + 0.5f);
-					} else {
-						y0 = x1;
-					}
-				)xxx");
-		#endif
+		dlprim::core::pointwiseOpStrided({x, dy}, {dx}, {}, dlprim::core::PointwiseOp::eHardswishBwd);
         sync_if_needed(self.device());
         return out;
     }
@@ -972,15 +928,7 @@ using c10::DeviceType;
         dlprim::Tensor x=todp(self_c);
         dlprim::Tensor dy=todp(grad_output_c);
         dlprim::Tensor dx=todp(grad_input);
-        #if 1
-			dlprim::core::pointwiseOpStrided({x, dy}, {dx}, {}, dlprim::core::PointwiseOp::eSiluBwd);
-        #else
-			dlprim::core::pointwise_operation({x,dy},{dx},{},
-				R"xxx(
-					y0 = 1.0f / (1.0f + exp(-x0));
-					y0 = x1 * y0 * ( 1.0f + x0 * (1.0f - y0));
-				)xxx");
-		#endif
+		dlprim::core::pointwiseOpStrided({x, dy}, {dx}, {}, dlprim::core::PointwiseOp::eSiluBwd);
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -1024,7 +972,6 @@ using c10::DeviceType;
         dlprim::Tensor x=todp(self_c);
         dlprim::Tensor y=todp(out_c);
         dlprim::core::pointwiseOpStrided({x},{y},{slope}, dlprim::core::PointwiseOp::eLeakyRelu);
-        // dlprim::core::pointwise_operation({x},{y},{slope},"y0 = x0 > 0 ? x0 : w0 * x0;");
         
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -1046,7 +993,6 @@ using c10::DeviceType;
         dlprim::Tensor dy=todp(grad_output_c);
         dlprim::Tensor dx=todp(grad_input_c);
         dlprim::core::pointwiseOpStrided({y,dy},{dx},{slope}, dlprim::core::PointwiseOp::eLeakyReluBwd);
-        //dlprim::core::pointwise_operation({y,dy},{dx},{slope},"y0 = x0 > 0 ? x1 : w0 * x1;");
         
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -1363,17 +1309,8 @@ using c10::DeviceType;
         dlprim::Tensor Y = todp(out_c);
         dlprim::Tensor X = todp(self_c);
         TORCH_CHECK(approximate == "none" || approximate == "tanh", "Unsupported variant")
-        #if 1
-			if (approximate == "tanh")
-				dlprim::core::pointwiseOpStrided({X}, {Y}, {}, dlprim::core::PointwiseOp::eGeluApproximate);
-			else
-				dlprim::core::pointwiseOpStrided({X}, {Y}, {}, dlprim::core::PointwiseOp::eGelu);
-        #else
-			if(approximate == "tanh")
-				dlprim::core::pointwise_operation({X},{Y},{},"y0 = 0.5f * x0 * (1.0f + tanh(0.7978845608028654f * x0 * (1.0f + 0.044715f * x0 * x0)));"); // 0.7978845608028654 = sqrt(2/pi)
-			else
-				dlprim::core::pointwise_operation({X},{Y},{},"y0 = x0 * (1.0f + erf(x0 * 0.7071067811865475f  )) / 2.0f;"); // 0.7071067811865475 = 1/sqrt(2)
-        #endif
+        dlprim::core::PointwiseOp op = approximate == "tanh" ? dlprim::core::PointwiseOp::eGeluApproximate : dlprim::core::PointwiseOp::eGelu;
+		dlprim::core::pointwiseOpStrided({X}, {Y}, {}, op);
             
         if (!out.is_contiguous())
             out.copy_(out_c);
@@ -1397,38 +1334,8 @@ using c10::DeviceType;
         TORCH_CHECK(approximate == "none" || approximate == "tanh","Unsupported variant")
 
         char const *eq;
-        // 1.128379167095512558561 = 2/ sqrt(pi)
-        // 0.7071067811865475 = 1/sqrt(2)
-		#if 1
-			if (approximate == "tanh")
-				dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {}, dlprim::core::PointwiseOp::eGeluApproximateBwd);
-			else
-				dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {}, dlprim::core::PointwiseOp::eGeluBwd);
-		#else
-			if(approximate == "tanh")
-				eq = R"xxx(
-					dtype alpha = 1.128379167095512558561f * 0.7071067811865475f;
-					dtype koeff = 0.044715f;
-					dtype beta  = alpha * koeff * 3.0f;
-					dtype Y = tanh(alpha * fma(koeff,x0*x0*x0,x0));
-					y0 = 0.5f * x1 * fma(
-						fma(-x0,Y * Y, x0),
-						fma(beta,x0*x0,alpha),
-						1 + Y                  
-					);
-				)xxx";
-			else
-				eq = R"xxx(
-					dtype alpha = 1.128379167095512558561f * 0.7071067811865475f * 0.5f; 
-					dtype cdf = 0.5f * (1.0f + erf(x0 * 0.7071067811865475f));
-					y0 = x1 * fma(
-						alpha * x0,
-						exp(-0.5f * x0*x0),
-						cdf);
-				)xxx";
-		
-			dlprim::core::pointwise_operation({X,dY},{dX},{},eq);
-		#endif
+		auto op = approximate == "tanh" ? dlprim::core::PointwiseOp::eGeluApproximateBwd : dlprim::core::PointwiseOp::eGeluBwd;
+		dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {}, op);
 		
         if (!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);
@@ -1580,18 +1487,8 @@ using c10::DeviceType;
         dlprim::Tensor x = todp(self_c);
         dlprim::Tensor buf = todp(buffer_c);
         dlprim::Tensor dx = todp(grad_input_c);
-		#if 1
-			// trinary ops not implemented :c
-			dlprim::core::pointwiseOpStrided({x, buf, dy}, {dx}, {}, dlprim::core::PointwiseOp::eLogSigmoidBwd);
-		#else
-			dlprim::core::pointwise_operation({x,buf,dy},{dx},{},
-						R"xxx(
-						bool is_negative = x0 < 0;
-						dtype maxd = is_negative ? dtype(1.0): dtype(0.0);
-						dtype s = is_negative ? dtype(1.0): dtype(-1.0);
-						y0 = (maxd - s * (x1 / (dtype(1) + x1))) * x2;
-						)xxx");
-        #endif
+		dlprim::core::pointwiseOpStrided({x, buf, dy}, {dx}, {}, dlprim::core::PointwiseOp::eLogSigmoidBwd);
+
         if(!grad_input.is_contiguous())
             grad_input.copy_(grad_input_c);;
 
