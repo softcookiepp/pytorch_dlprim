@@ -153,34 +153,16 @@ using c10::DeviceType;
             }
         }
         else if(self.device().type() == OpenCLDeviceType && dst.device().type() == OpenCLDeviceType) {
-            if(self.is_contiguous() && dst.is_contiguous()) {
+            if(self.is_contiguous() && dst.is_contiguous())
+            {
                 dlprim::core::pointwise_operation_broadcast({todp(self)},{todp(dst)},{},"y0=x0;");
             }
-            else {
-                auto src_sizes  = self.sizes();
-                auto src_stride = self.strides();
-                auto src_offset = self.storage_offset();
-                auto tgt_sizes  = dst.sizes();
-                auto tgt_stride = dst.strides();
-                auto tgt_offset = dst.storage_offset();
-                TORCH_CHECK(src_sizes == tgt_sizes);
-                dlprim::Shape shape=dlprim::Shape::from_range(src_sizes.begin(),src_sizes.end());
-                dlprim::Shape src_std=dlprim::Shape::from_range(src_stride.begin(),src_stride.end());
-                dlprim::Shape tgt_std=dlprim::Shape::from_range(tgt_stride.begin(),tgt_stride.end());
-
-				tart::buffer_ptr selfBuf = buffer_from_tensor(self);
-				tart::buffer_ptr dstBuf = buffer_from_tensor(dst);
-				#if 1
-					// This does not seem to be quite there yet :c
-					dlprim::Tensor X = todp(self, true);
-					dlprim::Tensor Y = todp(dst, true);
-					dlprim::core::copy_strided(X, Y);
-				#else
-					dlprim::core::copy_strided(shape, selfBuf, src_offset, src_std,
-													 dstBuf, tgt_offset,tgt_std,
-													 (todp(self.dtype())),
-													 (todp(dst.dtype())));
-				#endif
+            else
+            {
+				// well this is far simpler now that strides are baked into dlprim tensors!
+				dlprim::Tensor X = todp(self, true);
+				dlprim::Tensor Y = todp(dst, true);
+				dlprim::core::copy_strided(X, Y);
             }
             if(non_blocking)
                 sync_if_needed(self.device());
