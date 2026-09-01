@@ -653,6 +653,17 @@ def test_comp(device):
 		print(f" Testng x{name}val")
 		test_fwd([([4,4],-1)],lambda x:op(x).to(torch.float32),device=device)
 
+def test_non_contiguity(device):
+	print("Testing non-contiguous pointwise operations")
+	a_cpu = torch.randn(4, 12).to(torch.float32)
+	a_dev = a_cpu.to(device)
+	b_cpu = a_cpu[2:4, 4:8]
+	b_dev = a_dev[2:4, 4:8]
+	torch.exp_(b_cpu)
+	torch.exp_(b_dev)
+	torch.testing.assert_close(b_cpu, b_dev.to("cpu"))
+	torch.testing.assert_close(a_cpu, a_dev.to("cpu"))
+	print("All goodies!")
 
 if __name__ == '__main__': 
 	p = argparse.ArgumentParser()
@@ -667,3 +678,4 @@ if __name__ == '__main__':
 	test_rng(r.device)
 	test_mm(r.device)
 	test_bmm(r.device)
+	test_non_contiguity(r.device)

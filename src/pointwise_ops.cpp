@@ -105,8 +105,8 @@ using c10::DeviceType;
     };
 
     template<dlprim::StandardActivations Act>
-    torch::Tensor act_autograd(torch::Tensor const &x) {
-		PTD_TIMER_GUARD("act_autograd<?>");
+    torch::Tensor act_autograd(torch::Tensor const &x)
+    {
         GUARD;
         return act_cls<Act>::apply(x);
     }
@@ -173,13 +173,10 @@ using c10::DeviceType;
     Tensor& unitary_op(const Tensor& self, Tensor& out, const dlprim::core::PointwiseOp op)
     {
 		GUARD;
-		#if 0
-			dlprim::Tensor x=todp(self);
-			dlprim::Tensor y=todp(out);
+		#if 1
+			dlprim::Tensor x=todp(self, true);
+			dlprim::Tensor y=todp(out, true);
 			dlprim::core::pointwiseOpStrided({x}, {y}, {}, op);
-			
-			if (!out.is_contiguous())
-				throw std::runtime_error("meep");
 		#else
 			Tensor self_c = self.contiguous(), out_c = out.contiguous();
 			

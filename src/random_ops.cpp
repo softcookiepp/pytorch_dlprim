@@ -36,7 +36,6 @@ using c10::DeviceType;
     // {"schema": "aten::bernoulli_.float(Tensor(a!) self, float p=0.5, *, Generator? generator=None) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bernoulli_(Tensor & self, double p, c10::optional<Generator> generator)
     {
-		PTD_TIMER_GUARD("bernoulli_");
         GUARD;
         dlprim::Tensor rnd=todp(self);
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
@@ -48,29 +47,8 @@ using c10::DeviceType;
     // {"schema": "aten::normal_(Tensor(a!) self, float mean=0, float std=1, *, Generator? generator=None) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & normal_(Tensor & self, double mean, double std, c10::optional<Generator> generator)
     {
-		PTD_TIMER_GUARD("normal_");
         GUARD;
-        #if 0
-			std::cout << "	torch strides: ";
-			for (auto& s : self.strides())
-				std::cout << s << ", ";
-			std::cout << std::endl;
-		#endif
-		// So strides in torch C++ API line up to the python shape.
-		// Lets see if dlprim shape does the same thing...
         dlprim::Tensor rnd=todp(self);
-        #if 0
-			std::cout << "	dlprim shape: ";
-			for (auto s : rnd.shape())
-				std::cout << s << ", ";
-			std::cout << std::endl;
-			std::cout << "	dlprim strides: ";
-			for (auto s : rnd.stride())
-				std::cout << s << ", ";
-			std::cout << std::endl;
-		#endif
-		// Ok, it is confirmed. The shape in dlprim has the same orientation as the shape in pytorch.
-		// That is, the most contiguous dimension starts from the right.
         
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
         dlprim::core::fill_random(rnd,seq.seed,seq.sequence,dlprim::core::rnd_normal,mean,std*std);
@@ -81,7 +59,6 @@ using c10::DeviceType;
     // {"schema": "aten::uniform_(Tensor(a!) self, float from=0, float to=1, *, Generator? generator=None) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & uniform_(Tensor & self, double from, double to, c10::optional<Generator> generator)
     {
-		PTD_TIMER_GUARD("uniform_");
         GUARD;
         dlprim::Tensor rnd=todp(self);
         auto seq = get_random_seq(self.device(),rnd.shape().total_size(),generator);
@@ -92,7 +69,6 @@ using c10::DeviceType;
     // {"schema": "aten::native_dropout(Tensor input, float p, bool? train) -> (Tensor, Tensor)", "dispatch": "True", "default": "False"}
     ::std::tuple<Tensor,Tensor> native_dropout(const Tensor & input, double p, ::std::optional<bool> train)
     {
-		PTD_TIMER_GUARD("native_dropout");
         GUARD;
         Tensor input_c = input.contiguous();
         dlprim::Tensor X = todp(input_c);
@@ -114,7 +90,6 @@ using c10::DeviceType;
     // {"schema": "aten::native_dropout_backward(Tensor grad_output, Tensor mask, float scale) -> Tensor", "dispatch": "True", "default": "False"}
     Tensor native_dropout_backward(const Tensor & grad_output, const Tensor & mask, double scale)
     {
-		PTD_TIMER_GUARD("native_dropout_backward");
         GUARD;
         Tensor grad_output_c=grad_output.contiguous();
         Tensor mask_c=mask.contiguous();
