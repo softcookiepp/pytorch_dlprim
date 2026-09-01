@@ -152,7 +152,8 @@ using c10::DeviceType;
                 dst.copy_(temp);
             }
         }
-        else if(self.device().type() == OpenCLDeviceType && dst.device().type() == OpenCLDeviceType) {
+        else if(self.device().type() == OpenCLDeviceType && dst.device().type() == OpenCLDeviceType)
+        {
 			if (self.is_contiguous() && dst.is_contiguous())
 			{
 				dlprim::core::pointwise_operation_broadcast({todp(self)},{todp(dst)},{},"y0=x0;");
@@ -162,7 +163,7 @@ using c10::DeviceType;
 				// well this is far simpler now that strides are baked into dlprim tensors!
 				dlprim::Tensor X = todp(self, true);
 				dlprim::Tensor Y = todp(dst, true);
-				dlprim::core::copy_strided(X, Y);
+				dlprim::core::pointwiseOpStrided({X}, {Y}, {}, dlprim::core::PointwiseOp::eIdentity);
             }
             if(non_blocking)
                 sync_if_needed(self.device());
