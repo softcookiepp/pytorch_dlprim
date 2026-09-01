@@ -154,19 +154,13 @@ using c10::DeviceType;
         }
         else if(self.device().type() == OpenCLDeviceType && dst.device().type() == OpenCLDeviceType)
         {
-			if (self.is_contiguous() && dst.is_contiguous())
-			{
-				dlprim::core::pointwise_operation_broadcast({todp(self)},{todp(dst)},{},"y0=x0;");
-			}
-			else
-            {
-				// well this is far simpler now that strides are baked into dlprim tensors!
-				dlprim::Tensor X = todp(self, true);
-				dlprim::Tensor Y = todp(dst, true);
-				dlprim::core::pointwiseOpStrided({X}, {Y}, {}, dlprim::core::PointwiseOp::eIdentity);
-            }
-            if(non_blocking)
-                sync_if_needed(self.device());
+			dlprim::Tensor X = todp(self, true);
+			dlprim::Tensor Y = todp(dst, true);
+			if (X.shape().total_size() < Y.shape().total_size())
+				dlprim::core::broadcastTensors(X, Y);
+			else if (Y.shape().total_size() < X.shape().total_size())
+				throw std::runtime_error("Destination tensor too small!");
+			dlprim::core::pointwiseOpStrided({X}, {Y}, {}, dlprim::core::PointwiseOp::eIdentity);
         }
         else {
             throw std::runtime_error("OpenCL supports copy to CPU backend only");
