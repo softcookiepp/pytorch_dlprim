@@ -114,22 +114,9 @@ using c10::DeviceType;
     Tensor & mul_scalar_(Tensor & self, const Scalar & other)
     {
 		GUARD;
-		#if 0
-			dlprim::Tensor x0 = todp(self, true);
-			float scale = other.to<double>();
-			dlprim::core::pointwiseOpStrided({x0}, {x0}, {scale}, dlprim::core::PointwiseOp::eScale);
-			if (!self.is_contiguous()) throw std::runtime_error("meep!");
-		#else
-			Tensor self_c = self.contiguous();
-			dlprim::Tensor x0=todp(self_c);
-			float scale = other.to<double>();
-			dlprim::core::pointwiseOpStrided({x0}, {x0}, {scale}, dlprim::core::PointwiseOp::eScale);
-			
-			if (!self.is_contiguous())
-				self.copy_(self_c);
-			
-			sync_if_needed(self.device());
-		#endif
+		dlprim::Tensor x0 = todp(self, true);
+		float scale = other.to<double>();
+		dlprim::core::pointwiseOpStrided({x0}, {x0}, {scale}, dlprim::core::PointwiseOp::eScale);
 		return self;
     }
     
@@ -173,21 +160,9 @@ using c10::DeviceType;
     Tensor& unitary_op(const Tensor& self, Tensor& out, const dlprim::core::PointwiseOp op)
     {
 		GUARD;
-		#if 1
-			dlprim::Tensor x=todp(self, true);
-			dlprim::Tensor y=todp(out, true);
-			dlprim::core::pointwiseOpStrided({x}, {y}, {}, op);
-		#else
-			Tensor self_c = self.contiguous(), out_c = out.contiguous();
-			
-			dlprim::Tensor x=todp(self_c);
-			dlprim::Tensor y=todp(out_c);
-			dlprim::core::pointwiseOpStrided({x}, {y}, {}, op);
-			
-			if (!out.is_contiguous())
-				out.copy_(out_c);
-        #endif
-        sync_if_needed(self.device());
+		dlprim::Tensor x=todp(self, true);
+		dlprim::Tensor y=todp(out, true);
+		dlprim::core::pointwiseOpStrided({x}, {y}, {}, op);
         return out;
 	}
     
@@ -303,17 +278,10 @@ using c10::DeviceType;
     Tensor & pow_out(const Tensor & self, const Scalar & exponent, Tensor & out)
     {
         GUARD;
-        Tensor self_c = self.contiguous();
-        Tensor out_c = out.contiguous();
-        double val = exponent.toDouble();
-        dlprim::Tensor x = todp(self_c);
-        dlprim::Tensor y = todp(out_c);
-
+		double val = exponent.toDouble();
+		dlprim::Tensor x = todp(self, true);
+		dlprim::Tensor y = todp(out, true);
 		dlprim::core::pointwiseOpStrided({x}, {y}, {val}, dlprim::core::PointwiseOp::ePow);
-
-        if(!out.is_contiguous())
-            out.copy_(out_c);
-        sync_if_needed(self.device());
         return out;
     }
 
@@ -559,14 +527,22 @@ using c10::DeviceType;
     Tensor hardtanh(Tensor const &self, const Scalar & min_val, const Scalar & max_val)
     {
         GUARD;
-        Tensor self_c = self.contiguous();
-        dlprim::Tensor X = todp(self_c);
-        Tensor out = new_tensor_as(X.shape(),self);
-        dlprim::Tensor Y(todp(out));
-        double w0 = min_val.toDouble();
-        double w1 = max_val.toDouble();
-		dlprim::core::pointwiseOpStrided({X}, {Y}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
-
+        #if 1
+			dlprim::Tensor X = todp(self);
+			Tensor out = new_tensor_as(X.shape(),self);
+			dlprim::Tensor Y(todp(out));
+			double w0 = min_val.toDouble();
+			double w1 = max_val.toDouble();
+			dlprim::core::pointwiseOpStrided({X}, {Y}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
+        #else
+			Tensor self_c = self.contiguous();
+			dlprim::Tensor X = todp(self_c);
+			Tensor out = new_tensor_as(X.shape(),self);
+			dlprim::Tensor Y(todp(out));
+			double w0 = min_val.toDouble();
+			double w1 = max_val.toDouble();
+			dlprim::core::pointwiseOpStrided({X}, {Y}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
+		#endif
         sync_if_needed(self.device());
         return out;
     }
@@ -576,15 +552,22 @@ using c10::DeviceType;
     Tensor & hardtanh_(Tensor & self, const Scalar & min_val, const Scalar & max_val)
     {
         GUARD;
-        Tensor self_c = self.contiguous();
-        dlprim::Tensor X=todp(self_c);
-        double w0 = min_val.toDouble();
-        double w1 = max_val.toDouble();
-		dlprim::core::pointwiseOpStrided({X}, {X}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
+        #if 1
+			dlprim::Tensor X=todp(self);
+			double w0 = min_val.toDouble();
+			double w1 = max_val.toDouble();
+			dlprim::core::pointwiseOpStrided({X}, {X}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
+        #else
+			Tensor self_c = self.contiguous();
+			dlprim::Tensor X=todp(self_c);
+			double w0 = min_val.toDouble();
+			double w1 = max_val.toDouble();
+			dlprim::core::pointwiseOpStrided({X}, {X}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
 
-        if(!self.is_contiguous())
-            self.copy_(self_c);
-        sync_if_needed(self.device());
+			if(!self.is_contiguous())
+				self.copy_(self_c);
+			sync_if_needed(self.device());
+		#endif
         return self;
     }
 
@@ -592,15 +575,13 @@ using c10::DeviceType;
     Tensor hardtanh_backward(const Tensor & grad_output, const Tensor & self, const Scalar & min_val, const Scalar & max_val)
     {
         GUARD;
-        Tensor self_c = self.contiguous();
-        dlprim::Tensor X  = todp(self_c);
+        dlprim::Tensor X  = todp(self);
         dlprim::Tensor dY = todp(grad_output);
         Tensor result = new_tensor_as(X.shape(),self);
         dlprim::Tensor dX = todp(result);
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
         dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanhBwd);
-        sync_if_needed(self.device());
         return result;
     }
 
@@ -609,12 +590,10 @@ using c10::DeviceType;
     Tensor abs(const Tensor & self)
     {
         GUARD;
-        Tensor self_c = self.contiguous();
-        dlprim::Tensor x=todp(self_c);
+        dlprim::Tensor x=todp(self);
         Tensor out = new_tensor_as(x.shape(),self);
         dlprim::Tensor y=todp(out);
 		dlprim::core::pointwiseOpStrided({x}, {y}, {}, dlprim::core::PointwiseOp::eAbs);
-        sync_if_needed(self.device());
         return out;
     }
      // {"schema": "aten::round.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -734,15 +713,8 @@ using c10::DeviceType;
     Tensor & hardswish_(Tensor & self)
     {
         GUARD;
-        
-        Tensor self_c = self.contiguous();
-        dlprim::Tensor x=todp(self_c);
+        dlprim::Tensor x=todp(self);
         dlprim::core::pointwiseOpStrided({x},{x},{}, dlprim::core::PointwiseOp::eHardswish);
-        
-        if (!self.is_contiguous())
-            self.copy_(self_c);
-        
-        sync_if_needed(self.device());
         return self;
     }
     // {"schema": "aten::hardsigmoid.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -756,20 +728,11 @@ using c10::DeviceType;
     Tensor & hardsigmoid_backward_out(const Tensor & grad_output, const Tensor & self, Tensor & grad_input)
     {
         GUARD;
-        Tensor self_c = self.contiguous(),
-               grad_input_c = grad_input.contiguous(),
-               grad_output_c = grad_output.contiguous();
-        
-        dlprim::Tensor x=todp(self_c);
-        dlprim::Tensor dx=todp(grad_input_c);
-        dlprim::Tensor dy=todp(grad_output_c);
+        dlprim::Tensor x=todp(self);
+        dlprim::Tensor dx=todp(grad_input);
+        dlprim::Tensor dy=todp(grad_output);
 
         dlprim::core::pointwiseOpStrided({x, dy}, {dx},{}, dlprim::core::PointwiseOp::eHardsigmoidBwd);
-        
-        if(!grad_input.is_contiguous())
-            grad_input.copy_(grad_input_c);
-        
-        sync_if_needed(self.device());
         return grad_input;
     }
     
@@ -777,16 +740,13 @@ using c10::DeviceType;
     Tensor hardswish_backward(const Tensor & grad_output, const Tensor & self)
     {
         GUARD;
-        Tensor grad_output_c = grad_output.contiguous();
-        dlprim::Tensor dy=todp(grad_output_c);
+        dlprim::Tensor dy=todp(grad_output);
         
         Tensor out = new_tensor_as(dy.shape(),grad_output);
         dlprim::Tensor dx=todp(out);
         
-        Tensor self_c = self.contiguous();
-        dlprim::Tensor x =todp(self_c);
+        dlprim::Tensor x = todp(self);
 		dlprim::core::pointwiseOpStrided({x, dy}, {dx}, {}, dlprim::core::PointwiseOp::eHardswishBwd);
-        sync_if_needed(self.device());
         return out;
     }
 
