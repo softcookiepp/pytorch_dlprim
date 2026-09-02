@@ -465,21 +465,10 @@ using c10::DeviceType;
 			dlprim::core::pointwiseOpStrided({x},{y},{alpha}, dlprim::core::PointwiseOp::eScale);
         }
         else {
-            dlprim::Tensor x = todp(p);
-            Tensor self_c = self.contiguous();
-            dlprim::Tensor off = todp(self_c);
-            dlprim::Tensor tgt;
-            if(out.is_contiguous()) {
-                tgt = todp(out);
-            }
-            else {
-                tgt = x;
-            }
-            dlprim::core::pointwise_operation_broadcast({x,off},{tgt},{alpha,beta},
-                    "y0 = x0 * w0 + x1 * w1;");
-            if(!out.is_contiguous()) {
-                out.copy_(p);
-            }
+            dlprim::Tensor x = todp(p, true);
+            dlprim::Tensor off = todp(self, true);
+            dlprim::Tensor tgt = todp(out, true);
+			dlprim::core::pointwiseOpBroadcastStrided({x, off}, {tgt}, {alpha, beta}, dlprim::core::PointwiseOp::eAxpby);
         }
         return out;
     }
@@ -543,6 +532,7 @@ using c10::DeviceType;
         dp_out.reshape(dlprim::Shape(B*T,_3D));
         dp_bias.reshape(dlprim::Shape(_3D));
         double scale = 1.0/std::sqrt(double(dim_per_head));
+        // ok, this actually uses positioning. This will not work out of the box with pointwiseOpBroadcastStrided
         dlprim::core::pointwise_operation_broadcast(
                 {dp_qkv,dp_bias},{dp_out},
                 {scale,double(D)},
