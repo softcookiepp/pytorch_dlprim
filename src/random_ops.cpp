@@ -70,12 +70,11 @@ using c10::DeviceType;
     ::std::tuple<Tensor,Tensor> native_dropout(const Tensor & input, double p, ::std::optional<bool> train)
     {
         GUARD;
-        Tensor input_c = input.contiguous();
-        dlprim::Tensor X = todp(input_c);
-        Tensor mask = new_tensor_as(X.shape(),input_c);
-        Tensor res =  new_tensor_as(X.shape(),input_c);
-        dlprim::Tensor Y = todp(res);
-        dlprim::Tensor M = todp(mask);
+        dlprim::Tensor X = todp(input, true);
+        Tensor mask = new_tensor_as(X.shape(), input);
+        Tensor res =  new_tensor_as(X.shape(), input);
+        dlprim::Tensor Y = todp(res, true);
+        dlprim::Tensor M = todp(mask, true);
         if(train && *train && p > 0)
         {
             bernoulli_(mask,1-p,c10::nullopt);
@@ -84,21 +83,17 @@ using c10::DeviceType;
         else {
             torch::fill_(mask,1);
         }
-        sync_if_needed(input.device());
         return std::make_pair(res,mask);
     }
     // {"schema": "aten::native_dropout_backward(Tensor grad_output, Tensor mask, float scale) -> Tensor", "dispatch": "True", "default": "False"}
     Tensor native_dropout_backward(const Tensor & grad_output, const Tensor & mask, double scale)
     {
         GUARD;
-        Tensor grad_output_c=grad_output.contiguous();
-        Tensor mask_c=mask.contiguous();
-        dlprim::Tensor dy = todp(grad_output_c);
-        dlprim::Tensor m = todp(mask_c);
+        dlprim::Tensor dy = todp(grad_output, true);
+        dlprim::Tensor m = todp(mask, true);
         Tensor res =  new_tensor_as(dy.shape(),grad_output);
-        dlprim::Tensor dx = todp(res);
+        dlprim::Tensor dx = todp(res, true);
 		dlprim::core::pointwiseOpStrided({dy, m}, {dx}, {scale}, dlprim::core::PointwiseOp::eDropout);
-        sync_if_needed(grad_output.device());
         return res;
     }
 

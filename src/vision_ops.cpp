@@ -75,7 +75,7 @@ using c10::DeviceType;
         }
         else {
             result = new_tensor_as(X.shape(),self);
-            dlprim::Tensor Y = todp(result);
+            dlprim::Tensor Y = todp(result, true);
             dlprim::core::pointwiseOpStrided({X},{Y},{}, dlprim::core::PointwiseOp::eIdentity);
         }
         sync_if_needed(self.device());
@@ -100,7 +100,7 @@ using c10::DeviceType;
         }
         else {
             result = new_tensor_as(dy.shape(),self);
-            dlprim::Tensor dx = todp(result);
+            dlprim::Tensor dx = todp(result, true);
             dlprim::core::pointwiseOpStrided({dy},{dx},{}, dlprim::core::PointwiseOp::eIdentity);
         }
         sync_if_needed(self.device());
@@ -460,15 +460,9 @@ using c10::DeviceType;
         }
         Tensor p = torch::mm(mat1,mat2);
         if(beta == 0) {
-            auto x=todp(p);
-            if(out.is_contiguous()) {
-                auto y=todp(out);
-                dlprim::core::pointwiseOpStrided({x},{y},{alpha}, dlprim::core::PointwiseOp::eScale);
-            }
-            else {
-                dlprim::core::pointwiseOpStrided({x},{x},{alpha}, dlprim::core::PointwiseOp::eScale);
-                out.copy_(p);
-            }
+            auto x=todp(p, true);
+			auto y=todp(out, true);
+			dlprim::core::pointwiseOpStrided({x},{y},{alpha}, dlprim::core::PointwiseOp::eScale);
         }
         else {
             dlprim::Tensor x = todp(p);
@@ -487,7 +481,6 @@ using c10::DeviceType;
                 out.copy_(p);
             }
         }
-        sync_if_needed(self.device());
         return out;
     }
 
