@@ -211,18 +211,21 @@ using c10::DeviceType;
 
         dlprim::core::PointwiseOp opEnum;
         if (op == ">")
-			opEnum = dlprim::core::PointwiseOp::eIdentity;
+			opEnum = dlprim::core::PointwiseOp::eCmpGt;
 		else if (op == "<")
-			opEnum = dlprim::core::PointwiseOp::eIdentity;
+			opEnum = dlprim::core::PointwiseOp::eCmpLt;
 		else if (op == ">=")
-			opEnum = dlprim::core::PointwiseOp::eIdentity;
+			opEnum = dlprim::core::PointwiseOp::eCmpGe;
 		else if (op == "<=")
-			opEnum = dlprim::core::PointwiseOp::eIdentity;
+			opEnum = dlprim::core::PointwiseOp::eCmpLe;
 		else if (op == "==")
-			opEnum = dlprim::core::PointwiseOp::eIdentity;
+			opEnum = dlprim::core::PointwiseOp::eCmpEq;
+		else if (op == "!=")
+			opEnum = dlprim::core::PointwiseOp::eCmpNe;
 		else
 			throw std::runtime_error("op not found");
-		#if 0
+		#if 1
+			// gonna come back to this later
 			dlprim::core::pointwiseOpBroadcastStrided({x0}, {y0}, {w0}, opEnum);
 		#else
 			dlprim::core::pointwise_operation_broadcast({x0},{y0},{w0},{tart::dtypes::float32},
@@ -321,7 +324,7 @@ using c10::DeviceType;
         dlprim::Tensor x1=todp(end_c);
         dlprim::Tensor y0 = todp(out);
         float w = weight.toDouble();
-		#if 0
+		#if 1
 			dlprim::core::pointwiseOpBroadcastStrided({x0, x1}, {y0}, {w}, dlprim::core::PointwiseOp::eLerp);
 		#else
 			dlprim::core::pointwise_operation_broadcast({x0,x1},{y0},{w},
@@ -344,7 +347,8 @@ using c10::DeviceType;
 
         dlprim::Tensor y(todp(out_c));
         double value;
-        if(isCPUScalar(other,value)) {
+        if(isCPUScalar(other,value))
+        {
             dlprim::Tensor x0(todp(self_c));
             dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.dtype()},
                         "precise typeof_x0 left = x0; precise typeof_w0 right = w0;" + op_builder);
@@ -381,21 +385,12 @@ using c10::DeviceType;
     Tensor & addcdiv_out(const Tensor & self, const Tensor & tensor1, const Tensor & tensor2, const Scalar & value, Tensor & out)
     {
         GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous(),
-               tensor1_c = tensor1.contiguous(), tensor2_c = tensor2.contiguous();
-        
-        dlprim::Tensor x0 = todp(self_c);
-        dlprim::Tensor x1 = todp(tensor1_c);
-        dlprim::Tensor x2 = todp(tensor2_c);
-        dlprim::Tensor y0 = todp(out_c);
+        dlprim::Tensor x0 = todp(self, true);
+        dlprim::Tensor x1 = todp(tensor1, true);
+        dlprim::Tensor x2 = todp(tensor2, true);
+        dlprim::Tensor y0 = todp(out, true);
         float w0 = value.toDouble();
-        dlprim::core::pointwise_operation_broadcast({x0,x1,x2},{y0},{w0},
-                                      "y0 = x0 + w0 * (x1/x2);");
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-
-        sync_if_needed(self.device());
+		dlprim::core::pointwiseOpBroadcastStrided({x0, x1, x2}, {y0}, {w0}, dlprim::core::PointwiseOp::eAddcdiv);
         return out;
     }
 
@@ -1060,17 +1055,9 @@ using c10::DeviceType;
     Tensor & ne_out(const Tensor & self, const Scalar & other, Tensor & out)
     {
         GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        
-        dlprim::Tensor x(todp(self_c));
-        dlprim::Tensor y(todp(out_c));
-        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.dtype()},
-                    "y0 = typeof_y0(x0 != typeof_x0(w0));");
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-
-        sync_if_needed(self.device());
+        dlprim::Tensor x(todp(self, true));
+        dlprim::Tensor y(todp(out, true));
+		dlprim::core::pointwiseOpBroadcastStrided({x}, {y}, {other.to<float>()}, dlprim::core::PointwiseOp::eCmpNe);
         return out;
 
     }
@@ -1105,19 +1092,10 @@ using c10::DeviceType;
     Tensor & eq_out(const Tensor & self, const Scalar & other, Tensor & out)
     {
         GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        
-        dlprim::Tensor x(todp(self_c));
-        dlprim::Tensor y(todp(out_c));
-        dlprim::core::pointwise_operation_broadcast({x},{y},{other.to<double>()},{x.dtype()},
-                    "y0 = typeof_y0( x0 == typeof_x0(w0) );");
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-
-        sync_if_needed(self.device());
+        dlprim::Tensor x(todp(self, true));
+        dlprim::Tensor y(todp(out, true));
+        dlprim::core::pointwiseOpBroadcastStrided({x}, {y}, {other.to<float>()}, dlprim::core::PointwiseOp::eCmpEq);
         return out;
-
     }
 
     // {"schema": "aten::bitwise_and.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
