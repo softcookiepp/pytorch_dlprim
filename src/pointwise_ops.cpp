@@ -129,15 +129,13 @@ using c10::DeviceType;
         double value=0;
         auto dev_to_sync = self.device();
         if(isCPUScalar(other,value)) {
-            Tensor self_c = self.contiguous();
-            dlprim::Tensor x0=todp(self_c);
+            dlprim::Tensor x0=todp(self, true);
             float w0 = alpha.toDouble() * value;
 			dlprim::core::pointwiseOpStrided({x0}, {y0}, {w0}, dlprim::core::PointwiseOp::eAddScalar);
         }
         else if(isCPUScalar(self,value)) {
             dev_to_sync = other.device();
-            Tensor other_c = other.contiguous();
-            dlprim::Tensor x0=todp(other_c);
+            dlprim::Tensor x0=todp(other, true);
             float w0 = value;
             float w1 = alpha.toDouble();
 			dlprim::core::pointwiseOpStrided({x0}, {y0}, {w1, w0}, dlprim::core::PointwiseOp::eAxpb);
@@ -406,20 +404,12 @@ using c10::DeviceType;
     // {"schema": "aten::threshold_backward.grad_input(Tensor grad_output, Tensor self, Scalar threshold, *, Tensor(a!) grad_input) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & threshold_backward_out(const Tensor & grad_output, const Tensor & self, const Scalar & threshold, Tensor & grad_input)
     {
-        GUARD; 
-        Tensor self_c = self.contiguous(),
-               grad_input_c = grad_input.contiguous(),
-               grad_output_c = grad_output.contiguous();
-               
-        dlprim::Tensor dy=todp(grad_output_c);
-        dlprim::Tensor dx=todp(grad_input_c);
-        dlprim::Tensor Y=todp(self_c);
+        GUARD;   
+        dlprim::Tensor dy=todp(grad_output, true);
+        dlprim::Tensor dx=todp(grad_input, true);
+        dlprim::Tensor Y=todp(self, true);
         float th = threshold.toDouble();
 		dlprim::core::pointwiseOpStrided({Y, dy}, {dx}, {th}, dlprim::core::PointwiseOp::eThresholdBwd);
-        if(!grad_input.is_contiguous())
-            grad_input.copy_(grad_input_c);
-        
-        sync_if_needed(self.device());
         return grad_input;
     }
 
@@ -528,9 +518,9 @@ using c10::DeviceType;
     {
         GUARD;
         #if 1
-			dlprim::Tensor X = todp(self);
+			dlprim::Tensor X = todp(self, true);
 			Tensor out = new_tensor_as(X.shape(),self);
-			dlprim::Tensor Y(todp(out));
+			dlprim::Tensor Y(todp(out, true));
 			double w0 = min_val.toDouble();
 			double w1 = max_val.toDouble();
 			dlprim::core::pointwiseOpStrided({X}, {Y}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
@@ -553,7 +543,7 @@ using c10::DeviceType;
     {
         GUARD;
         #if 1
-			dlprim::Tensor X=todp(self);
+			dlprim::Tensor X=todp(self, true);
 			double w0 = min_val.toDouble();
 			double w1 = max_val.toDouble();
 			dlprim::core::pointwiseOpStrided({X}, {X}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanh);
@@ -575,10 +565,10 @@ using c10::DeviceType;
     Tensor hardtanh_backward(const Tensor & grad_output, const Tensor & self, const Scalar & min_val, const Scalar & max_val)
     {
         GUARD;
-        dlprim::Tensor X  = todp(self);
-        dlprim::Tensor dY = todp(grad_output);
+        dlprim::Tensor X  = todp(self, true);
+        dlprim::Tensor dY = todp(grad_output, true);
         Tensor result = new_tensor_as(X.shape(),self);
-        dlprim::Tensor dX = todp(result);
+        dlprim::Tensor dX = todp(result, true);
         double w0 = min_val.toDouble();
         double w1 = max_val.toDouble();
         dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {w0, w1}, dlprim::core::PointwiseOp::eHardtanhBwd);
@@ -590,9 +580,9 @@ using c10::DeviceType;
     Tensor abs(const Tensor & self)
     {
         GUARD;
-        dlprim::Tensor x=todp(self);
+        dlprim::Tensor x=todp(self, true);
         Tensor out = new_tensor_as(x.shape(),self);
-        dlprim::Tensor y=todp(out);
+        dlprim::Tensor y=todp(out, true);
 		dlprim::core::pointwiseOpStrided({x}, {y}, {}, dlprim::core::PointwiseOp::eAbs);
         return out;
     }
@@ -713,7 +703,7 @@ using c10::DeviceType;
     Tensor & hardswish_(Tensor & self)
     {
         GUARD;
-        dlprim::Tensor x=todp(self);
+        dlprim::Tensor x=todp(self, true);
         dlprim::core::pointwiseOpStrided({x},{x},{}, dlprim::core::PointwiseOp::eHardswish);
         return self;
     }
@@ -728,9 +718,9 @@ using c10::DeviceType;
     Tensor & hardsigmoid_backward_out(const Tensor & grad_output, const Tensor & self, Tensor & grad_input)
     {
         GUARD;
-        dlprim::Tensor x=todp(self);
-        dlprim::Tensor dx=todp(grad_input);
-        dlprim::Tensor dy=todp(grad_output);
+        dlprim::Tensor x=todp(self, true);
+        dlprim::Tensor dx=todp(grad_input, true);
+        dlprim::Tensor dy=todp(grad_output, true);
 
         dlprim::core::pointwiseOpStrided({x, dy}, {dx},{}, dlprim::core::PointwiseOp::eHardsigmoidBwd);
         return grad_input;
@@ -740,12 +730,10 @@ using c10::DeviceType;
     Tensor hardswish_backward(const Tensor & grad_output, const Tensor & self)
     {
         GUARD;
-        dlprim::Tensor dy=todp(grad_output);
-        
+        dlprim::Tensor dy=todp(grad_output, true);
         Tensor out = new_tensor_as(dy.shape(),grad_output);
-        dlprim::Tensor dx=todp(out);
-        
-        dlprim::Tensor x = todp(self);
+        dlprim::Tensor dx=todp(out, true);
+        dlprim::Tensor x = todp(self, true);
 		dlprim::core::pointwiseOpStrided({x, dy}, {dx}, {}, dlprim::core::PointwiseOp::eHardswishBwd);
         return out;
     }
@@ -866,20 +854,11 @@ using c10::DeviceType;
     // {"schema": "aten::silu_backward.grad_input(Tensor grad_output, Tensor self, *, Tensor(a!) grad_input) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & silu_backward_out(const Tensor & grad_output, const Tensor & self, Tensor & grad_input)
     {
-        GUARD; 
-        Tensor grad_output_c = grad_output.contiguous(),
-               grad_input_c  = grad_input.contiguous(),
-               self_c = self.contiguous();
-               
-        dlprim::Tensor x=todp(self_c);
-        dlprim::Tensor dy=todp(grad_output_c);
-        dlprim::Tensor dx=todp(grad_input);
+        GUARD;
+        dlprim::Tensor x=todp(self, true);
+        dlprim::Tensor dy=todp(grad_output, true);
+        dlprim::Tensor dx=todp(grad_input, true);
 		dlprim::core::pointwiseOpStrided({x, dy}, {dx}, {}, dlprim::core::PointwiseOp::eSiluBwd);
-        
-        if(!grad_input.is_contiguous())
-            grad_input.copy_(grad_input_c);
-        
-        sync_if_needed(self.device());
         return grad_input;
     }
 
@@ -900,7 +879,7 @@ using c10::DeviceType;
     {
         GUARD;
         Tensor self_c = self.contiguous();
-        dlprim::Tensor X=todp(self_c);
+        dlprim::Tensor X=todp(self_c, true);
         dlprim::core::activation_forward(X,X,dlprim::StandardActivations::tanh);
         if(!self.is_contiguous())
             self.copy_(self_c);
@@ -913,15 +892,9 @@ using c10::DeviceType;
     {
         GUARD;
         double slope = negative_slope.to<double>();
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        
-        dlprim::Tensor x=todp(self_c);
-        dlprim::Tensor y=todp(out_c);
+        dlprim::Tensor x=todp(self, true);
+        dlprim::Tensor y=todp(out, true);
         dlprim::core::pointwiseOpStrided({x},{y},{slope}, dlprim::core::PointwiseOp::eLeakyRelu);
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-        
         sync_if_needed(self.device());
         return out;
     }
@@ -931,18 +904,10 @@ using c10::DeviceType;
     {
         GUARD;
         double slope = negative_slope.to<double>();
-        Tensor self_c = self.contiguous(),
-               grad_input_c  = grad_input.contiguous(),
-               grad_output_c = grad_output.contiguous();
-        
-        dlprim::Tensor y=todp(self_c);
-        dlprim::Tensor dy=todp(grad_output_c);
-        dlprim::Tensor dx=todp(grad_input_c);
+        dlprim::Tensor y=todp(self, true);
+        dlprim::Tensor dy=todp(grad_output, true);
+        dlprim::Tensor dx=todp(grad_input, true);
         dlprim::core::pointwiseOpStrided({y,dy},{dx},{slope}, dlprim::core::PointwiseOp::eLeakyReluBwd);
-        
-        if(!grad_input.is_contiguous())
-            grad_input.copy_(grad_input_c);
-        
         sync_if_needed(self.device());
         return grad_input;
     }
@@ -1217,19 +1182,13 @@ using c10::DeviceType;
     Tensor & clamp_out(const Tensor & self, const c10::optional<Scalar> & min, const c10::optional<Scalar> & max, Tensor & out)
     {
         GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        dlprim::Tensor Y = todp(out_c);
-        dlprim::Tensor X = todp(self_c);
+        dlprim::Tensor Y = todp(out, true);
+        dlprim::Tensor X = todp(self, true);
         float minW = -1.0*std::numeric_limits<float>::infinity();
         float maxW = std::numeric_limits<float>::infinity();
         if (min) minW = min->to<float>();
 		if (max) maxW = max->to<float>();
 		dlprim::core::pointwiseOpStrided({X}, {Y}, {minW, maxW}, dlprim::core::PointwiseOp::eClamp);
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-        
-        sync_if_needed(self.device());
         return out;
     }
     
@@ -1251,17 +1210,11 @@ using c10::DeviceType;
     Tensor & gelu_out(const Tensor & self, c10::string_view approximate, Tensor & out)
     {
         GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        dlprim::Tensor Y = todp(out_c);
-        dlprim::Tensor X = todp(self_c);
+        dlprim::Tensor Y = todp(out, true);
+        dlprim::Tensor X = todp(self, true);
         TORCH_CHECK(approximate == "none" || approximate == "tanh", "Unsupported variant")
         dlprim::core::PointwiseOp op = approximate == "tanh" ? dlprim::core::PointwiseOp::eGeluApproximate : dlprim::core::PointwiseOp::eGelu;
 		dlprim::core::pointwiseOpStrided({X}, {Y}, {}, op);
-            
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-        
-        sync_if_needed(self.device());
         return out;
     }
 
@@ -1269,24 +1222,15 @@ using c10::DeviceType;
     Tensor & gelu_backward_out(const Tensor & grad_output, const Tensor & self, c10::string_view approximate, Tensor & grad_input)
     {
         GUARD;
-        Tensor grad_output_c = grad_output.contiguous(),
-               grad_input_c  = grad_input.contiguous(),
-               self_c = self.contiguous();
-
-        dlprim::Tensor dX = todp(grad_input_c);
-        dlprim::Tensor dY = todp(grad_output_c);
-        dlprim::Tensor X  = todp(self_c);
+        dlprim::Tensor dX = todp(grad_input, true);
+        dlprim::Tensor dY = todp(grad_output, true);
+        dlprim::Tensor X  = todp(self, true);
 
         TORCH_CHECK(approximate == "none" || approximate == "tanh","Unsupported variant")
 
         char const *eq;
 		auto op = approximate == "tanh" ? dlprim::core::PointwiseOp::eGeluApproximateBwd : dlprim::core::PointwiseOp::eGeluBwd;
 		dlprim::core::pointwiseOpStrided({X, dY}, {dX}, {}, op);
-		
-        if (!grad_input.is_contiguous())
-            grad_input.copy_(grad_input_c);
-
-        sync_if_needed(self.device());
         return grad_input;
     }
 
@@ -1294,9 +1238,8 @@ using c10::DeviceType;
     Tensor & logit_out(const Tensor & self, ::std::optional<double> eps, Tensor & out)
     {
         GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        dlprim::Tensor X = todp(self_c);
-        dlprim::Tensor Y = todp(out_c);
+        dlprim::Tensor X = todp(self, true);
+        dlprim::Tensor Y = todp(out, true);
         // all push constants are float, kernel will reinterpret cast it back to uint during execution
         uint32_t useEps = 0;
         float epsArg;
@@ -1309,10 +1252,6 @@ using c10::DeviceType;
 		TORCH_CHECK(sizeof(float) == sizeof(uint32_t)); // paranoia
 		std::memcpy(&useEpsArg, &useEps, sizeof(float));
 		dlprim::core::pointwiseOpStrided({X}, {Y}, {epsArg, useEpsArg}, dlprim::core::PointwiseOp::eLogit);
-        if(!out.is_contiguous())
-            out.copy_(out_c);
-
-        sync_if_needed(self.device());
         return out;
     }
     // {"schema": "aten::logit(Tensor self, float? eps=None) -> Tensor", "dispatch": "True", "default": "False"}
@@ -1347,13 +1286,8 @@ using c10::DeviceType;
             //out = std::move(tmp);
             out.resize_({size});
         }
-        Tensor out_c = out.contiguous();
-        dlprim::Tensor Y = todp(out_c);
+        dlprim::Tensor Y = todp(out, true);
 		dlprim::core::pointwiseOpStrided({Y}, {Y}, {dstart, dstep}, dlprim::core::PointwiseOp::eArange);
-        if(!out.is_contiguous())
-            out.copy_(out_c);
-
-        sync_if_needed(out.device());
         return out;
     }
 
@@ -1374,16 +1308,8 @@ using c10::DeviceType;
     ::std::tuple<Tensor &,Tensor &> log_sigmoid_forward_out(const Tensor & self, Tensor & output, Tensor & buffer)
     {
         GUARD;
-        Tensor self_c = self.contiguous(), output_c = output.contiguous(), buffer_c = buffer.contiguous();
-        dlprim::Tensor x=todp(self_c), out = todp(output_c), buf = todp(buffer_c);
+        dlprim::Tensor x=todp(self, true), out = todp(output, true), buf = todp(buffer, true);
 		dlprim::core::pointwiseOpStrided({x}, {out, buf}, {}, dlprim::core::PointwiseOp::eLogSigmoid);
-        if(!output.is_contiguous())
-            output.copy_(output_c);
-
-        if(!buffer.is_contiguous())
-            buffer.copy_(buffer_c);
-
-        sync_if_needed(self.device());
         return ::std::tuple<Tensor &,Tensor &>(output,buffer);
 
     }
@@ -1403,21 +1329,11 @@ using c10::DeviceType;
     Tensor & log_sigmoid_backward_out(const Tensor & grad_output, const Tensor & self, const Tensor & buffer, Tensor & grad_input)
     {
         GUARD;
-        Tensor grad_output_c = grad_output.contiguous();
-        Tensor self_c = self.contiguous();
-        Tensor buffer_c = buffer.contiguous();
-        Tensor grad_input_c = grad_input.contiguous();
-
-        dlprim::Tensor dy = todp(grad_output_c);
-        dlprim::Tensor x = todp(self_c);
-        dlprim::Tensor buf = todp(buffer_c);
-        dlprim::Tensor dx = todp(grad_input_c);
+        dlprim::Tensor dy = todp(grad_output, true);
+        dlprim::Tensor x = todp(self, true);
+        dlprim::Tensor buf = todp(buffer, true);
+        dlprim::Tensor dx = todp(grad_input, true);
 		dlprim::core::pointwiseOpStrided({x, buf, dy}, {dx}, {}, dlprim::core::PointwiseOp::eLogSigmoidBwd);
-
-        if(!grad_input.is_contiguous())
-            grad_input.copy_(grad_input_c);;
-
-        sync_if_needed(self.device());
         return grad_input;
     }
     // {"schema": "aten::log_sigmoid_backward(Tensor grad_output, Tensor self, Tensor buffer) -> Tensor", "dispatch": "True", "default": "False"}
