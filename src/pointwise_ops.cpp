@@ -124,33 +124,25 @@ using c10::DeviceType;
     Tensor & add_out(const Tensor & self, const Tensor & other, const Scalar & alpha, Tensor & out)
     {
         GUARD;
-        Tensor out_c = out.contiguous();
-        dlprim::Tensor y0=todp(out_c);
+        dlprim::Tensor y0=todp(out, true);
         double value=0;
-        auto dev_to_sync = self.device();
         if(isCPUScalar(other,value)) {
             dlprim::Tensor x0=todp(self, true);
             float w0 = alpha.toDouble() * value;
 			dlprim::core::pointwiseOpStrided({x0}, {y0}, {w0}, dlprim::core::PointwiseOp::eAddScalar);
         }
         else if(isCPUScalar(self,value)) {
-            dev_to_sync = other.device();
             dlprim::Tensor x0=todp(other, true);
             float w0 = value;
             float w1 = alpha.toDouble();
 			dlprim::core::pointwiseOpStrided({x0}, {y0}, {w1, w0}, dlprim::core::PointwiseOp::eAxpb);
         }
         else {
-            Tensor self_c = self.contiguous();
-            dlprim::Tensor x0=todp(self_c);
-            Tensor other_c = other.contiguous();
-            dlprim::Tensor x1=todp(other_c);
+            dlprim::Tensor x0=todp(self, true);
+            dlprim::Tensor x1=todp(other, true);
             float w0 = alpha.toDouble();
 			dlprim::core::pointwiseOpBroadcastStrided({x1, x0}, {y0}, {w0}, dlprim::core::PointwiseOp::eAxpy);
         }
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-        sync_if_needed(dev_to_sync);
         return out;
     }
     
@@ -200,67 +192,37 @@ using c10::DeviceType;
         return out;
     }
     
-    Tensor & comp_out(const Tensor & self, const Scalar & other, Tensor & out,std::string const &op)
+    Tensor & comp_out(const Tensor & self, const Scalar & other, Tensor & out, dlprim::core::PointwiseOp op)
     {
         GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        
-        dlprim::Tensor x0=todp(self_c);
-        dlprim::Tensor y0=todp(out_c);
+        dlprim::Tensor x0=todp(self, true);
+        dlprim::Tensor y0=todp(out, true);
         float w0 = other.toDouble();
-
-        dlprim::core::PointwiseOp opEnum;
-        if (op == ">")
-			opEnum = dlprim::core::PointwiseOp::eCmpGt;
-		else if (op == "<")
-			opEnum = dlprim::core::PointwiseOp::eCmpLt;
-		else if (op == ">=")
-			opEnum = dlprim::core::PointwiseOp::eCmpGe;
-		else if (op == "<=")
-			opEnum = dlprim::core::PointwiseOp::eCmpLe;
-		else if (op == "==")
-			opEnum = dlprim::core::PointwiseOp::eCmpEq;
-		else if (op == "!=")
-			opEnum = dlprim::core::PointwiseOp::eCmpNe;
-		else
-			throw std::runtime_error("op not found");
-		#if 1
-			// gonna come back to this later
-			dlprim::core::pointwiseOpBroadcastStrided({x0}, {y0}, {w0}, opEnum);
-		#else
-			dlprim::core::pointwise_operation_broadcast({x0},{y0},{w0},{tart::dtypes::float32},
-											"y0 = typeof_y0( typeof_x0(x0) " + op + " typeof_x0(w0) ? 1 : 0 );");
-		#endif
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-        
-        sync_if_needed(self.device());
+		dlprim::core::pointwiseOpBroadcastStrided({x0}, {y0}, {w0}, op);
         return out;
     }
+    
     // {"schema": "aten::le.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & le_out(const Tensor & self, const Scalar & other, Tensor & out)
     {
-        return comp_out(self,other,out,"<=");
+        return comp_out(self,other,out, dlprim::core::PointwiseOp::eCmpLe);
     }
     // {"schema": "aten::ge.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & ge_out(const Tensor & self, const Scalar & other, Tensor & out)
     {
-        return comp_out(self,other,out,">=");
+        return comp_out(self,other,out, dlprim::core::PointwiseOp::eCmpGe);
     }
 
     // {"schema": "aten::lt.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & lt_out(const Tensor & self, const Scalar & other, Tensor & out)
     {
-        return comp_out(self,other,out,"<");
+        return comp_out(self,other,out, dlprim::core::PointwiseOp::eCmpLt);
     }
     // {"schema": "aten::gt.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & gt_out(const Tensor & self, const Scalar & other, Tensor & out)
     {
-        return comp_out(self,other,out,">");
+        return comp_out(self,other,out, dlprim::core::PointwiseOp::eCmpGt);
     }
-
-
 
     // {"schema": "aten::neg.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & neg_out(const Tensor & self, Tensor & out)
@@ -280,7 +242,6 @@ using c10::DeviceType;
     {
         GUARD;
         return unitary_op(self, out, dlprim::core::PointwiseOp::eSqrt);
-        //return unitary_op(self,out,"y0 = sqrt(x0);");
     }
 
     // {"schema": "aten::pow.Tensor_Scalar_out(Tensor self, Scalar exponent, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -324,12 +285,7 @@ using c10::DeviceType;
         dlprim::Tensor x1=todp(end_c);
         dlprim::Tensor y0 = todp(out);
         float w = weight.toDouble();
-		#if 1
-			dlprim::core::pointwiseOpBroadcastStrided({x0, x1}, {y0}, {w}, dlprim::core::PointwiseOp::eLerp);
-		#else
-			dlprim::core::pointwise_operation_broadcast({x0,x1},{y0},{w},
-										  "y0 = x0 + w0 * (x1 - x0 );");
-		#endif
+		dlprim::core::pointwiseOpBroadcastStrided({x0, x1}, {y0}, {w}, dlprim::core::PointwiseOp::eLerp);
         sync_if_needed(self.device());
         return out;
 

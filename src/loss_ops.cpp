@@ -184,18 +184,13 @@ using c10::DeviceType;
 	Tensor mse_loss_backward(const Tensor & grad_output, const Tensor & self, const Tensor & target, int64_t reduction)
 	{
 		GUARD;
-		Tensor grad_output_c = grad_output.contiguous();
-		Tensor self_c = self.contiguous();
-		Tensor target_c = target.contiguous();
-		dlprim::Tensor x = todp(self_c);
-		dlprim::Tensor dy = todp(grad_output_c);
-		dlprim::Tensor lbl = todp(target_c);
-		Tensor result = new_tensor_as(x.shape(),self_c);
-		dlprim::Tensor dx = todp(result);
+		dlprim::Tensor x = todp(self, true);
+		dlprim::Tensor dy = todp(grad_output, true);
+		dlprim::Tensor lbl = todp(target, true);
+		Tensor result = new_tensor_as(x.shape(),self);
+		dlprim::Tensor dx = todp(result, true);
 		double scale = reduction == 1 ? (1.0f/x.shape().total_size()) : 1.0;
-		dlprim::core::pointwise_operation_broadcast({dy,x,lbl},{dx},{scale},
-			"y0 = typeof_y0(2)*(typeof_y0(x1) - typeof_y0(x2)) * typeof_y0(x0) * typeof_y0(w0);");
-		sync_if_needed(self.device());
+		dlprim::core::pointwiseOpBroadcastStrided({dy, x, lbl}, {dx}, {scale}, dlprim::core::PointwiseOp::eMseBwd);
 		return result;
 	}
 
