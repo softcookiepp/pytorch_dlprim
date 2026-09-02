@@ -222,10 +222,6 @@ using c10::DeviceType;
         else if(bias_present) {
             dlprim::Tensor b = todp(*bias);
             dlprim::core::pointwiseOpBroadcastStrided({Y, b}, {Y}, {}, dlprim::core::PointwiseOp::eAdd);
-            #if 0
-            dlprim::core::pointwise_operation_broadcast({Y,b},{Y},{},
-                                      "y0 = x0 + x1;");
-								  #endif
         }
         return std::tuple<Tensor,Tensor,Tensor>(result,calc_mean_pt,calc_rstd_pt);
     }
@@ -328,8 +324,13 @@ using c10::DeviceType;
             if(weight_present) {
                 auto pt_dYW_diff = new_tensor_as(dY.shape(),input);
                 dYW_diff = todp(pt_dYW_diff);
-                dlprim::core::pointwise_operation_broadcast({dY,W},{dYW_diff},{},{},
-                        "y0 = x0 * x1;");
+                #if 0
+					// This is causing a shape-related error, inspect more closely later
+					dlprim::core::pointwiseOpBroadcastStrided({dY, W}, {dYW_diff}, {}, dlprim::core::PointwiseOp::eMul);
+                #else
+					dlprim::core::pointwise_operation_broadcast({dY,W},{dYW_diff},{},{},
+							"y0 = x0 * x1;");
+				#endif
             }
 
             bn->enqueue_backward_rstd(
@@ -401,11 +402,20 @@ using c10::DeviceType;
                 b = todp(*bias);
                 b.reshape(wb_shape);
             }
-            if (weight_present && bias_present) {
+            // all of these are giving the same shape problem, for whatever reason.
+            if (weight_present && bias_present)
+            {
+				//dlprim::core::pointwiseOpBroadcastStrided({Y, w, b}, {Y}, {}, dlprim::core::PointwiseOp::eFma);
                 dlprim::core::pointwise_operation_broadcast({Y, w, b}, {Y}, {}, "y0 = x0 * x1 + x2;");
-            } else if (weight_present) {
+            }
+            else if (weight_present)
+            {
+				//dlprim::core::pointwiseOpBroadcastStrided({Y, w}, {Y}, {}, dlprim::core::PointwiseOp::eMul);
                 dlprim::core::pointwise_operation_broadcast({Y, w}, {Y}, {}, "y0 = x0 * x1;");
-            } else {
+            }
+            else
+            {
+				//dlprim::core::pointwiseOpBroadcastStrided({Y, b}, {Y}, {}, dlprim::core::PointwiseOp::eAdd);
                 dlprim::core::pointwise_operation_broadcast({Y, b}, {Y}, {}, "y0 = x0 + x1;");
             }
         }
