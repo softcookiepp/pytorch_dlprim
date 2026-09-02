@@ -212,14 +212,22 @@ using c10::DeviceType;
         if(weight_present && bias_present) {
             dlprim::Tensor w = todp(*weight);
             dlprim::Tensor b = todp(*bias);
-            dlprim::core::pointwise_operation_broadcast({Y,w,b},{Y},{},
-                                      "y0 = x0 * x1 + x2;");
+            #if 1
+				dlprim::core::pointwiseOpBroadcastStrided({Y, w, b}, {Y}, {}, dlprim::core::PointwiseOp::eFma);
+            #else
+				dlprim::core::pointwise_operation_broadcast({Y,w,b},{Y},{},
+										  "y0 = x0 * x1 + x2;");
+			#endif
 
         }
         else if(weight_present) {
             dlprim::Tensor w = todp(*weight);
-            dlprim::core::pointwise_operation_broadcast({Y,w},{Y},{},
-                                      "y0 = x0 * x1;");
+            #if 1
+				dlprim::core::pointwiseOpBroadcastStrided({Y, w}, {Y}, {1.0}, dlprim::core::PointwiseOp::eAxpy);
+            #else
+				dlprim::core::pointwise_operation_broadcast({Y,w},{Y},{},
+										  "y0 = x0 * x1;");
+			#endif
         }
         else if(bias_present) {
             dlprim::Tensor b = todp(*bias);
