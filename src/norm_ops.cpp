@@ -212,27 +212,20 @@ using c10::DeviceType;
         if(weight_present && bias_present) {
             dlprim::Tensor w = todp(*weight);
             dlprim::Tensor b = todp(*bias);
-            #if 1
-				dlprim::core::pointwiseOpBroadcastStrided({Y, w, b}, {Y}, {}, dlprim::core::PointwiseOp::eFma);
-            #else
-				dlprim::core::pointwise_operation_broadcast({Y,w,b},{Y},{},
-										  "y0 = x0 * x1 + x2;");
-			#endif
-
+			dlprim::core::pointwiseOpBroadcastStrided({Y, w, b}, {Y}, {}, dlprim::core::PointwiseOp::eFma);
         }
-        else if(weight_present) {
+        else if(weight_present)
+        {
             dlprim::Tensor w = todp(*weight);
-            #if 1
-				dlprim::core::pointwiseOpBroadcastStrided({Y, w}, {Y}, {1.0}, dlprim::core::PointwiseOp::eAxpy);
-            #else
-				dlprim::core::pointwise_operation_broadcast({Y,w},{Y},{},
-										  "y0 = x0 * x1;");
-			#endif
+			dlprim::core::pointwiseOpBroadcastStrided({Y, w}, {Y}, {1.0}, dlprim::core::PointwiseOp::eAxpy);
         }
         else if(bias_present) {
             dlprim::Tensor b = todp(*bias);
+            dlprim::core::pointwiseOpBroadcastStrided({Y, b}, {Y}, {}, dlprim::core::PointwiseOp::eAdd);
+            #if 0
             dlprim::core::pointwise_operation_broadcast({Y,b},{Y},{},
                                       "y0 = x0 + x1;");
+								  #endif
         }
         return std::tuple<Tensor,Tensor,Tensor>(result,calc_mean_pt,calc_rstd_pt);
     }
