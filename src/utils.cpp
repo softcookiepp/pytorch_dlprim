@@ -68,6 +68,8 @@ namespace ptdlprim
         auto strides = tt.strides();
         auto offset = tt.storage_offset();
         auto dtype = tt.dtype();
+        
+		TORCH_CHECK(sizes.size() == strides.size());
         tart::buffer_ptr buf = buffer_from_tensor(tt);
         dlprim::Shape sp;
         dlprim::Shape st;
