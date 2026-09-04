@@ -329,6 +329,33 @@ using c10::DeviceType;
 
         return out;
     }
+    
+    Tensor & binaryOpOut(const Tensor & self, const Tensor & other, Tensor & out,
+		dlprim::core::PointwiseOp opLeftTensor,
+		dlprim::core::PointwiseOp opRightTensor,
+		dlprim::core::PointwiseOp opBothTensor)
+    {
+        GUARD;
+        dlprim::Tensor y(todp(out, true));
+        double value;
+        if(isCPUScalar(other,value))
+        {
+			// x0 is left
+            dlprim::Tensor x0(todp(self, true));
+            dlprim::core::pointwiseOpBroadcastStrided({x0}, {y}, {value}, opLeftTensor);
+        }
+        else if(isCPUScalar(self,value)) {
+			// x0 is right
+            dlprim::Tensor x0(todp(other, true));
+            dlprim::core::pointwiseOpBroadcastStrided({x0}, {y}, {value}, opRightTensor);
+        }
+        else {
+            dlprim::Tensor x0(todp(self, true));
+            dlprim::Tensor x1(todp(other, true));
+            dlprim::core::pointwiseOpBroadcastStrided({x0,x1}, {y}, {}, opBothTensor);
+        }
+        return out;
+    }
 
 
     Tensor & mul_out(const Tensor & self, const Tensor & other, Tensor & out)
