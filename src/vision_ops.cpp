@@ -533,16 +533,9 @@ using c10::DeviceType;
         dp_bias.reshape(dlprim::Shape(_3D));
         double scale = 1.0/std::sqrt(double(dim_per_head));
         // ok, this actually uses positioning. This will not work out of the box with pointwiseOpBroadcastStrided
-        dlprim::core::pointwise_operation_broadcast(
-                {dp_qkv,dp_bias},{dp_out},
-                {scale,double(D)},
-                {dp_qkv.dtype(), tart::dtypes::int64},
-                R"xxx(
-                    uint position_d1 = uint(index.s[1]);
-                    typeof_x0 scale = position_d1 < uint(w1) ? w0 : typeof_x0(1);
-                    y0 = (x0 + x1)*scale;
-                )xxx",
-                false); // don't shrink broadcast to make sure we have correct dims
+        // oh wait, actually it will! we just need to pass the position argument...
+		dlprim::core::pointwiseOpBroadcastStrided(
+			{dp_qkv, dp_bias}, {dp_out}, {scale, double(D)}, dlprim::core::PointwiseOp::eTransformBiasRescaleQKV);
         Tensor q_k_v_cont_as_q_k_v = q_k_v_same_order;
         q_k_v_cont_as_q_k_v = torch::transpose(q_k_v_cont_as_q_k_v,1,2);
         q_k_v_cont_as_q_k_v = torch::transpose(q_k_v_cont_as_q_k_v,2,3);

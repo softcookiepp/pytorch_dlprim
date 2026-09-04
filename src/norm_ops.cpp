@@ -276,8 +276,8 @@ using c10::DeviceType;
         
         dlprim::Tensor dX,dG,dB;
         if(bwd_gamma)  {
-            gamma_diff = new_tensor_as(norm_shape,input);
-            dG = todp(gamma_diff);
+			gamma_diff = new_tensor_as(norm_shape,input);
+			dG = todp(gamma_diff);
             dG.reshape(dlprim::Shape(N));
             auto mean = todp(save_mean);
             auto rstd = todp(save_rstd);
@@ -294,8 +294,8 @@ using c10::DeviceType;
             op->enqueue({X,mean,rstd,dY},{dG},wsg.ws,{},{1},{0});
         }
         if(bwd_beta) {
-            beta_diff = new_tensor_as(norm_shape,input);
-            dB = todp(beta_diff);
+			beta_diff = new_tensor_as(norm_shape,input);
+			dB = todp(beta_diff);
             dB.reshape(dlprim::Shape(N));
             auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
                         device,
@@ -308,8 +308,8 @@ using c10::DeviceType;
             op->enqueue({dY},{dB},wsg.ws,{},{1},{0});
         }
         if(bwd_data) {
-            x_diff = new_tensor_as(src_shape,input);
-            dX = todp(x_diff);
+			x_diff = new_tensor_as(src_shape,input);
+			dX = todp(x_diff);
             dX.reshape(bn_shape);
             auto bn = dlprim::core::BatchNormFwdBwd::create(device,bn_shape,X.dtype());
             size_t ws_size = bn->workspace();
@@ -321,16 +321,19 @@ using c10::DeviceType;
             dlprim::Tensor rstd  = todp(save_rstd);
             dlprim::Tensor dYW_diff = dY;
 
-            if(weight_present) {
+            if(weight_present)
+            {
                 auto pt_dYW_diff = new_tensor_as(dY.shape(),input);
-                dYW_diff = todp(pt_dYW_diff);
-                #if 0
-					// This is causing a shape-related error, inspect more closely later
-					dlprim::core::pointwiseOpBroadcastStrided({dY, W}, {dYW_diff}, {}, dlprim::core::PointwiseOp::eMul);
-                #else
-					dlprim::core::pointwise_operation_broadcast({dY,W},{dYW_diff},{},{},
-							"y0 = x0 * x1;");
-				#endif
+				dYW_diff = todp(pt_dYW_diff);
+				std::cout << "dYW_diff shape: ";
+				for (size_t i = 0; i < dYW_diff.shape().size(); i += 1)
+					std::cout << dYW_diff.shape()[i] << ",";
+				std::cout << "\ndYW_diff stride: ";
+				for (size_t i = 0; i < dYW_diff.stride().size(); i += 1)
+					std::cout << dYW_diff.stride()[i] << ",";
+				std::cout << "\n";
+				// This is causing a shape-related error, inspect more closely later
+				dlprim::core::pointwiseOpBroadcastStrided({dY, W}, {dYW_diff}, {}, dlprim::core::PointwiseOp::eMul);
             }
 
             bn->enqueue_backward_rstd(
@@ -402,21 +405,17 @@ using c10::DeviceType;
                 b = todp(*bias);
                 b.reshape(wb_shape);
             }
-            // all of these are giving the same shape problem, for whatever reason.
             if (weight_present && bias_present)
             {
-				//dlprim::core::pointwiseOpBroadcastStrided({Y, w, b}, {Y}, {}, dlprim::core::PointwiseOp::eFma);
-                dlprim::core::pointwise_operation_broadcast({Y, w, b}, {Y}, {}, "y0 = x0 * x1 + x2;");
+				dlprim::core::pointwiseOpBroadcastStrided({Y, w, b}, {Y}, {}, dlprim::core::PointwiseOp::eFma);
             }
             else if (weight_present)
             {
-				//dlprim::core::pointwiseOpBroadcastStrided({Y, w}, {Y}, {}, dlprim::core::PointwiseOp::eMul);
-                dlprim::core::pointwise_operation_broadcast({Y, w}, {Y}, {}, "y0 = x0 * x1;");
+				dlprim::core::pointwiseOpBroadcastStrided({Y, w}, {Y}, {}, dlprim::core::PointwiseOp::eMul);
             }
             else
             {
-				//dlprim::core::pointwiseOpBroadcastStrided({Y, b}, {Y}, {}, dlprim::core::PointwiseOp::eAdd);
-                dlprim::core::pointwise_operation_broadcast({Y, b}, {Y}, {}, "y0 = x0 + x1;");
+				dlprim::core::pointwiseOpBroadcastStrided({Y, b}, {Y}, {}, dlprim::core::PointwiseOp::eAdd);
             }
         }
 
@@ -514,9 +513,7 @@ using c10::DeviceType;
                 dY.reshape(dlprim::Shape(N, group, C / group, HxW));
                 dYW_diff.reshape(dlprim::Shape(N, group, C / group, HxW));
                 W.reshape(dlprim::Shape(1, group, C / group, 1));
-                
-                dlprim::core::pointwise_operation_broadcast({dY, W}, {dYW_diff}, {}, "y0 = x0 * x1;");
-                
+				dlprim::core::pointwiseOpBroadcastStrided({dY, W}, {dYW_diff}, {}, dlprim::core::PointwiseOp::eMul);
                 dY.reshape(bn_shape);
                 dYW_diff.reshape(bn_shape);
             }

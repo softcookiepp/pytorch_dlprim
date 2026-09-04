@@ -84,35 +84,44 @@ namespace ptdlprim
             sp = dlprim::Shape::from_range(sizes.begin(), sizes.end());
             st = dlprim::Shape::from_range(strides.begin(), strides.end());
 		}
-        dlprim::Tensor res(buf,offset,sp, st, todp(dtype));
-        if (!res.isContiguous() && !skipContiguousCheck)
+		dlprim::Tensor res;
+		if (tt.is_contiguous())
 		{
-			std::cout << "	torch shape: ";
-			for (auto& s : tt.sizes())
-				std::cout << s << ", ";
-			std::cout << std::endl;
-			std::cout << "	torch strides: ";
-			for (auto& s : tt.strides())
-				std::cout << s << ", ";
-			std::cout << std::endl;
-			std::cout << "	dlprim shape: ";
-			for (auto s : res.shape())
-				std::cout << s << ", ";
-			std::cout << std::endl;
-			std::cout << "	dlprim strides: ";
-			for (auto s : res.stride())
-				std::cout << s << ", ";
-			std::cout << std::endl;
-			if (tt.is_contiguous())
-				throw std::runtime_error("dlprim tensor marked as non-contiguous, when it should be marked as contiguous");
-			throw std::runtime_error("accidentally made non-contiguous tensor");
+			// strides can be auto-calculated, do this to avoid stride-related hiccups
+			res = dlprim::Tensor(buf, offset, sp, todp(dtype));
 		}
-		if (!sizes.empty())
+		else
 		{
-			for (size_t i = 0; i < res.shape().size(); i += 1)
+			res = dlprim::Tensor(buf,offset,sp, st, todp(dtype));
+			if (!res.isContiguous() && !skipContiguousCheck)
 			{
-				TORCH_CHECK(res.shape()[i] == tt.sizes()[i]);
-				TORCH_CHECK(res.stride()[i] == tt.strides()[i]);
+				std::cout << "	torch shape: ";
+				for (auto& s : tt.sizes())
+					std::cout << s << ", ";
+				std::cout << std::endl;
+				std::cout << "	torch strides: ";
+				for (auto& s : tt.strides())
+					std::cout << s << ", ";
+				std::cout << std::endl;
+				std::cout << "	dlprim shape: ";
+				for (auto s : res.shape())
+					std::cout << s << ", ";
+				std::cout << std::endl;
+				std::cout << "	dlprim strides: ";
+				for (auto s : res.stride())
+					std::cout << s << ", ";
+				std::cout << std::endl;
+				if (tt.is_contiguous())
+					throw std::runtime_error("dlprim tensor marked as non-contiguous, when it should be marked as contiguous");
+				throw std::runtime_error("accidentally made non-contiguous tensor");
+			}
+			if (!sizes.empty())
+			{
+				for (size_t i = 0; i < res.shape().size(); i += 1)
+				{
+					TORCH_CHECK(res.shape()[i] == tt.sizes()[i]);
+					TORCH_CHECK(res.stride()[i] == tt.strides()[i]);
+				}
 			}
 		}
         return res;
@@ -143,6 +152,7 @@ namespace ptdlprim
 
     torch::Tensor new_tensor_as(dlprim::Shape const &s,torch::Tensor const &as)
     {
+		//TORCH_CHECK(s.size() == as.strides().size())
         int64_t shape[dlprim::max_tensor_dim];
         for(int i=0;i<s.size();i++)
             shape[i]=s[i];
