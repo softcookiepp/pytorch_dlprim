@@ -291,45 +291,6 @@ using c10::DeviceType;
         return out;
 
     }
-
-    Tensor & binary_op_out_tensor(const Tensor & self, const Tensor & other, Tensor & out,std::string const &op,std::string op_builder="")
-    {
-        GUARD;
-        Tensor self_c  = self.contiguous(), out_c = out.contiguous(),
-               other_c = other.contiguous();
-        
-        if(op_builder.empty()) {
-            op_builder = "y0 = typeof_y0(typeof_x0(left) " + op + " typeof_x0(right));";
-        }
-
-        dlprim::Tensor y(todp(out_c));
-        double value;
-        if(isCPUScalar(other,value))
-        {
-            dlprim::Tensor x0(todp(self_c));
-            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.dtype()},
-                        "precise typeof_x0 left = x0; precise typeof_w0 right = w0;" + op_builder);
-            sync_if_needed(self.device());
-        }
-        else if(isCPUScalar(self,value)) {
-            dlprim::Tensor x0(todp(other_c));
-            dlprim::core::pointwise_operation_broadcast({x0},{y},{value},{x0.dtype()},
-                        "precise typeof_w0 left = w0; precise typeof_x0 right = x0;" + op_builder);
-            sync_if_needed(other.device());
-        }
-        else {
-            dlprim::Tensor x0(todp(self_c));
-            dlprim::Tensor x1(todp(other_c));
-            dlprim::core::pointwise_operation_broadcast({x0,x1},{y},{},
-                    "typeof_x0 left = x0; typeof_x1 right = x1;" + op_builder);
-            sync_if_needed(self.device());
-        }
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-
-        return out;
-    }
     
     Tensor & binaryOpOut(const Tensor & self, const Tensor & other, Tensor & out,
 		dlprim::core::PointwiseOp opLeftTensor,
@@ -1238,24 +1199,16 @@ using c10::DeviceType;
     {
         GUARD;
         // Still need to implement DTYPE_MAX and DTYPE_MIN for all dtypes
-        #if 0
-			PointwiseOp op = PointwiseOp::eMax;
-			return binaryOpOut(self, other, out, op, op, op);
-		#else
-			return binary_op_out_tensor(self,other,out,"","y0 = max(left,right); ");
-		#endif
+		PointwiseOp op = PointwiseOp::eMax;
+		return binaryOpOut(self, other, out, op, op, op);
     }
     // {"schema": "aten::minimum.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & minimum_out(const Tensor & self, const Tensor & other, Tensor & out)
     {
         GUARD;
         // same as above
-        #if 0
-			PointwiseOp op = PointwiseOp::eMin;
-			return binaryOpOut(self, other, out, op, op, op);
-		#else
-			return binary_op_out_tensor(self,other,out,"","y0 = min(left,right); ");
-		#endif
+		PointwiseOp op = PointwiseOp::eMin;
+		return binaryOpOut(self, other, out, op, op, op);
     }
 
    // {"schema": "aten::log_sigmoid_forward.output(Tensor self, *, Tensor(a!) output, Tensor(b!) buffer) -> (Tensor(a!), Tensor(b!))", "dispatch": "True", "default": "False"
