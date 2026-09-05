@@ -362,14 +362,7 @@ using c10::DeviceType;
     Tensor & mul_out(const Tensor & self, const Tensor & other, Tensor & out)
     {
         GUARD;
-        #if 1
-			return binaryOpOut(self, other, out,
-				PointwiseOp::eScale,
-				PointwiseOp::eScale,
-				PointwiseOp::eMul);
-        #else
-			return binary_op_out_tensor(self,other,out,"*");
-        #endif
+        return binaryOpOut(self, other, out, PointwiseOp::eScale, PointwiseOp::eScale, PointwiseOp::eMul);
     }
 
     // {"schema": "aten::addcdiv.out(Tensor self, Tensor tensor1, Tensor tensor2, *, Scalar value=1, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -1056,53 +1049,29 @@ using c10::DeviceType;
 
     Tensor & ne_out_tensor(const Tensor & self, const Tensor & other, Tensor & out)
     {
-		#if 1
-			PointwiseOp op = PointwiseOp::eCmpNe;
-			return binaryOpOut(self, other, out, op, op, op);
-		#else
-			return binary_op_out_tensor(self,other,out,"!=");
-		#endif
+		PointwiseOp op = PointwiseOp::eCmpNe;
+		return binaryOpOut(self, other, out, op, op, op);
     }
     Tensor & eq_out_tensor(const Tensor & self, const Tensor & other, Tensor & out)
     {
-		#if 1
-			PointwiseOp op = PointwiseOp::eCmpEq;
-			return binaryOpOut(self, other, out, op, op, op);
-		#else
-			return binary_op_out_tensor(self,other,out,"==");
-        #endif
+		PointwiseOp op = PointwiseOp::eCmpEq;
+		return binaryOpOut(self, other, out, op, op, op);
     }
     Tensor & lt_out_tensor(const Tensor & self, const Tensor & other, Tensor & out)
     {
-		#if 1
-			return binaryOpOut(self, other, out, PointwiseOp::eCmpLt, PointwiseOp::eCmpGt, PointwiseOp::eCmpLt);
-		#else
-			return binary_op_out_tensor(self,other,out,"<");
-		#endif
+		return binaryOpOut(self, other, out, PointwiseOp::eCmpLt, PointwiseOp::eCmpGt, PointwiseOp::eCmpLt);
     }
     Tensor & le_out_tensor(const Tensor & self, const Tensor & other, Tensor & out)
     {
-		#if 1
-			return binaryOpOut(self, other, out, PointwiseOp::eCmpLe, PointwiseOp::eCmpGe, PointwiseOp::eCmpLe);
-		#else
-			return binary_op_out_tensor(self,other,out,"<=");
-		#endif
+		return binaryOpOut(self, other, out, PointwiseOp::eCmpLe, PointwiseOp::eCmpGe, PointwiseOp::eCmpLe);
     }
     Tensor & gt_out_tensor(const Tensor & self, const Tensor & other, Tensor & out)
     {
-		#if 1
-			return binaryOpOut(self, other, out, PointwiseOp::eCmpGt, PointwiseOp::eCmpLt, PointwiseOp::eCmpGt);
-		#else
-			return binary_op_out_tensor(self,other,out,">");
-		#endif
+		return binaryOpOut(self, other, out, PointwiseOp::eCmpGt, PointwiseOp::eCmpLt, PointwiseOp::eCmpGt);
     }
     Tensor & ge_out_tensor(const Tensor & self, const Tensor & other, Tensor & out)
     {
-		#if 1
-			return binaryOpOut(self, other, out, PointwiseOp::eCmpGe, PointwiseOp::eCmpLe, PointwiseOp::eCmpGe);
-		#else
-			return binary_op_out_tensor(self,other,out,">=");
-		#endif
+		return binaryOpOut(self, other, out, PointwiseOp::eCmpGe, PointwiseOp::eCmpLe, PointwiseOp::eCmpGe);
     }
 
     // {"schema": "aten::eq.Scalar_out(Tensor self, Scalar other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
@@ -1120,36 +1089,24 @@ using c10::DeviceType;
     {
         GUARD;
         TORCH_CHECK(is_integer(self,true) && is_integer(other,true),"& is not valid for floating point");
-        #if 1
-			PointwiseOp op = self.dtype() == c10::kBool ? PointwiseOp::eLogicalAnd : PointwiseOp::eBitwiseAnd;
-			return binaryOpOut(self, other, out, op, op, op);
-		#else
-			return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "&&" : "&"), (self.dtype() == c10::kBool ? "y0 = typeof_y0(bool(left) && bool(right));" : ""));
-		#endif
+		PointwiseOp op = self.dtype() == c10::kBool ? PointwiseOp::eLogicalAnd : PointwiseOp::eBitwiseAnd;
+		return binaryOpOut(self, other, out, op, op, op);
     }
     // {"schema": "aten::bitwise_or.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bitwise_or_out(const Tensor & self, const Tensor & other, Tensor & out)
     {
         GUARD;
         TORCH_CHECK(is_integer(self,true) && is_integer(other,true),"| is not valid for floating point");
-        #if 1
-			PointwiseOp op = self.dtype() == c10::kBool ? PointwiseOp::eLogicalOr : PointwiseOp::eBitwiseOr;
-			return binaryOpOut(self, other, out, op, op, op);
-		#else
-			return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "||" : "|"), (self.dtype() == c10::kBool ? "y0 = typeof_y0(bool(left) || bool(right));" : ""));
-		#endif
+		PointwiseOp op = self.dtype() == c10::kBool ? PointwiseOp::eLogicalOr : PointwiseOp::eBitwiseOr;
+		return binaryOpOut(self, other, out, op, op, op);
     }
     // {"schema": "aten::bitwise_xor.Tensor_out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bitwise_xor_out(const Tensor & self, const Tensor & other, Tensor & out)
     {
         GUARD;
         TORCH_CHECK(is_integer(self,true) && is_integer(other,true),"^ is not valid for floating point");
-        #if 1
-			PointwiseOp op = self.dtype() == c10::kBool ? PointwiseOp::eCmpNe : PointwiseOp::eBitwiseXor;
-			return binaryOpOut(self, other, out, op, op, op);
-		#else
-			return binary_op_out_tensor(self,other,out,(self.dtype() == c10::kBool ? "!=" : "^"), (self.dtype() == c10::kBool ? "y0 = typeof_y0(bool(left) != bool(right));" : ""));
-		#endif
+		PointwiseOp op = self.dtype() == c10::kBool ? PointwiseOp::eCmpNe : PointwiseOp::eBitwiseXor;
+		return binaryOpOut(self, other, out, op, op, op);
     }
     // {"schema": "aten::bitwise_not.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & bitwise_not_out(const Tensor & self, Tensor & out)
@@ -1280,6 +1237,7 @@ using c10::DeviceType;
     Tensor & maximum_out(const Tensor & self, const Tensor & other, Tensor & out)
     {
         GUARD;
+        // Still need to implement DTYPE_MAX and DTYPE_MIN for all dtypes
         #if 0
 			PointwiseOp op = PointwiseOp::eMax;
 			return binaryOpOut(self, other, out, op, op, op);
@@ -1291,6 +1249,7 @@ using c10::DeviceType;
     Tensor & minimum_out(const Tensor & self, const Tensor & other, Tensor & out)
     {
         GUARD;
+        // same as above
         #if 0
 			PointwiseOp op = PointwiseOp::eMin;
 			return binaryOpOut(self, other, out, op, op, op);
