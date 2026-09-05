@@ -104,21 +104,16 @@ using c10::DeviceType;
 	{
 		GUARD;
 		TORCH_CHECK(!weight || weight->numel()==0,"Weight in binar_cross_entroy isn't supported");
-		Tensor self_c = self.contiguous();
-		Tensor target_c = target.contiguous();
-		Tensor grad_output_c = grad_output.contiguous();
-		dlprim::Tensor x = todp(self_c);
-		dlprim::Tensor y = todp(target_c);
-		dlprim::Tensor dloss = todp(grad_output_c);
+		dlprim::Tensor x = todp(self, true);
+		dlprim::Tensor y = todp(target, true);
+		dlprim::Tensor dloss = todp(grad_output, true);
 		double scale = 1;
 		if(reduction == 1) // mean
 			scale = 1.0/x.shape().total_size(); 
-		dlprim::Tensor dx = todp(grad_input);
+		dlprim::Tensor dx = todp(grad_input, true);
 
 		// -w (y - x) / (x - x^2)
-		dlprim::core::pointwise_operation_broadcast({x,y,dloss},{dx},{scale},
-				"y0 = -(x1 - x0) / max(1e-12f,x0 - x0*x0) * x2 * w0;");
-		sync_if_needed(self.device());
+		dlprim::core::pointwiseOpBroadcastStrided({x,y,dloss},{dx},{scale}, dlprim::core::PointwiseOp::eBceBwd);
 		return grad_input;
 
 	}
