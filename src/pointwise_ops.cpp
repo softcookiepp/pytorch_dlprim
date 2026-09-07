@@ -436,11 +436,48 @@ using c10::DeviceType;
         return red_op_out(self,dim,keepdim,dtype,out,RedOp::mean);
     }
     
+    std::vector<int> getReduceDims(dlprim::Shape ref, std::vector<int> dim)
+    {
+		// get all the dimensions
+		if (dim.empty())
+		{
+			dim.resize(ref.size());
+			for (int i = 0; i < ref.size(); i += 1) dim[i] = i;
+		}
+		// check for negatives
+		for (int i = 0; i < dim.size(); i += 1) dim[i] = (dim[i] >= 0) ? dim[i] : static_cast<int>(ref.size()) + dim[i];
+		std::cout << "SHAPE SIZE: " << ref.size();
+		std::cout << "\nDIMS: ";
+		for (auto d : dim)
+			std::cout << d << ", ";
+		std::cout << std::endl;
+		return dim;
+	}
+    
+    std::vector<int> getReduceDims(dlprim::Shape ref, OptionalIntArrayRef odim)
+    {
+		// get all the dimensions
+		std::vector<int> dim;
+		if (odim)
+			dim.assign(odim->begin(), odim->end());
+		return getReduceDims(ref, dim);
+	}
+    
     // {"schema": "aten::sum.IntList_out(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & sum_out(const Tensor & self, OptionalIntArrayRef dim, bool keepdim, c10::optional<ScalarType> dtype, Tensor & out)
     {
         GUARD;
-        return red_op_out(self,dim,keepdim,dtype,out,RedOp::sum);
+        #if 0
+			// So what do we do here?
+			// The total number of kernels invoked is going to be the product of all reduce dimensions divided by the total number of kernels.
+			uint32_t reductionElems = 2;
+			// get dimensions, ceil-div them all by reductionElems
+			for (size_t i = 0; i < )
+        #else
+			auto sdp = todp(self);
+			auto dims = getReduceDims(sdp.shape(), dim);
+			return red_op_out(self,dim,keepdim,dtype,out,RedOp::sum);
+		#endif
     }
     // {"schema": "aten::prod.int_out(Tensor self, int dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}    
     Tensor & prod_out(const Tensor & self, int64_t dim, bool keepdim, ::std::optional<ScalarType> dtype, Tensor & out)
