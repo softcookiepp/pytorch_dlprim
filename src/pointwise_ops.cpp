@@ -431,7 +431,7 @@ using c10::DeviceType;
 			dlprim::Tensor out_dp = todp(out, true);
 			std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
 			dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
-				reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eAdd);
+				reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eAdd, {0.0});
         #endif
         
         Tensor self_c = self.contiguous(), out_c = out.contiguous();
