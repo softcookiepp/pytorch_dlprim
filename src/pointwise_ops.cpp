@@ -471,13 +471,26 @@ using c10::DeviceType;
 			// So what do we do here?
 			// The total number of kernels invoked is going to be the product of all reduce dimensions divided by the total number of kernels.
 			uint32_t reductionElems = 2;
-			// get dimensions, ceil-div them all by reductionElems
-			for (size_t i = 0; i < )
-        #else
-			auto sdp = todp(self);
-			auto dims = getReduceDims(sdp.shape(), dim);
-			return red_op_out(self,dim,keepdim,dtype,out,RedOp::sum);
-		#endif
+			dlprim::Tensor sdp = todp(self);
+			dlprim::Shape ref = sdp.shape();
+			std::vector<int> reduceDims = getReduceDims(ref, dim);
+			// So basically, the number of reduction elements per kernel is going to be pow(reductionElems, reduceDims.size())
+			
+			// This is the global size of the reduction. How does it work? I am not quite sure yet...
+			std::vector<int> reductionShape = reduceDims;
+			for (size_t i = 0; i < reductionShape.size(); i += 1)
+			{
+				reductionShape[i] = static_cast<int>(ref[reductionShape[i]]);
+			}
+			
+			
+			
+			std::cout << "\nREDUCTION SHAPE: ";
+			for (auto d : reductionShape)
+				std::cout << d << ", ";
+			std::cout << std::endl;
+        #endif
+		return red_op_out(self,dim,keepdim,dtype,out,RedOp::sum);
     }
     // {"schema": "aten::prod.int_out(Tensor self, int dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}    
     Tensor & prod_out(const Tensor & self, int64_t dim, bool keepdim, ::std::optional<ScalarType> dtype, Tensor & out)
