@@ -391,6 +391,33 @@ using c10::DeviceType;
         return std::make_pair(full_shape,squeezed_shape);
     }
     
+    std::vector<int> getReduceDims(dlprim::Shape ref, std::vector<int> dim)
+    {
+		// get all the dimensions
+		if (dim.empty())
+		{
+			dim.resize(ref.size());
+			for (int i = 0; i < ref.size(); i += 1) dim[i] = i;
+		}
+		// check for negatives
+		for (int i = 0; i < dim.size(); i += 1) dim[i] = (dim[i] >= 0) ? dim[i] : static_cast<int>(ref.size()) + dim[i];
+		std::cout << "SHAPE SIZE: " << ref.size();
+		std::cout << "\nDIMS: ";
+		for (auto d : dim)
+			std::cout << d << ", ";
+		std::cout << std::endl;
+		return dim;
+	}
+	
+	std::vector<int> getReduceDims(dlprim::Shape ref, OptionalIntArrayRef odim)
+    {
+		// get all the dimensions
+		std::vector<int> dim;
+		if (odim)
+			dim.assign(odim->begin(), odim->end());
+		return getReduceDims(ref, dim);
+	}
+    
     enum class RedOp  {
         sum,mean,prod
     };
@@ -398,6 +425,15 @@ using c10::DeviceType;
     Tensor & red_op_out(const Tensor & self, OptionalIntArrayRef dim, bool keepdim, c10::optional<ScalarType> /*dtype*/, Tensor & out, RedOp rop)
     {
         GUARD;
+        
+        #if 1
+			dlprim::Tensor self_dp = todp(self, true);
+			dlprim::Tensor out_dp = todp(out, true);
+			std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
+			dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
+				reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eAdd);
+        #endif
+        
         Tensor self_c = self.contiguous(), out_c = out.contiguous();
         
         dlprim::Tensor X = todp(self_c);
@@ -436,60 +472,12 @@ using c10::DeviceType;
         return red_op_out(self,dim,keepdim,dtype,out,RedOp::mean);
     }
     
-    std::vector<int> getReduceDims(dlprim::Shape ref, std::vector<int> dim)
-    {
-		// get all the dimensions
-		if (dim.empty())
-		{
-			dim.resize(ref.size());
-			for (int i = 0; i < ref.size(); i += 1) dim[i] = i;
-		}
-		// check for negatives
-		for (int i = 0; i < dim.size(); i += 1) dim[i] = (dim[i] >= 0) ? dim[i] : static_cast<int>(ref.size()) + dim[i];
-		std::cout << "SHAPE SIZE: " << ref.size();
-		std::cout << "\nDIMS: ";
-		for (auto d : dim)
-			std::cout << d << ", ";
-		std::cout << std::endl;
-		return dim;
-	}
     
-    std::vector<int> getReduceDims(dlprim::Shape ref, OptionalIntArrayRef odim)
-    {
-		// get all the dimensions
-		std::vector<int> dim;
-		if (odim)
-			dim.assign(odim->begin(), odim->end());
-		return getReduceDims(ref, dim);
-	}
     
     // {"schema": "aten::sum.IntList_out(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & sum_out(const Tensor & self, OptionalIntArrayRef dim, bool keepdim, c10::optional<ScalarType> dtype, Tensor & out)
     {
         GUARD;
-        #if 0
-			// So what do we do here?
-			// The total number of kernels invoked is going to be the product of all reduce dimensions divided by the total number of kernels.
-			uint32_t reductionElems = 2;
-			dlprim::Tensor sdp = todp(self);
-			dlprim::Shape ref = sdp.shape();
-			std::vector<int> reduceDims = getReduceDims(ref, dim);
-			// So basically, the number of reduction elements per kernel is going to be pow(reductionElems, reduceDims.size())
-			
-			// This is the global size of the reduction. How does it work? I am not quite sure yet...
-			std::vector<int> reductionShape = reduceDims;
-			for (size_t i = 0; i < reductionShape.size(); i += 1)
-			{
-				reductionShape[i] = static_cast<int>(ref[reductionShape[i]]);
-			}
-			
-			
-			
-			std::cout << "\nREDUCTION SHAPE: ";
-			for (auto d : reductionShape)
-				std::cout << d << ", ";
-			std::cout << std::endl;
-        #endif
 		return red_op_out(self,dim,keepdim,dtype,out,RedOp::sum);
     }
     // {"schema": "aten::prod.int_out(Tensor self, int dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}    
