@@ -425,15 +425,6 @@ using c10::DeviceType;
     Tensor & red_op_out(const Tensor & self, OptionalIntArrayRef dim, bool keepdim, c10::optional<ScalarType> /*dtype*/, Tensor & out, RedOp rop)
     {
         GUARD;
-        
-        #if 1
-			dlprim::Tensor self_dp = todp(self, true);
-			dlprim::Tensor out_dp = todp(out, true);
-			std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
-			dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
-				reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eAdd, {0.0});
-        #endif
-        
         Tensor self_c = self.contiguous(), out_c = out.contiguous();
         
         dlprim::Tensor X = todp(self_c);
@@ -478,7 +469,17 @@ using c10::DeviceType;
     Tensor & sum_out(const Tensor & self, OptionalIntArrayRef dim, bool keepdim, c10::optional<ScalarType> dtype, Tensor & out)
     {
         GUARD;
-		return red_op_out(self,dim,keepdim,dtype,out,RedOp::sum);
+        #if 1
+			// this is brokeded.
+			dlprim::Tensor self_dp = todp(self, true);
+			dlprim::Tensor out_dp = todp(out, true);
+			std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
+			dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
+				reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eAdd, {0.0});
+			return out;
+        #else
+			return red_op_out(self,dim,keepdim,dtype,out,RedOp::sum);
+		#endif
     }
     // {"schema": "aten::prod.int_out(Tensor self, int dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}    
     Tensor & prod_out(const Tensor & self, int64_t dim, bool keepdim, ::std::optional<ScalarType> dtype, Tensor & out)
