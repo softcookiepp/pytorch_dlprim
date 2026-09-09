@@ -41,6 +41,14 @@ def run_tests(device):
         vk_strided.copy_(vk)
         assert_same(cpu_strided, vk_strided)
 
+        cpu_input = torch.arange(24, dtype=torch.float32).reshape(4, 6).requires_grad_()
+        vk_input = cpu_input.detach().to(device).requires_grad_()
+        cpu_loss = cpu_input.t().reshape(-1).pow(2).sum()
+        vk_loss = vk_input.t().reshape(-1).pow(2).sum()
+        cpu_loss.backward()
+        vk_loss.backward()
+        torch.testing.assert_close(cpu_input.grad, vk_input.grad.cpu())
+
         assert pytorch_vk.get_fallback_count() == before
     finally:
         pytorch_vk.set_fallback_strict(previous)
