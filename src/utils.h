@@ -2,6 +2,7 @@
 #define PTDLPRIM_UTILS_H
 
 #include "CLTensor.h"
+#include <cstdint>
 
 namespace ptdlprim {
     /// 
@@ -18,6 +19,10 @@ namespace ptdlprim {
 
     torch::Tensor new_tensor_as(dlprim::Shape const &s,torch::Tensor const &as);
     dlprim::Tensor make_workspace(at::DataPtr &ws_ptr,size_t ws_size,c10::Device const &dev);
+
+    void set_fallback_strict(bool enabled);
+    bool get_fallback_strict();
+    uint64_t get_fallback_count();
 
     class WSGuard {
     public:

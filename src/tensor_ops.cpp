@@ -6,7 +6,10 @@
 #include <dlprim/core/util.hpp>
 #include <dlprim/core/pointwise.hpp>
 
+#include <atomic>
 #include <iostream>
+#include <set>
+#include <sstream>
 namespace ptdlprim {
 
 using namespace torch;
@@ -400,12 +403,77 @@ using c10::DeviceType;
     }
 
 
+    namespace {
+        std::atomic<bool> fallback_strict{false};
+        std::atomic<uint64_t> fallback_count{0};
+
+        void add_value_device(const c10::IValue& value, std::set<std::string>& devices)
+        {
+            if(value.isTensor()) {
+                devices.insert(value.toTensor().device().str());
+            }
+            else if(value.isTensorList()) {
+                for(const auto& tensor : value.toTensorList()) {
+                    devices.insert(tensor.get().toTensor().device().str());
+                }
+            }
+            else if(value.isDevice()) {
+                devices.insert(value.toDevice().str());
+            }
+        }
+
+        std::string fallback_report(const c10::OperatorHandle& op, torch::jit::Stack* stack, uint64_t count)
+        {
+            std::set<std::string> devices;
+            for(const auto& value : *stack) {
+                add_value_device(value, devices);
+            }
+
+            std::ostringstream report;
+            report << "The operator '" << op.schema().operator_name() << "' is not currently "
+                   << "supported on the vk backend. Please open an issue at for requesting support "
+                   << "https://github.com/softcookiepp/pytorch_dlprim/issues"
+                   << ". Fallback details: used fallback #" << count
+                   << " (no PrivateUse1 kernel registered; wildcard fallback invoked)";
+            if(!devices.empty()) {
+                report << " on ";
+                bool first = true;
+                for(const auto& device : devices) {
+                    if(!first) {
+                        report << ", ";
+                    }
+                    report << device;
+                    first = false;
+                }
+            }
+            return report.str();
+        }
+    }
+
+    void set_fallback_strict(bool enabled)
+    {
+        fallback_strict.store(enabled, std::memory_order_relaxed);
+    }
+
+    bool get_fallback_strict()
+    {
+        return fallback_strict.load(std::memory_order_relaxed);
+    }
+
+    uint64_t get_fallback_count()
+    {
+        return fallback_count.load(std::memory_order_relaxed);
+    }
+
     void fallback(const c10::OperatorHandle& op, torch::jit::Stack* stack)
     {
-		TORCH_WARN("The operator '", op.schema().operator_name(), "' is not currently ",
-				 "supported on the vk backend. Please open an issue at for requesting support "
-				 "https://github.com/softcookiepp/pytorch_dlprim/issues");
-		native::cpu_fallback(op, stack);
+        const uint64_t count = fallback_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        const std::string report = fallback_report(op, stack, count);
+        if(get_fallback_strict()) {
+            TORCH_CHECK(false, report);
+        }
+        TORCH_WARN(report);
+        native::cpu_fallback(op, stack);
     }
 
 } // namespace dtype

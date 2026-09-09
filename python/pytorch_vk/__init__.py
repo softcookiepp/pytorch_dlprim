@@ -68,6 +68,18 @@ class _OCL:
 	@staticmethod
 	def empty_cache():
 		impl_empty_cache()
+
+	@staticmethod
+	def set_fallback_strict(enabled: bool):
+		set_fallback_strict(enabled)
+
+	@staticmethod
+	def get_fallback_strict():
+		return get_fallback_strict()
+
+	@staticmethod
+	def get_fallback_count():
+		return get_fallback_count()
 		
 	@staticmethod
 	def is_available():

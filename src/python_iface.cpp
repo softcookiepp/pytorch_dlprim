@@ -14,8 +14,8 @@ namespace ptdlprim
 
     using c10::Device;
     using c10::DeviceType;
-    
-    Device get_custom_device(int id) 
+
+    Device get_custom_device(int id)
     {
       return Device(OpenCLDeviceType, id);
     }
@@ -87,4 +87,7 @@ PYBIND11_MODULE(pt_vk, m) {
     m.def("impl_enable_profiling",&ptdlprim::enable_profiling,"Internal function use torch.vk.enable_profiling(device)");
     m.def("impl_start_profiling",&ptdlprim::start_profiling,"Internal function use torch.vk.profile");
     m.def("impl_stop_profiling",&ptdlprim::stop_profiling,"Internal function use torch.vk.profile");
+    m.def("set_fallback_strict",&ptdlprim::set_fallback_strict,"Enable or disable strict fallback mode");
+    m.def("get_fallback_strict",&ptdlprim::get_fallback_strict,"Get strict fallback mode");
+    m.def("get_fallback_count",&ptdlprim::get_fallback_count,"Get the number of fallback invocations");
 }
