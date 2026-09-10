@@ -470,7 +470,6 @@ using c10::DeviceType;
     {
         GUARD;
         #if 1
-			// this is brokeded.
 			dlprim::Tensor self_dp = todp(self, true);
 			dlprim::Tensor out_dp = todp(out, true);
 			std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
@@ -485,8 +484,17 @@ using c10::DeviceType;
     Tensor & prod_out(const Tensor & self, int64_t dim, bool keepdim, ::std::optional<ScalarType> dtype, Tensor & out)
     {
         GUARD;
-        std::vector<int64_t> dims({dim});
-        return red_op_out(self,dims,keepdim,dtype,out,RedOp::prod);
+        #if 1
+			dlprim::Tensor self_dp = todp(self, true);
+			dlprim::Tensor out_dp = todp(out, true);
+			std::vector<int> reduceDims = {dim};
+			dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
+				reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eMul, {1.0});
+			return out;
+        #else
+			std::vector<int64_t> dims({dim});
+			return red_op_out(self,dims,keepdim,dtype,out,RedOp::prod);
+		#endif
     }
 
 
