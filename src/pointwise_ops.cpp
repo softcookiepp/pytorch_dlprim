@@ -484,7 +484,7 @@ using c10::DeviceType;
     Tensor & prod_out(const Tensor & self, int64_t dim, bool keepdim, ::std::optional<ScalarType> dtype, Tensor & out)
     {
         GUARD;
-        #if 1
+        #if 0
 			dlprim::Tensor self_dp = todp(self, true);
 			dlprim::Tensor out_dp = todp(out, true);
 			std::vector<int> reduceDims = {dim};
