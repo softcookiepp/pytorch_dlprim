@@ -390,111 +390,92 @@ using c10::DeviceType;
         }
         return std::make_pair(full_shape,squeezed_shape);
     }
-    
-    std::vector<int> getReduceDims(dlprim::Shape ref, std::vector<int> dim)
-    {
-		// get all the dimensions
-		if (dim.empty())
-		{
-			dim.resize(ref.size());
-			for (int i = 0; i < ref.size(); i += 1) dim[i] = i;
-		}
-		// check for negatives
-		for (int i = 0; i < dim.size(); i += 1) dim[i] = (dim[i] >= 0) ? dim[i] : static_cast<int>(ref.size()) + dim[i];
-		std::cout << "SHAPE SIZE: " << ref.size();
-		std::cout << "\nDIMS: ";
-		for (auto d : dim)
-			std::cout << d << ", ";
-		std::cout << std::endl;
-		return dim;
-	}
 	
 	std::vector<int> getReduceDims(dlprim::Shape ref, OptionalIntArrayRef odim)
     {
 		// get all the dimensions
 		std::vector<int> dim;
-		if (odim)
-			dim.assign(odim->begin(), odim->end());
-		return getReduceDims(ref, dim);
+		if (odim) dim.assign(odim->begin(), odim->end());
+		return dim;
 	}
     
-    enum class RedOp  {
-        sum,mean,prod
-    };
+    
+	
+	// Not getting rid of this quite yet.
+	// It may be useful for implementing a contiguous-only version of reduce ops
+	#if 0
+		enum class RedOp  {
+			sum,mean,prod
+		};
+		
+		Tensor & red_op_out(const Tensor & self, OptionalIntArrayRef dim, bool keepdim, c10::optional<ScalarType> /*dtype*/, Tensor & out, RedOp rop)
+		{
+			GUARD;
+			Tensor self_c = self.contiguous(), out_c = out.contiguous();
+			
+			dlprim::Tensor X = todp(self_c);
+			auto r = squeeze_dim(X.shape(),dim,keepdim);
+			dlprim::Tensor Y = todp(out_c);
+			TORCH_CHECK(r.second == Y.shape(),"Invalid output shape");
+			Y.reshape(r.first);
 
-    Tensor & red_op_out(const Tensor & self, OptionalIntArrayRef dim, bool keepdim, c10::optional<ScalarType> /*dtype*/, Tensor & out, RedOp rop)
-    {
-        GUARD;
-        Tensor self_c = self.contiguous(), out_c = out.contiguous();
-        
-        dlprim::Tensor X = todp(self_c);
-        auto r = squeeze_dim(X.shape(),dim,keepdim);
-        dlprim::Tensor Y = todp(out_c);
-        TORCH_CHECK(r.second == Y.shape(),"Invalid output shape");
-        Y.reshape(r.first);
+			double scale = (rop == RedOp::mean) ? double(Y.shape().total_size()) / double(X.shape().total_size()) : 1;
 
-        double scale = (rop == RedOp::mean) ? double(Y.shape().total_size()) / double(X.shape().total_size()) : 1;
+			auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
+					dlprim::tensorDevice(X),
+					{X.specs()},{Y.specs()},
+					0,
+					tart::dtypes::float32,
+					"y0=x0;",
+					(rop == RedOp::prod ? "reduce_y0 =   1;" : "reduce_y0 =   0;"),
+					(rop == RedOp::prod ? "reduce_y0 *= y0;" : "reduce_y0 += y0;")
+			);
 
-        auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                dlprim::tensorDevice(X),
-                {X.specs()},{Y.specs()},
-                0,
-                tart::dtypes::float32,
-                "y0=x0;",
-                (rop == RedOp::prod ? "reduce_y0 =   1;" : "reduce_y0 =   0;"),
-                (rop == RedOp::prod ? "reduce_y0 *= y0;" : "reduce_y0 += y0;")
-        );
+			WSGuard wsg(op->workspace(),self.device());
+			op->enqueue({X},{Y},wsg.ws,{},{scale},{0});
+			
+			if (!out.is_contiguous())
+				out.copy_(out_c);
 
-        WSGuard wsg(op->workspace(),self.device());
-        op->enqueue({X},{Y},wsg.ws,{},{scale},{0});
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-
-        sync_if_needed(self.device());
-        return out;
-    }
-
+			sync_if_needed(self.device());
+			return out;
+		}
+	#endif
 
     // {"schema": "aten::mean.out(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & mean_out(const Tensor & self, OptionalIntArrayRef dim, bool keepdim, c10::optional<ScalarType> dtype, Tensor & out)
     {
-        GUARD;
-        return red_op_out(self,dim,keepdim,dtype,out,RedOp::mean);
+		GUARD;
+		dlprim::Tensor self_dp = todp(self, true);
+		dlprim::Tensor out_dp = todp(out, true);
+		std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
+		float scale = float(out_dp.shape().total_size()) / float(self_dp.shape().total_size());
+		dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {scale},
+			reduceDims, dlprim::core::PointwiseOp::eScale, dlprim::core::PointwiseOp::eAdd, {0.0});
+		return out;
     }
-    
-    
     
     // {"schema": "aten::sum.IntList_out(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
     Tensor & sum_out(const Tensor & self, OptionalIntArrayRef dim, bool keepdim, c10::optional<ScalarType> dtype, Tensor & out)
     {
         GUARD;
-        #if 1
-			dlprim::Tensor self_dp = todp(self, true);
-			dlprim::Tensor out_dp = todp(out, true);
-			std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
-			dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
-				reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eAdd, {0.0});
-			return out;
-        #else
-			return red_op_out(self,dim,keepdim,dtype,out,RedOp::sum);
-		#endif
+		dlprim::Tensor self_dp = todp(self, true);
+		dlprim::Tensor out_dp = todp(out, true);
+		std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
+		dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
+			reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eAdd, {0.0});
+		return out;
     }
     // {"schema": "aten::prod.int_out(Tensor self, int dim, bool keepdim=False, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}    
     Tensor & prod_out(const Tensor & self, int64_t dim, bool keepdim, ::std::optional<ScalarType> dtype, Tensor & out)
     {
         GUARD;
-        #if 0
-			dlprim::Tensor self_dp = todp(self, true);
-			dlprim::Tensor out_dp = todp(out, true);
-			std::vector<int> reduceDims = {dim};
-			dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
-				reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eMul, {1.0});
-			return out;
-        #else
-			std::vector<int64_t> dims({dim});
-			return red_op_out(self,dims,keepdim,dtype,out,RedOp::prod);
-		#endif
+		dlprim::Tensor self_dp = todp(self, true);
+		dlprim::Tensor out_dp = todp(out, true);
+		std::vector<int> reduceDims = {dim};
+		dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
+			reduceDims, dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eMul, {1.0});
+		return out;
     }
 
 
@@ -878,41 +859,57 @@ using c10::DeviceType;
     Tensor & amin_amax_out(const Tensor & self, IntArrayRef dim, bool keepdim, Tensor & out,bool is_max)
     {
         GUARD;
-        Tensor self_c = self.contiguous();
-        Tensor out_c = out.contiguous();
-        
-        dlprim::Tensor X = todp(self_c);
-        dlprim::Tensor Yval = todp(out_c);
-        std::vector<int64_t> dims;
-        for(int64_t d :dim) {
-            dims.push_back(d);
-        }
-        if(dims.empty()) {
-            for(int i=0;i<X.shape().size();i++)
-                dims.push_back(i);
-        }
-        c10::IntArrayRef sqdims(dims.data(),dims.size());
-        auto r = squeeze_dim(X.shape(),sqdims,keepdim);
-        TORCH_CHECK(r.second == Yval.shape(),"Invalid output shape");
-        Yval.reshape(r.first);
+        #if 1
+			// I am extremely confused. It is called 'amin_amax_out', but the operation appears to be just using regular non-absolute min/max
+			float yInit = std::numeric_limits<float>::infinity();
+			dlprim::core::PointwiseOp op = dlprim::core::PointwiseOp::eMin;
+			if (is_max)
+			{
+				op = dlprim::core::PointwiseOp::eMax;
+				yInit = yInit*(-1.0f);
+			}
+			dlprim::Tensor self_dp = todp(self, true);
+			dlprim::Tensor out_dp = todp(out, true);
+			std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
+			dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
+				reduceDims, dlprim::core::PointwiseOp::eIdentity, op, {yInit});
+        #else
+			Tensor self_c = self.contiguous();
+			Tensor out_c = out.contiguous();
+			
+			dlprim::Tensor X = todp(self_c);
+			dlprim::Tensor Yval = todp(out_c);
+			std::vector<int64_t> dims;
+			for(int64_t d :dim) {
+				dims.push_back(d);
+			}
+			if(dims.empty()) {
+				for(int i=0;i<X.shape().size();i++)
+					dims.push_back(i);
+			}
+			c10::IntArrayRef sqdims(dims.data(),dims.size());
+			auto r = squeeze_dim(X.shape(),sqdims,keepdim);
+			TORCH_CHECK(r.second == Yval.shape(),"Invalid output shape");
+			Yval.reshape(r.first);
 
-        std::string ext_val = dlprim::data_type_to_opencl_numeric_limit(X.dtype(),(is_max ? dlprim::dt_min_val : dlprim::dt_max_val));
-        auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                    dlprim::tensorDevice(X),
-                    {X.specs()},{Yval.specs()},
-                    0,
-                    X.dtype(),
-                    "y0=x0;",
-                    "reduce_y0 = " + ext_val + ";",
-                    std::string("reduce_y0 = ") + (is_max?"max":"min") + "(reduce_y0,y0);"
-                    );
-        WSGuard ws_guard(op->workspace(),self.device());
-        op->enqueue({X},{Yval},ws_guard.ws,{},{1,1},{0,0});
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
+			std::string ext_val = dlprim::data_type_to_opencl_numeric_limit(X.dtype(),(is_max ? dlprim::dt_min_val : dlprim::dt_max_val));
+			auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
+						dlprim::tensorDevice(X),
+						{X.specs()},{Yval.specs()},
+						0,
+						X.dtype(),
+						"y0=x0;",
+						"reduce_y0 = " + ext_val + ";",
+						std::string("reduce_y0 = ") + (is_max?"max":"min") + "(reduce_y0,y0);"
+						);
+			WSGuard ws_guard(op->workspace(),self.device());
+			op->enqueue({X},{Yval},ws_guard.ws,{},{1,1},{0,0});
+			
+			if (!out.is_contiguous())
+				out.copy_(out_c);
 
-        sync_if_needed(self.device());
+			sync_if_needed(self.device());
+        #endif
         return out;
     }
     // {"schema": "aten::amax.out(Tensor self, int[1] dim=[], bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
