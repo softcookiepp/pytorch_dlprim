@@ -148,29 +148,28 @@ using c10::DeviceType;
 	Tensor mse_loss(const Tensor & self, const Tensor & target, int64_t reduction)
 	{
 		GUARD;
-		Tensor self_c = self.contiguous();
-		dlprim::Tensor x=todp(self_c);
-		Tensor target_c = target.contiguous();
-		dlprim::Tensor lbl=todp(target_c);
+		dlprim::Tensor x = todp(self, true);
+		dlprim::Tensor y = todp(target, true);
+		float scale = 1.0;
 		bool reduce = false;
-		float scale = 1;
-		switch(reduction) {
-		case 0: reduce=false; break; // None
-		case 1: reduce=true; scale = 1.0f/x.shape().total_size(); break; // Mean
-		case 2: reduce=true; break; // sum
+		switch(reduction)
+		{
+			case 0: break;
+			case 1: reduce = true; scale = scale = 1.0/x.shape().total_size(); break; // mean
+			case 2: reduce = true; break; // sum
 		}
-		Tensor output = new_tensor_as(reduce ? dlprim::Shape() : x.shape(),self_c);
-		dlprim::Tensor y=todp(output);
-		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(dlprim::tensorDevice(y),
-					{x.specs(),lbl.specs()},{y.specs()},0, x.dtype(),
-					"y0 = (typeof_y0(x0) - typeof_y0(x1))*(typeof_y0(x0) - typeof_y0(x1));",
-					"reduce_y0 = typeof_y0(0);",
-					"reduce_y0 += y0;");
-		WSGuard wsg(op->workspace(),self.device());
-		op->enqueue({x,lbl},{y},wsg.ws,{},{scale},{0});
-		sync_if_needed(self.device());
-
-		return output;
+		dlprim::Shape target_shape;
+		if(!reduce)
+			target_shape = x.shape();
+		Tensor loss_tensor = new_tensor_as(target_shape, self);
+		dlprim::Tensor loss(todp(loss_tensor));
+		if (reduce)
+			dlprim::core::pointwiseOpBroadcastReduceStrided({x, y}, {loss}, {scale}, {},
+				dlprim::core::PointwiseOp::eMse, dlprim::core::PointwiseOp::eAdd, {0.0});
+		else
+			dlprim::core::pointwiseOpBroadcastStrided({x, y}, {loss}, {scale},
+				dlprim::core::PointwiseOp::eMse);
+		return loss_tensor;
 	}
 	// {"schema": "aten::mse_loss_backward(Tensor grad_output, Tensor self, Tensor target, int reduction)
 	Tensor mse_loss_backward(const Tensor & grad_output, const Tensor & self, const Tensor & target, int64_t reduction)
