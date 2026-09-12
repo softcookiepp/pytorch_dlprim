@@ -294,18 +294,11 @@ using c10::DeviceType;
             op->enqueue({X,mean,rstd,dY},{dG},wsg.ws,{},{1},{0});
         }
         if(bwd_beta) {
-			beta_diff = new_tensor_as(norm_shape,input);
-			dB = todp(beta_diff);
-            dB.reshape(dlprim::Shape(N));
-            auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                        device,
-                        {dY.specs()},{dB.specs()},
-                        0, tart::dtypes::float32,
-                        "y0=x0;",
-                        "reduce_y0 = 0;",
-                        "reduce_y0 += y0;");
-            WSGuard wsg(op->workspace(),input.device());
-            op->enqueue({dY},{dB},wsg.ws,{},{1},{0});
+			beta_diff = new_tensor_as(norm_shape, input);
+			dlprim::Tensor dB = todp(beta_diff);
+			dB.reshape(dlprim::Shape(N));
+			dlprim::core::pointwiseOpBroadcastReduceStrided({dY}, {dB}, {}, {},
+				dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eAdd, {0.0});
         }
         if(bwd_data) {
 			x_diff = new_tensor_as(src_shape,input);

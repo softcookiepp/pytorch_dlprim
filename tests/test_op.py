@@ -404,7 +404,9 @@ def test_all(device):
 	test_fwd_bwd([([128, 0], -1), ([128, 0], -1)], F.cross_entropy, device, torch.rand)
 	
 	print("binary_cross_entropy")
-	test_fwd_bwd([([128, 0], -1), ([128, 0], -1)], F.binary_cross_entropy, device, torch.rand)
+	# need to clip so that everything >= 0
+	bce_clipped = lambda x, y: F.binary_cross_entropy(torch.clamp(x, min = 0.1, max = 1.0), torch.clamp(y, min = 0.1, max = 1.0))
+	test_fwd_bwd([([128], -1), ([128], -1)], bce_clipped, device, torch.rand)
 
 	print("ChannelShuffle")
 	test_fwd([([3, 4, 2, 2],-1)], torch.nn.ChannelShuffle(2), device)

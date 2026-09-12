@@ -72,30 +72,27 @@ using c10::DeviceType;
 	{
 		GUARD;
 		TORCH_CHECK(!weight || weight->numel()==0,"Weight in binar_cross_entroy isn't supported");
-		Tensor self_c = self.contiguous();
-		Tensor target_c = target.contiguous();
-		dlprim::Tensor x = todp(self_c);
-		dlprim::Tensor y = todp(target_c);
+		dlprim::Tensor x = todp(self, true);
+		dlprim::Tensor y = todp(target, true);
+		float scale = 1.0;
 		bool reduce = false;
-		double scale = 1;
-		switch(reduction) {
-		case 0: reduce=false; break; // None
-		case 1: reduce=true; scale = 1.0/x.shape().total_size(); break; // Mean
-		case 2: reduce=true; break; // sum
+		switch(reduction)
+		{
+			case 0: break;
+			case 1: reduce = true; scale = scale = 1.0/x.shape().total_size(); break; // mean
+			case 2: reduce = true; break; // sum
 		}
 		dlprim::Shape target_shape;
 		if(!reduce)
 			target_shape = x.shape();
-		Tensor loss_tensor = new_tensor_as(target_shape,self_c);
+		Tensor loss_tensor = new_tensor_as(target_shape, self);
 		dlprim::Tensor loss(todp(loss_tensor));
-		auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(dlprim::tensorDevice(loss),
-					{x.specs(),y.specs()},{loss.specs()},0, tart::dtypes::float32, // change laaater perhaps
-					"y0 = typeof_y0(-1.0)*(x1 * max(typeof_x0(-100), log(x0)) + (1-x1) * max(typeof_x0(-100),log(1-x0)));",
-					"reduce_y0 = 0;",
-					"reduce_y0 += y0;");
-		WSGuard wsg(op->workspace(),self.device());
-		op->enqueue({x,y},{loss},wsg.ws,{},{scale},{0});
-		sync_if_needed(self.device());
+		if (reduce)
+			dlprim::core::pointwiseOpBroadcastReduceStrided({x, y}, {loss}, {scale}, {},
+				dlprim::core::PointwiseOp::eBcdFwdWeightless, dlprim::core::PointwiseOp::eAdd, {0.0});
+		else
+			dlprim::core::pointwiseOpBroadcastStrided({x, y}, {loss}, {scale},
+				dlprim::core::PointwiseOp::eBcdFwdWeightless);
 		return loss_tensor;
 	}
 
@@ -195,7 +192,7 @@ using c10::DeviceType;
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 	  m.impl("aten::nll_loss_forward.output",&ptdlprim::nll_loss_forward_out);
 	  m.impl("aten::nll_loss_backward.grad_input",&ptdlprim::nll_loss_backward_out);
-	  //m.impl("aten::binary_cross_entropy",&ptdlprim::binary_cross_entropy);
+	  m.impl("aten::binary_cross_entropy",&ptdlprim::binary_cross_entropy);
 	  //m.impl("aten::binary_cross_entropy_backward",&ptdlprim::binary_cross_entropy_backward);
 	  //m.impl("aten::binary_cross_entropy_backward.grad_input",&ptdlprim::binary_cross_entropy_backward_out);
 	  m.impl("aten::mse_loss",&ptdlprim::mse_loss);
