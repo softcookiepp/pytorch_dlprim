@@ -187,7 +187,6 @@ using c10::DeviceType;
 
 
 } // namespace dlprim
-#if 1
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 	  m.impl("aten::nll_loss_forward.output",&ptdlprim::nll_loss_forward_out);
 	  m.impl("aten::nll_loss_backward.grad_input",&ptdlprim::nll_loss_backward_out);
@@ -196,5 +195,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 	  m.impl("aten::binary_cross_entropy_backward.grad_input",&ptdlprim::binary_cross_entropy_backward_out);
 	  m.impl("aten::mse_loss",&ptdlprim::mse_loss);
 	  m.impl("aten::mse_loss_backward",&ptdlprim::mse_loss_backward);
-} 
-#endif
+}
