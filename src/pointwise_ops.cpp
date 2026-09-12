@@ -859,57 +859,19 @@ using c10::DeviceType;
     Tensor & amin_amax_out(const Tensor & self, IntArrayRef dim, bool keepdim, Tensor & out,bool is_max)
     {
         GUARD;
-        #if 1
-			// I am extremely confused. It is called 'amin_amax_out', but the operation appears to be just using regular non-absolute min/max
-			float yInit = std::numeric_limits<float>::infinity();
-			dlprim::core::PointwiseOp op = dlprim::core::PointwiseOp::eMin;
-			if (is_max)
-			{
-				op = dlprim::core::PointwiseOp::eMax;
-				yInit = yInit*(-1.0f);
-			}
-			dlprim::Tensor self_dp = todp(self, true);
-			dlprim::Tensor out_dp = todp(out, true);
-			std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
-			dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
-				reduceDims, dlprim::core::PointwiseOp::eIdentity, op, {yInit});
-        #else
-			Tensor self_c = self.contiguous();
-			Tensor out_c = out.contiguous();
-			
-			dlprim::Tensor X = todp(self_c);
-			dlprim::Tensor Yval = todp(out_c);
-			std::vector<int64_t> dims;
-			for(int64_t d :dim) {
-				dims.push_back(d);
-			}
-			if(dims.empty()) {
-				for(int i=0;i<X.shape().size();i++)
-					dims.push_back(i);
-			}
-			c10::IntArrayRef sqdims(dims.data(),dims.size());
-			auto r = squeeze_dim(X.shape(),sqdims,keepdim);
-			TORCH_CHECK(r.second == Yval.shape(),"Invalid output shape");
-			Yval.reshape(r.first);
-
-			std::string ext_val = dlprim::data_type_to_opencl_numeric_limit(X.dtype(),(is_max ? dlprim::dt_min_val : dlprim::dt_max_val));
-			auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-						dlprim::tensorDevice(X),
-						{X.specs()},{Yval.specs()},
-						0,
-						X.dtype(),
-						"y0=x0;",
-						"reduce_y0 = " + ext_val + ";",
-						std::string("reduce_y0 = ") + (is_max?"max":"min") + "(reduce_y0,y0);"
-						);
-			WSGuard ws_guard(op->workspace(),self.device());
-			op->enqueue({X},{Yval},ws_guard.ws,{},{1,1},{0,0});
-			
-			if (!out.is_contiguous())
-				out.copy_(out_c);
-
-			sync_if_needed(self.device());
-        #endif
+		// I am extremely confused. It is called 'amin_amax_out', but the operation appears to be just using regular non-absolute min/max
+		float yInit = std::numeric_limits<float>::infinity();
+		dlprim::core::PointwiseOp op = dlprim::core::PointwiseOp::eMin;
+		if (is_max)
+		{
+			op = dlprim::core::PointwiseOp::eMax;
+			yInit = yInit*(-1.0f);
+		}
+		dlprim::Tensor self_dp = todp(self, true);
+		dlprim::Tensor out_dp = todp(out, true);
+		std::vector<int> reduceDims = getReduceDims(self_dp.shape(), dim);
+		dlprim::core::pointwiseOpBroadcastReduceStrided({self_dp}, {out_dp}, {},
+			reduceDims, dlprim::core::PointwiseOp::eIdentity, op, {yInit});
         return out;
     }
     // {"schema": "aten::amax.out(Tensor self, int[1] dim=[], bool keepdim=False, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
