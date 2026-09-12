@@ -859,7 +859,7 @@ using c10::DeviceType;
     Tensor & amin_amax_out(const Tensor & self, IntArrayRef dim, bool keepdim, Tensor & out,bool is_max)
     {
         GUARD;
-		// I am extremely confused. It is called 'amin_amax_out', but the operation appears to be just using regular non-absolute min/max
+        // Note: this is not min/max of absolute value, as the name would suggest
 		float yInit = std::numeric_limits<float>::infinity();
 		dlprim::core::PointwiseOp op = dlprim::core::PointwiseOp::eMin;
 		if (is_max)
@@ -940,28 +940,19 @@ using c10::DeviceType;
     static Tensor min_or_max(const Tensor & self, bool is_min)
     {
         GUARD;
-        Tensor self_c = self.contiguous();
-        dlprim::Tensor X = todp(self_c);
         Tensor result = new_tensor_as(dlprim::Shape(),self);
-        dlprim::Tensor Y = todp(result);
-        std::string y0 = dlprim::data_type_to_opencl_numeric_limit(X.dtype(),(is_min ? dlprim::dt_max_val : dlprim::dt_min_val));
-        auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                    dlprim::tensorDevice(Y),
-                    {X.specs()},{Y.specs()},
-                    0,
-                    X.dtype(),
-                    "y0=x0;",
-                    std::string("reduce_y0 = ") + y0 + ";",
-                    std::string("reduce_y0 = y0 ") + (is_min ? "<" : ">") +  " reduce_y0 ? y0 : reduce_y0;"
-                    );
-        WSGuard ws_guard(op->workspace(),self.device());
-        op->enqueue({X},{Y},ws_guard.ws,{},{1},{0});
-        
-        if (!self.is_contiguous())
-            self.copy_(self_c);
-
-        sync_if_needed(self.device());
-        return result;
+		float yInit = std::numeric_limits<float>::infinity();
+		dlprim::core::PointwiseOp op = dlprim::core::PointwiseOp::eMin;
+		if (!is_min)
+		{
+			op = dlprim::core::PointwiseOp::eMax;
+			yInit = yInit*(-1.0f);
+		}
+		dlprim::Tensor X = todp(self, true);
+		dlprim::Tensor Y = todp(result, true);
+		dlprim::core::pointwiseOpBroadcastReduceStrided({X}, {Y}, {},
+			{}, dlprim::core::PointwiseOp::eIdentity, op, {yInit});
+		return result;
     }
 
     // {"schema": "aten::min(Tensor self) -> Tensor", "dispatch": "True", "default": "False"}
@@ -980,25 +971,13 @@ using c10::DeviceType;
     Tensor dot(const Tensor & self, const Tensor & tensor)
     {
         GUARD;
-        Tensor self_c = self.contiguous(), tensor_c = tensor.contiguous();
-        
-        dlprim::Tensor x0=todp(self_c);
-        dlprim::Tensor x1=todp(tensor_c);
-        Tensor result = new_tensor_as(dlprim::Shape(),self_c);
-        dlprim::Tensor y=todp(result);
-        auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                dlprim::tensorDevice(y),
-                {x0.specs(),x1.specs()},{y.specs()},
-                0,
-                tart::dtypes::float32,
-                "y0=x0*x1;",
-                "reduce_y0 = 0;",
-                "reduce_y0 += y0;");
-
-        WSGuard wsg(op->workspace(),self.device());
-        op->enqueue({x0,x1},{y},wsg.ws,{},{1},{0});
-        sync_if_needed(self.device());
-        return result;
+		dlprim::Tensor x0=todp(self, true);
+		dlprim::Tensor x1=todp(tensor, true);
+		Tensor result = new_tensor_as(dlprim::Shape(), self);
+		dlprim::Tensor y = todp(result, true);
+		dlprim::core::pointwiseOpBroadcastReduceStrided({x0, x1}, {y}, {}, {},
+			dlprim::core::PointwiseOp::eMul, dlprim::core::PointwiseOp::eAdd, {0.0});
+		return result;
     }
 
 

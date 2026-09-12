@@ -473,18 +473,10 @@ using c10::DeviceType;
             }
             if (bwd_beta) {
                 beta_diff = new_tensor_as(dlprim::Shape(C), input);
-                dlprim::Tensor dB = todp(beta_diff);
-                dB.reshape(dlprim::Shape(1, group, C/group, 1));
-                auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                            device,
-                            {dY_4d.specs()}, {dB.specs()},
-                            0, tart::dtypes::float32,
-                            "y0=x0;",
-                            "reduce_y0 = 0;",
-                            "reduce_y0 += y0;");
-                DataPtr wsg_ptr;
-                dlprim::Tensor wsg = make_workspace(wsg_ptr, op->workspace(), input.device());
-                op->enqueue({dY_4d}, {dB}, wsg, {}, {1}, {0});
+				dlprim::Tensor dB = todp(beta_diff);
+				dB.reshape(dlprim::Shape(1, group, C/group, 1));
+				dlprim::core::pointwiseOpBroadcastReduceStrided({dY_4d}, {dB}, {}, {},
+					dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eAdd, {0.0});
             }
         }
 		std::cout << "	doing (bwd_data)\n";
