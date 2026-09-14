@@ -283,15 +283,20 @@ using c10::DeviceType;
             auto rstd = todp(save_rstd);
             mean.reshape(dlprim::Shape(1,B,1));
             rstd.reshape(dlprim::Shape(1,B,1));
-            auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                        device,
-                        {X.specs(),mean.specs(),rstd.specs(),dY.specs()},{dG.specs()},
-                        0, tart::dtypes::float32,
-                        "y0=(x0 - x1)*x2*x3;",
-                        "reduce_y0 = 0;",
-                        "reduce_y0 += y0;");
-            WSGuard wsg(op->workspace(),input.device());
-            op->enqueue({X,mean,rstd,dY},{dG},wsg.ws,{},{1},{0});
+            #if 1
+				dlprim::core::pointwiseOpBroadcastReduceStrided({X, mean, rstd, dY}, {dG}, {}, {},
+					dlprim::core::PointwiseOp::eLayerGroupNormBwd, dlprim::core::PointwiseOp::eAdd, {0.0});
+            #else
+				auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
+							device,
+							{X.specs(),mean.specs(),rstd.specs(),dY.specs()},{dG.specs()},
+							0, tart::dtypes::float32,
+							"y0=(x0 - x1)*x2*x3;",
+							"reduce_y0 = 0;",
+							"reduce_y0 += y0;");
+				WSGuard wsg(op->workspace(),input.device());
+				op->enqueue({X,mean,rstd,dY},{dG},wsg.ws,{},{1},{0});
+			#endif
         }
         if(bwd_beta) {
 			beta_diff = new_tensor_as(norm_shape, input);
