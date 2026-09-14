@@ -283,20 +283,8 @@ using c10::DeviceType;
             auto rstd = todp(save_rstd);
             mean.reshape(dlprim::Shape(1,B,1));
             rstd.reshape(dlprim::Shape(1,B,1));
-            #if 1
-				dlprim::core::pointwiseOpBroadcastReduceStrided({X, mean, rstd, dY}, {dG}, {}, {},
-					dlprim::core::PointwiseOp::eLayerGroupNormBwd, dlprim::core::PointwiseOp::eAdd, {0.0});
-            #else
-				auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-							device,
-							{X.specs(),mean.specs(),rstd.specs(),dY.specs()},{dG.specs()},
-							0, tart::dtypes::float32,
-							"y0=(x0 - x1)*x2*x3;",
-							"reduce_y0 = 0;",
-							"reduce_y0 += y0;");
-				WSGuard wsg(op->workspace(),input.device());
-				op->enqueue({X,mean,rstd,dY},{dG},wsg.ws,{},{1},{0});
-			#endif
+			dlprim::core::pointwiseOpBroadcastReduceStrided({X, mean, rstd, dY}, {dG}, {}, {},
+				dlprim::core::PointwiseOp::eLayerGroupNormBwd, dlprim::core::PointwiseOp::eAdd, {0.0});
         }
         if(bwd_beta) {
 			beta_diff = new_tensor_as(norm_shape, input);
@@ -458,16 +446,8 @@ using c10::DeviceType;
                 gamma_diff = new_tensor_as(dlprim::Shape(C), input);
                 dlprim::Tensor dG = todp(gamma_diff);
                 dG.reshape(dlprim::Shape(1, group, C/group, 1));
-                auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                            device,
-                            {X_4d.specs(), m_b.specs(), r_b.specs(), dY_4d.specs()}, {dG.specs()},
-                            0, tart::dtypes::float32,
-                            "y0=(x0 - x1)*x2*x3;",
-                            "reduce_y0 = 0;",
-                            "reduce_y0 += y0;");
-                DataPtr wsg_ptr;
-                dlprim::Tensor wsg = make_workspace(wsg_ptr, op->workspace(), input.device());
-                op->enqueue({X_4d, m_b, r_b, dY_4d}, {dG}, wsg, {}, {1}, {0});
+				dlprim::core::pointwiseOpBroadcastReduceStrided({X_4d, m_b, r_b, dY_4d}, {dG}, {}, {},
+					dlprim::core::PointwiseOp::eLayerGroupNormBwd, dlprim::core::PointwiseOp::eAdd, {0.0});
             }
             if (bwd_beta) {
                 beta_diff = new_tensor_as(dlprim::Shape(C), input);
