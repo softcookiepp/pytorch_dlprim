@@ -907,33 +907,43 @@ using c10::DeviceType;
         auto r = squeeze_dim(X.shape(),sqdims,keepdim);
         TORCH_CHECK(r.second == Yind.shape(),"Invalid output shape");
         Yind.reshape(r.first);
+		
+		WSGuard tmp_guard(Yind.shape().total_size() * X.dtype().size(),
+							 self.device());
+		dlprim::Tensor Yval = tmp_guard.ws.sub_tensor(0,Yind.shape(),X.dtype());
+		#if 1
+			std::vector<int> reduceDims (dims.size());
+			for (size_t i = 0; i < dims.size(); i += 1)
+				reduceDims[i] = static_cast<int>(dims[i]);
+			
+			reduceDims = getReduceDims(X.shape(), dims);
+			float yInit = std::numeric_limits<float>::infinity();
+			dlprim::core::pointwiseOpBroadcastReduceStrided({X}, {Yval, Yind}, {}, reduceDims,
+				dlprim::core::PointwiseOp::eIdentity, dlprim::core::PointwiseOp::eArgmaxReduce, {yInit, 0});
+		#else
+			std::string min_val = dlprim::data_type_to_opencl_numeric_limit(X.dtype(),dlprim::dt_min_val);
+			auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
+						dlprim::tensorDevice(Yval),
+						{X.specs()},{Yval.specs(),Yind.specs()},
+						0,
+						tart::dtypes::float32,
+						"y0=x0; y1=reduce_item;",
+						"reduce_y0 = " + min_val + "; reduce_y1 = -1;",
+						R"xxx(
+							if(y0 > reduce_y0) {
+								reduce_y0 = y0; 
+								reduce_y1 = y1; 
+							}
+						)xxx"
+						);
+			WSGuard ws_guard(op->workspace(),self.device());
+			op->enqueue({X},{Yval,Yind},ws_guard.ws,{},{1,1},{0,0});
+			
+			if (!out.is_contiguous())
+				out.copy_(out_c);
 
-        WSGuard tmp_guard(Yind.shape().total_size() * X.dtype().size(),
-                         self.device());
-        dlprim::Tensor Yval = tmp_guard.ws.sub_tensor(0,Yind.shape(),X.dtype());
-
-        std::string min_val = dlprim::data_type_to_opencl_numeric_limit(X.dtype(),dlprim::dt_min_val);
-        auto op = dlprim::core::PointwiseOperationBroadcastReduce::create(
-                    dlprim::tensorDevice(Yval),
-                    {X.specs()},{Yval.specs(),Yind.specs()},
-                    0,
-                    tart::dtypes::float32,
-                    "y0=x0; y1=reduce_item;",
-                    "reduce_y0 = " + min_val + "; reduce_y1 = -1;",
-                    R"xxx(
-                        if(y0 > reduce_y0) {
-                            reduce_y0 = y0; 
-                            reduce_y1 = y1; 
-                        }
-                    )xxx"
-                    );
-        WSGuard ws_guard(op->workspace(),self.device());
-        op->enqueue({X},{Yval,Yind},ws_guard.ws,{},{1,1},{0,0});
-        
-        if (!out.is_contiguous())
-            out.copy_(out_c);
-
-        sync_if_needed(self.device());
+			sync_if_needed(self.device());
+		#endif
         return out;
     }
     
