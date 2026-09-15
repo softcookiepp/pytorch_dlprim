@@ -291,7 +291,7 @@ def test_bmm(device):
 
 def test_all(device):
 	print("Softmax (fwd only)")
-	test_fwd([([1028, 4, 3, 2],-1)],torch.nn.Softmax(dim=0),device)
+	test_fwd([([1028, 4, 72, 2], -1)],torch.nn.Softmax(dim=2),device)
 	test_fwd([([4,3],-1)],torch.nn.Softmax(dim=1),device)
 	
 	print("Softmax")
