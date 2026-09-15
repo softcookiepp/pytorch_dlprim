@@ -7,8 +7,6 @@
 
 #include <iostream>
 
-#include "softmax_impl.hpp"
-
 namespace ptdlprim {
 
 using namespace torch;

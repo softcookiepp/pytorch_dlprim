@@ -5,8 +5,6 @@
 #include <dlprim/core/util.hpp>
 #include <dlprim/core/pointwise.hpp>
 #include <dlprim/core/loss.hpp>
-#include <dlprim/gpu/softmax.hpp>
-#include "softmax_impl.hpp"
 
 #include <iostream>
 namespace ptdlprim {
@@ -48,7 +46,7 @@ using c10::DeviceType;
 	{
 		return impl_softmax_backward_data_out(grad_output,output,dim,true,out);
 	}
-#endif
+
 	// {"schema": "aten::_softmax_backward_data.out(Tensor grad_output, Tensor output, int dim, ScalarType input_dtype, *, Tensor(a!) grad_input) -> Tensor(a!)", "dispatch": "True", "default": "False"}
 	Tensor & _softmax_backward_data_out(const Tensor & grad_output, const Tensor & output, int64_t dim, ScalarType /*input_dtype*/, Tensor & grad_input)
 	{
@@ -62,6 +60,7 @@ using c10::DeviceType;
 			false,
 			grad_input);
 	}
+#endif
 
 } // namespace dlprim
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
