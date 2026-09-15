@@ -122,25 +122,6 @@ using c10::DeviceType;
 		binary_cross_entropy_backward_out(grad_output,self_c,target,weight,reduction,input_grad);
 		return input_grad;
 	}
-#if 0
-	// {"schema": "aten::_softmax_backward_data.out(Tensor grad_output, Tensor output, int dim, ScalarType input_dtype, *, Tensor(a!) grad_input) -> Tensor(a!)", "dispatch": "True", "default": "False"}
-	Tensor & _softmax_backward_data_out(const Tensor & grad_output, const Tensor & output, int64_t dim, ScalarType /*input_dtype*/, Tensor & grad_input)
-	{
-#if 1
-		return host_softmax_backward(
-			SoftmaxEpilogue::eBackward,
-			false,
-			grad_output,
-			output,
-			dim,
-			false,
-			grad_input);
-			
-#else
-		return impl_softmax_backward_data_out(grad_output,output,dim,false,grad_input);
-#endif
-	}
-#endif
 	
 	// {"schema": "aten::mse_loss(Tensor self, Tensor target, int reduction=Mean) -> Tensor", "dispatch": "True", "default"
 	Tensor mse_loss(const Tensor & self, const Tensor & target, int64_t reduction)
