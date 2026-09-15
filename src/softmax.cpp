@@ -51,18 +51,12 @@ using c10::DeviceType;
 	// {"schema": "aten::_softmax_backward_data.out(Tensor grad_output, Tensor output, int dim, ScalarType input_dtype, *, Tensor(a!) grad_input) -> Tensor(a!)", "dispatch": "True", "default": "False"}
 	Tensor & _softmax_backward_data_out(const Tensor & grad_output, const Tensor & output, int64_t dim, ScalarType /*input_dtype*/, Tensor & grad_input)
 	{
-		#if 1
-			dlprim::Tensor xGrad = todp(grad_input, false);
-			dlprim::Tensor y = todp(output, false);
-			dlprim::Tensor yGrad = todp(grad_output, false);
-			std::vector<int> dims({static_cast<int>(dim)});
-			dlprim::core::softmaxAttempt2Bwd(xGrad, y, yGrad, dims, false);
-			return grad_input;
-		#else
-			// Grad input is the one that is operated on. Good to know.
-			throw std::runtime_error("not implemented");
-			return grad_input;
-		#endif
+		dlprim::Tensor xGrad = todp(grad_input, false);
+		dlprim::Tensor y = todp(output, false);
+		dlprim::Tensor yGrad = todp(grad_output, false);
+		std::vector<int> dims({static_cast<int>(dim)});
+		dlprim::core::softmaxAttempt2Bwd(xGrad, y, yGrad, dims, false);
+		return grad_input;
 	}
 
 } // namespace dlprim
