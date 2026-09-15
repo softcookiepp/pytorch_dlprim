@@ -15,7 +15,6 @@ using namespace torch;
 using torch::autograd::tensor_list;
 using torch::autograd::AutogradContext;
 
-
 using c10::Device;
 using c10::DeviceType;
 
@@ -25,10 +24,21 @@ using c10::DeviceType;
 	// {"schema": "aten::_softmax.out(Tensor self, int dim, bool half_to_float, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
 	Tensor & _softmax_out(const Tensor & self, int64_t dim, bool half_to_float, Tensor & out)
 	{
-		return host_softmax(
-			dlprim::gpu::SoftmaxEpilogue::eForward,
-			dlprim::gpu::SoftmaxEpilogue::eForward, // unused as of now, but still provided
-			false, false, self, dim, half_to_float, out);
+		dlprim::Tensor x = todp(self, false);
+		dlprim::Tensor y = todp(out, false);
+		std::vector<int> dims({static_cast<int>(dim)});
+		dlprim::core::softmaxAttempt2(x, y, dims, false);
+		return out;
+	}
+	
+	// {"schema": "aten::_log_softmax.out(Tensor self, int dim, bool half_to_float, *, Tensor(a!) out) -> Tensor(a!)", "dispatch": "True", "default": "False"}
+	Tensor & _log_softmax_out(const Tensor & self, int64_t dim, bool half_to_float, Tensor & out)
+	{
+		dlprim::Tensor x = todp(self, false);
+		dlprim::Tensor y = todp(out, false);
+		std::vector<int> dims({static_cast<int>(dim)});
+		dlprim::core::softmaxAttempt2(x, y, dims, true);
+		return out;
 	}
 
 #if 0
@@ -55,9 +65,9 @@ using c10::DeviceType;
 
 } // namespace dlprim
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-	  // m.impl("aten::_log_softmax.out",&ptdlprim::_log_softmax_out);
+	  m.impl("aten::_log_softmax.out",&ptdlprim::_log_softmax_out);
 	  // m.impl("aten::_log_softmax_backward_data.out",&ptdlprim::_log_softmax_backward_data_out);
 	  m.impl("aten::_softmax.out",&ptdlprim::_softmax_out);
-	  m.impl("aten::_softmax_backward_data.out",&ptdlprim::_softmax_backward_data_out);;
+	  // m.impl("aten::_softmax_backward_data.out",&ptdlprim::_softmax_backward_data_out);;
 } 
 #endif

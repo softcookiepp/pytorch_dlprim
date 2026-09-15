@@ -69,6 +69,7 @@ if(1)
 			src/python_iface.cpp
 			src/fill.cpp
 			src/context_manager.cpp
+			src/softmax.cpp
 			)
 
 	target_compile_features(pt_vk PRIVATE cxx_std_17)
