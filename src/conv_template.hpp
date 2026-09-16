@@ -933,3 +933,56 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 		}
 	}
 }
+
+void convIm2colStridedFwdTemplate(
+	Tensor& output,
+	const Tensor& input,
+	const Tensor& weight,
+	const Tensor& bias,
+	IntArrayRef kernel_size,
+	IntArrayRef stride_size,
+	IntArrayRef pad_size,
+	IntArrayRef dilation_size,
+	bool nchw = true)
+{
+	// First and foremost, we need the amount of dimensions.
+	size_t dim = weight.dim() - 2;
+	
+	Tensor input_c = input;
+	bool batched = true;
+	if (input.dim() - 2 < dim)
+	{
+		batched = false;
+		input_c = input.unsqueeze(0);
+	}
+	if (nchw)
+	{
+		/*
+		# BHWC <- BCHW
+		Ni = 0
+		Ci = 1
+		new_dims = [Ni]
+		for i in range(ND):
+			new_dims.append(i + 2)
+		new_dims.append(Ci)
+		#input(new_dims)
+		return tuple(new_dims)
+		*/
+		// convert to NHWC (this method only works with this layout)
+		std::vector<int64_t> inputPermuteDims(dim + 2, 0);
+		// batch is still at position 0
+		inputPermuteDims[0] = 0;
+		for (size_t i = 0; i < dim; i += 1)
+			inputPermuteDims[i + 1] = i + 2;
+		inputPermuteDims[dim - 1] = 1; // move channels to the very end
+		
+		input_c = input.permute(inputPermuteDims).contiguous();
+	}
+	else
+	{
+		// input should already be in the correct layout
+		input_c = input.contiguous();
+	}
+	
+	// Now we get started!
+}
