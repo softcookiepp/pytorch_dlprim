@@ -330,7 +330,9 @@ def test_all(device):
 	test_fwd_bwd([([2,3,4],-1)],lambda x:torch.prod(x,dim=1,keepdim=True),device)
 	print("Prod 1d squeeze")
 	test_fwd_bwd([([2,3,4],-1)],lambda x:torch.prod(x,dim=1,keepdim=False),device)
-
+	
+	print("Argmax")
+	test_fwd([([2,3,4],-1)],lambda x:torch.argmax(x,dim=1,keepdim=False),device)
 
 	print("LogSoftmax 2d")
 	test_fwd_bwd([([4,3],-1)],torch.nn.LogSoftmax(dim=1),device)

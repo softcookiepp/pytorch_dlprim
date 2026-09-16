@@ -1275,7 +1275,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
       m.impl("aten::leaky_relu.out",&ptdlprim::leaky_relu_out);
       m.impl("aten::leaky_relu_backward.grad_input",&ptdlprim::leaky_relu_backward_out);
       m.impl("aten::hardswish_backward",&ptdlprim::hardswish_backward);
-      m.impl("aten::argmax.out",&ptdlprim::argmax_out);
+      // Disabling for now, as it will be easier to implement with a custom kernel.
+      //m.impl("aten::argmax.out",&ptdlprim::argmax_out);
       
       m.impl("aten::ne.Tensor_out",&ptdlprim::ne_out_tensor);
       m.impl("aten::eq.Tensor_out",&ptdlprim::eq_out_tensor);
