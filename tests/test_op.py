@@ -162,8 +162,7 @@ def test_fwd_bwd(inputs,call,device,randgen=torch.randn):
 	y_cpu = call_cpu(*xs_cpu)
 	y_dev = call_dev(*xs_dev)
 	
-	if (not torch.isnan(y_cpu).any()) and torch.isnan(y_dev).any():
-		raise ValueError("y_cpu is not nan, but y_dev is!")
+	assert not torch.isnan(y_cpu).any()
 	
 	try:
 		torch.testing.assert_allclose(y_cpu, y_dev.to("cpu"))
@@ -293,6 +292,8 @@ def test_bmm(device):
 	
 
 def test_all(device):
+	positive_randgen = lambda x: torch.abs(torch.randn(x)) + 0.01
+	
 	print("Softmax (fwd only)")
 	test_fwd([([1028, 4, 72, 2], -1)],torch.nn.Softmax(dim=2),device)
 	test_fwd([([4,3],-1)],torch.nn.Softmax(dim=1),device)
@@ -387,13 +388,13 @@ def test_all(device):
 	test_fwd_bwd([([4,3],-1)], torch.atan, device)
 	
 	print("Log") # different randgen since log is undefined for <= 0.0
-	test_fwd_bwd([([4,3],-1)], torch.log, device, randgen = lambda x: torch.abs(torch.randn(x)) + 0.01)
+	test_fwd_bwd([([4,3],-1)], torch.log, device, randgen = positive_randgen)
 	
 	print("Exp")
 	test_fwd_bwd([([4,3],-1)], torch.exp, device)
 	
 	print("Sqrt")
-	test_fwd_bwd([([4,3],-1)], torch.sqrt, device)
+	test_fwd_bwd([([4,3],-1)], torch.sqrt, device, randgen = positive_randgen)
 
 	#print("GELU")
 	#test_fwd_bwd([([4,3],-1)],torch.nn.GELU(),device)
@@ -404,7 +405,7 @@ def test_all(device):
 	test_fwd_bwd([([4,3,5],-1)], torch.atan, device)
 	
 	print("cross_entropy")
-	test_fwd_bwd([([128, 0], -1), ([128, 0], -1)], F.cross_entropy, device, torch.rand)
+	test_fwd_bwd([([128], -1), ([128], -1)], F.cross_entropy, device, positive_randgen)
 	
 	print("binary_cross_entropy")
 	# need to clip so that everything >= 0
