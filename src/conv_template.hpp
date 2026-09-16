@@ -72,7 +72,30 @@ void slow_conv_dilated_all_vk_template(
 	dlprim::Tensor weight_dp = todp(weight);
 	
 	tart::device_ptr device = dlprim::tensorDevice(columns_dp);
+	dlprim::Tensor bias_dp;
 
+	// It is 100% possible to fill the entire output tensor in one kernel dispatch,
+	// as opposed to what is being done 20 or so lines later.
+	// Fill the output with bias
+	if (bias.defined() && output.defined())
+	{
+		dlprim::Tensor bias_dp_tmp = todp(bias, true);
+		dlprim::Tensor out_dp_tmp = todp(output, true);
+		
+		TORCH_CHECK(bias_dp_tmp.shape()[0] == out_dp_tmp.shape()[1]);
+		
+		// create a shape to reshape bias as for easy broadcasting
+		dlprim::Shape s = out_dp_tmp.shape();
+		s[0] = 1;
+		// batch is already same, just set the other dimensions to 1
+		for (size_t i = 2; i < s.size(); i += 1)
+			s[i] = 1;
+		
+		// reshape it, then copying correctly should be easy!
+		bias_dp_tmp.reshape(s);
+		dlprim::core::pointwiseOpBroadcastStrided({bias_dp_tmp}, {out_dp_tmp}, {}, dlprim::core::PointwiseOp::eIdentity);
+	}
+	
 	// For each elt in batch, do:
 	for (int elt = 0; elt < batchSize; elt++)
 	{		
@@ -85,17 +108,7 @@ void slow_conv_dilated_all_vk_template(
 		{
 			size_t outChannels = output.size(1);
 			Tensor output_n = output.select(0, elt);
-			if (bias.defined()) {
-				/* For gemm argument derivation, see
-					 slow_conv_dilated_all_cuda_template in
-					 ATen/native/DilatedConvolution.cpp */
-				for (int n = 0; n < nOutputPlane; n++) {
-					// This causes CPU backend to be invoked.
-					// TODO: figure out how to stop it.
-					output_n.select(0, n).fill_(bias[n]);
-				}
-			}
-				dlprim::Tensor output_n_dp = todp(output_n);
+			dlprim::Tensor output_n_dp = todp(output_n);
 			#if 0
 				// There is something I am fundamentally misunderstanding about the way this function works.
 				size_t num_kernels = output.size(1)*output.size(2);
@@ -280,7 +293,8 @@ void slow_conv_transpose2d_out_vk_template(
 
 	Tensor bias_ = Tensor();
 
-	if (bias.defined()) {
+	if (bias.defined())
+	{
 		bias_ = bias.contiguous();
 	}
 
