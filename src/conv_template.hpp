@@ -74,8 +74,6 @@ void slow_conv_dilated_all_vk_template(
 	tart::device_ptr device = dlprim::tensorDevice(columns_dp);
 	dlprim::Tensor bias_dp;
 
-	// It is 100% possible to fill the entire output tensor in one kernel dispatch,
-	// as opposed to what is being done 20 or so lines later.
 	// Fill the output with bias
 	if (bias.defined() && output.defined())
 	{
