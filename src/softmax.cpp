@@ -1,4 +1,3 @@
-#if 1
 #include "CLTensor.h"
 #include "utils.h"
 
@@ -25,7 +24,7 @@ using c10::DeviceType;
 		dlprim::Tensor x = todp(self, false);
 		dlprim::Tensor y = todp(out, false);
 		std::vector<int> dims({static_cast<int>(dim)});
-		dlprim::core::softmaxAttempt2(x, y, dims, false);
+		dlprim::core::softmax(x, y, dims, false);
 		return out;
 	}
 	
@@ -35,7 +34,7 @@ using c10::DeviceType;
 		dlprim::Tensor x = todp(self, false);
 		dlprim::Tensor y = todp(out, false);
 		std::vector<int> dims({static_cast<int>(dim)});
-		dlprim::core::softmaxAttempt2(x, y, dims, true);
+		dlprim::core::softmax(x, y, dims, true);
 		return out;
 	}
 
@@ -46,7 +45,7 @@ using c10::DeviceType;
 		dlprim::Tensor y = todp(output, false);
 		dlprim::Tensor yGrad = todp(grad_output, false);
 		std::vector<int> dims({static_cast<int>(dim)});
-		dlprim::core::softmaxAttempt2Bwd(xGrad, y, yGrad, dims, true);
+		dlprim::core::softmaxBwd(xGrad, y, yGrad, dims, true);
 		return out;
 	}
 
@@ -57,7 +56,7 @@ using c10::DeviceType;
 		dlprim::Tensor y = todp(output, false);
 		dlprim::Tensor yGrad = todp(grad_output, false);
 		std::vector<int> dims({static_cast<int>(dim)});
-		dlprim::core::softmaxAttempt2Bwd(xGrad, y, yGrad, dims, false);
+		dlprim::core::softmaxBwd(xGrad, y, yGrad, dims, false);
 		return grad_input;
 	}
 
@@ -70,4 +69,3 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m)
 	m.impl("aten::_softmax.out",&ptdlprim::_softmax_out);
 	m.impl("aten::_softmax_backward_data.out",&ptdlprim::_softmax_backward_data_out);
 }
-#endif
