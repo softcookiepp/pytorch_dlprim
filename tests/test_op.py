@@ -162,6 +162,9 @@ def test_fwd_bwd(inputs,call,device,randgen=torch.randn):
 	y_cpu = call_cpu(*xs_cpu)
 	y_dev = call_dev(*xs_dev)
 	
+	if (not torch.isnan(y_cpu).any()) and torch.isnan(y_dev).any():
+		raise ValueError("y_cpu is not nan, but y_dev is!")
+	
 	try:
 		torch.testing.assert_allclose(y_cpu, y_dev.to("cpu"))
 	except:
@@ -187,7 +190,7 @@ def test_fwd_bwd(inputs,call,device,randgen=torch.randn):
 				try:
 					torch.testing.assert_allclose(xs_cpu[i].grad, xs_dev[i].grad.to("cpu"))
 				except AssertionError:
-					pass #raise ValueError(f"Tensors are not close:\n{xs_cpu[i].grad}\n\n{xs_dev[i].grad.to('cpu')}\n")
+					raise ValueError(f"Tensors are not close:\n{xs_cpu[i].grad}\n\n{xs_dev[i].grad.to('cpu')}\n")
 				diffs.append(('x%d' % i ,get_diff(xs_cpu[i].grad,xs_dev[i].grad)))
 
 		diffs.sort(key=lambda x:x[1],reverse=True)
@@ -383,8 +386,8 @@ def test_all(device):
 	print("Atan")
 	test_fwd_bwd([([4,3],-1)], torch.atan, device)
 	
-	print("Log")
-	test_fwd_bwd([([4,3],-1)], torch.log, device)
+	print("Log") # different randgen since log is undefined for <= 0.0
+	test_fwd_bwd([([4,3],-1)], torch.log, device, randgen = lambda x: torch.abs(torch.randn(x)) + 0.01)
 	
 	print("Exp")
 	test_fwd_bwd([([4,3],-1)], torch.exp, device)
