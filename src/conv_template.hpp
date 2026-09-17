@@ -32,10 +32,7 @@ void slow_conv_dilated_all_vk_template(
 		IntArrayRef pad_size,
 		IntArrayRef dilation_size,
 		const uint32_t dim)
-{
-	// not needed; tart takes care of that
-	//slow_conv_dilated_location_check(__func__, input, weight, bias, grad_output);
-	
+{	
 	auto options = input.options();
 	// The rear part of input tensor sizes:
 	auto input_size = input.sizes().slice(2);
@@ -934,6 +931,7 @@ void slow_conv_transpose2d_acc_grad_parameters_vk_template(
 	}
 }
 
+#if 0
 void convIm2colStridedFwdTemplate(
 	Tensor& output,
 	const Tensor& input,
@@ -948,7 +946,10 @@ void convIm2colStridedFwdTemplate(
 	// First and foremost, we need the amount of dimensions.
 	size_t dim = weight.dim() - 2;
 	
-	Tensor input_c = input;
+	// ensure pad size matches dims. keep things simple for now
+	TORCH_CHECK(pad_size.size() == dim);
+	
+	Tensor input_unpadded = input;
 	bool batched = true;
 	if (input.dim() - 2 < dim)
 	{
@@ -957,17 +958,6 @@ void convIm2colStridedFwdTemplate(
 	}
 	if (nchw)
 	{
-		/*
-		# BHWC <- BCHW
-		Ni = 0
-		Ci = 1
-		new_dims = [Ni]
-		for i in range(ND):
-			new_dims.append(i + 2)
-		new_dims.append(Ci)
-		#input(new_dims)
-		return tuple(new_dims)
-		*/
 		// convert to NHWC (this method only works with this layout)
 		std::vector<int64_t> inputPermuteDims(dim + 2, 0);
 		// batch is still at position 0
@@ -976,13 +966,45 @@ void convIm2colStridedFwdTemplate(
 			inputPermuteDims[i + 1] = i + 2;
 		inputPermuteDims[dim - 1] = 1; // move channels to the very end
 		
-		input_c = input.permute(inputPermuteDims).contiguous();
+		// Don't make contiguous just yet.
+		input_unpadded = input.permute(inputPermuteDims);
 	}
 	else
 	{
 		// input should already be in the correct layout
-		input_c = input.contiguous();
+		input_unpadded = input;
+	}
+	
+	// determine if padding is required
+	bool needsPadding = false;
+	for (size_t i = 0 i < dim; i += 1)
+	{
+		if (pad_size[i] > 0)
+		{
+			needsPadding = true;
+			break;
+		}
+	}
+	
+	Tensor input_c;
+	if (needsPadding)
+	{
+		#if 0
+			input_c = at::native::slice(
+				const Tensor& self,
+				int64_t dim,
+				std::optional<int64_t> start,
+				std::optional<int64_t> end,
+				1).contiguous();
+		#else
+			throw std::runtime_error("not implemented");
+		#endif
+	}
+	else
+	{
+		input_c = input_unpadded.contiguous();
 	}
 	
 	// Now we get started!
 }
+#endif

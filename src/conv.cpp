@@ -19,6 +19,8 @@
 #include <ATen/native/DilatedConvolutionUtils.h>
 #include <ATen/div_rtn.h>
 #include <ATen/native/vol2col.h>
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
 
 #include <clblast_vk.h>
 
