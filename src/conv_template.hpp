@@ -70,26 +70,80 @@ void slow_conv_dilated_all_vk_template(
 	
 	tart::device_ptr device = dlprim::tensorDevice(columns_dp);
 	dlprim::Tensor bias_dp;
-
-	// Fill the output with bias
-	if (bias.defined() && output.defined())
+	
+	bool onlyForward = !(grad_input.defined() || grad_input.defined() || grad_weight.defined() || grad_bias.defined());
+	
+	if (output.defined())
 	{
-		dlprim::Tensor bias_dp_tmp = todp(bias, true);
-		dlprim::Tensor out_dp_tmp = todp(output, true);
+		TORCH_CHECK(input.is_contiguous() && weight.is_contiguous()
+			&& output.is_contiguous());
 		
-		TORCH_CHECK(bias_dp_tmp.shape()[0] == out_dp_tmp.shape()[1]);
+		dlprim::Tensor input_dp = todp(input);
+		dlprim::Tensor output_dp = todp(output);
+		dlprim::Tensor weight_dp = todp(weight);
+		size_t outChannels = output.size(1);
+		clblast::Convgemm<float>(clblast::KernelMode::kCrossCorrelation,
+			(size_t)input.size(1),
+			(size_t)input.size(2),
+			(size_t)input.size(3),
+			(size_t)kernel_size[0],
+			(size_t)kernel_size[1],
+			(size_t)pad_size[0],
+			(size_t)pad_size[1],
+			(size_t)stride_size[0],
+			(size_t)stride_size[1],
+			(size_t)dilation_size[0],
+			(size_t)dilation_size[1],
+			outChannels, // num_kernels. Ok, this is something I actually have to calculate myself.
+			batchSize, // batch_count
+			input_dp.device_buffer(), (size_t)input_dp.device_offset(),
+			weight_dp.device_buffer(), (size_t)weight_dp.device_offset(), output_dp.device_buffer(),
+			(size_t)output_dp.device_offset(), dlprim::tensorDevice(input_dp), nullptr);
 		
-		// create a shape to reshape bias as for easy broadcasting
-		dlprim::Shape s = out_dp_tmp.shape();
-		s[0] = 1;
-		// batch is already same, just set the other dimensions to 1
-		for (size_t i = 2; i < s.size(); i += 1)
-			s[i] = 1;
+		// pretty sure convgemm doesn't add bias.
+		// So we do it here!
+		if (bias.defined())
+		{
+			dlprim::Tensor bias_dp = todp(bias);
+			
+			TORCH_CHECK(bias_dp.shape()[0] == output_dp.shape()[1]);
+			
+			// create a shape to reshape bias as for easy broadcasting
+			dlprim::Shape s = output_dp.shape();
+			s[0] = 1;
+			// batch is already same, just set the other dimensions to 1
+			for (size_t i = 2; i < s.size(); i += 1)
+				s[i] = 1;
+			
+			// reshape it, then copying correctly should be easy!
+			bias_dp.reshape(s);
+			dlprim::core::pointwiseOpBroadcastStrided({bias_dp, output_dp}, {output_dp}, {}, dlprim::core::PointwiseOp::eAdd);
+		}
 		
-		// reshape it, then copying correctly should be easy!
-		bias_dp_tmp.reshape(s);
-		dlprim::core::pointwiseOpBroadcastStrided({bias_dp_tmp}, {out_dp_tmp}, {}, dlprim::core::PointwiseOp::eIdentity);
+		return;
 	}
+	
+	#if 0
+		// Fill the output with bias
+		if (bias.defined() && output.defined())
+		{
+			dlprim::Tensor bias_dp_tmp = todp(bias, true);
+			dlprim::Tensor out_dp_tmp = todp(output, true);
+			
+			TORCH_CHECK(bias_dp_tmp.shape()[0] == out_dp_tmp.shape()[1]);
+			
+			// create a shape to reshape bias as for easy broadcasting
+			dlprim::Shape s = out_dp_tmp.shape();
+			s[0] = 1;
+			// batch is already same, just set the other dimensions to 1
+			for (size_t i = 2; i < s.size(); i += 1)
+				s[i] = 1;
+			
+			// reshape it, then copying correctly should be easy!
+			bias_dp_tmp.reshape(s);
+			dlprim::core::pointwiseOpBroadcastStrided({bias_dp_tmp}, {out_dp_tmp}, {}, dlprim::core::PointwiseOp::eIdentity);
+		}
+	#endif
 	
 	// For each elt in batch, do:
 	for (int elt = 0; elt < batchSize; elt++)
@@ -101,31 +155,11 @@ void slow_conv_dilated_all_vk_template(
 		// Output
 		if (output.defined())
 		{
-			size_t outChannels = output.size(1);
-			Tensor output_n = output.select(0, elt);
-			dlprim::Tensor output_n_dp = todp(output_n);
 			#if 0
-				// There is something I am fundamentally misunderstanding about the way this function works.
-				size_t num_kernels = output.size(1)*output.size(2);
-				clblast::Convgemm<float>(clblast::KernelMode::kCrossCorrelation,
-					(size_t)input.size(1),
-					(size_t)input.size(2),
-					(size_t)input.size(3),
-					(size_t)kernel_size[0],
-					(size_t)kernel_size[1],
-					(size_t)pad_size[0],
-					(size_t)pad_size[1],
-					(size_t)stride_size[0],
-					(size_t)stride_size[1],
-					(size_t)dilation_size[0],
-					(size_t)dilation_size[1],
-					outChannels, // num_kernels. Ok, this is something I actually have to calculate myself.
-					1, // batch_count
-					input_n_dp.device_buffer(), (size_t)input_n_dp.device_offset(),
-					weight_dp.device_buffer(), (size_t)weight_dp.device_offset(), output_n_dp.device_buffer(),
-					(size_t)output_n_dp.device_offset(), stream.queue(), nullptr);
-			#else
-				
+				size_t outChannels = output.size(1);
+				Tensor output_n = output.select(0, elt);
+				dlprim::Tensor output_n_dp = todp(output_n);
+					
 				// Extract columns:
 				hvol2col(
 
